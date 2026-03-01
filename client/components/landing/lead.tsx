@@ -8,7 +8,7 @@ import { motion, useReducedMotion, useScroll, useTransform } from "framer-motion
 import { Container } from "@/components/ui/container";
 
 const leadCopy =
-  "Renew lets businesses charge subscriptions in customers' local fiat and settle in USDC on Avalanche, enabling recurring and usage-based billing.";
+  "Charge customers in local fiat and settle in USDC on Avalanche — built for recurring and usage-based billing.";
 const leadWords = leadCopy.split(" ");
 
 type RevealWordProps = {

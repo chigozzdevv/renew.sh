@@ -51,12 +51,12 @@ export function Header() {
           className={cn(
             "flex items-center justify-between rounded-full px-5 py-3 transition-all duration-300",
             isScrolled
-              ? "border border-white/70 bg-white/70"
+              ? "border border-white/10 bg-[#121312]/95"
               : "border border-transparent bg-transparent",
           )}
         >
           <Link href="/" aria-label="Renew home" className="shrink-0">
-            <Logo />
+            <Logo inverted={isScrolled} />
           </Link>
 
           <nav aria-label="Primary" className="hidden items-center gap-8 lg:flex">
@@ -64,7 +64,12 @@ export function Header() {
               <Link
                 key={item.href}
                 href={item.href}
-                className="text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)] transition-colors hover:text-[color:var(--brand)]"
+                className={cn(
+                  "text-sm font-semibold tracking-[-0.02em] transition-colors",
+                  isScrolled
+                    ? "text-white/92 hover:text-[#d9f6bc]"
+                    : "text-[color:var(--ink)] hover:text-[color:var(--brand)]",
+                )}
               >
                 {item.label}
               </Link>
@@ -72,7 +77,14 @@ export function Header() {
           </nav>
 
           <div className="flex items-center">
-            <ButtonLink href="#contact">Start accepting payments</ButtonLink>
+            <ButtonLink
+              href="#contact"
+              className={cn(
+                isScrolled && "bg-[#0f5c30] text-white hover:bg-[#13703a]",
+              )}
+            >
+              Start accepting payments
+            </ButtonLink>
           </div>
         </div>
       </Container>
