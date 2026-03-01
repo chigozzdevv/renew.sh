@@ -77,14 +77,7 @@ export function Header() {
           </nav>
 
           <div className="flex items-center">
-            <ButtonLink
-              href="#contact"
-              className={cn(
-                isScrolled && "bg-[#0f5c30] text-white hover:bg-[#13703a]",
-              )}
-            >
-              Start accepting payments
-            </ButtonLink>
+            <ButtonLink href="#contact">Start accepting payments</ButtonLink>
           </div>
         </div>
       </Container>
