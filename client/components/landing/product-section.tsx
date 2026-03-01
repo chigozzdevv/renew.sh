@@ -2,7 +2,7 @@ import { featureCards } from "@/lib/content";
 import { Container } from "@/components/ui/container";
 import { Reveal } from "@/components/ui/reveal";
 
-export function ProductPulse() {
+export function ProductSection() {
   return (
     <section id="product" className="pb-24 pt-2">
       <Container>
@@ -35,4 +35,3 @@ export function ProductPulse() {
     </section>
   );
 }
-

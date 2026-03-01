@@ -2,16 +2,16 @@ import Link from "next/link";
 
 import { landingNav } from "@/lib/content";
 import { Container } from "@/components/ui/container";
-import { BrandMark } from "@/components/shared/brand-mark";
+import { Logo } from "@/components/shared/logo";
 
-export function SiteFooter() {
+export function Footer() {
   return (
     <footer id="contact" className="pb-12">
       <Container>
         <div className="rounded-[2.25rem] border border-white/80 bg-white/65 p-6 shadow-[0_24px_80px_rgba(18,33,23,0.06)] backdrop-blur-xl sm:p-8">
           <div className="flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-2xl">
-              <BrandMark />
+              <Logo />
               <p className="mt-5 text-lg leading-8 text-[color:var(--muted)]">
                 Renew is building a merchant-grade operating layer for stablecoin billing, settlement, and treasury visibility on Avalanche.
               </p>

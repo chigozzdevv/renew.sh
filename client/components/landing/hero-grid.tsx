@@ -78,7 +78,7 @@ const dots = buildDots();
 const baseDots = dots.filter((dot) => !dot.pulse);
 const pulseDots = dots.filter((dot) => dot.pulse);
 
-export function HeroNetworkPattern() {
+export function HeroGrid() {
   return (
     <div
       aria-hidden="true"

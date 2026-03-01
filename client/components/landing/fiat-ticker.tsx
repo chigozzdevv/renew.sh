@@ -3,7 +3,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useState } from "react";
 
-type HeroBillingTickerProps = {
+type FiatTickerProps = {
   currencies?: readonly {
     code: string;
     symbol: string;
@@ -17,11 +17,11 @@ const DELETING_DELAY_MS = 55;
 const HOLD_DELAY_MS = 1200;
 const NEXT_DELAY_MS = 240;
 
-export function HeroBillingTicker({
+export function FiatTicker({
   currencies,
   codes,
   className,
-}: HeroBillingTickerProps) {
+}: FiatTickerProps) {
   const currencyList =
     currencies ??
     codes?.map((code) => ({

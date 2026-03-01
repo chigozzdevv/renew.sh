@@ -1,21 +1,34 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import Link from "next/link";
 
 import { landingNav } from "@/lib/content";
 import { ButtonLink } from "@/components/ui/button";
 import { Container } from "@/components/ui/container";
-import { BrandMark } from "@/components/shared/brand-mark";
+import { Logo } from "@/components/shared/logo";
 import { cn } from "@/lib/utils";
 
-export function SiteHeader() {
+export function Header() {
   const [isScrolled, setIsScrolled] = useState(false);
+  const [isVisible, setIsVisible] = useState(true);
+  const lastScrollY = useRef(0);
 
   useEffect(() => {
     const handleScroll = () => {
-      setIsScrolled(window.scrollY > 12);
+      const currentScrollY = window.scrollY;
+      const delta = currentScrollY - lastScrollY.current;
+
+      setIsScrolled(currentScrollY > 12);
+
+      if (currentScrollY <= 12) {
+        setIsVisible(true);
+      } else if (Math.abs(delta) > 4) {
+        setIsVisible(delta < 0);
+      }
+
+      lastScrollY.current = currentScrollY;
     };
 
     handleScroll();
@@ -27,7 +40,12 @@ export function SiteHeader() {
   }, []);
 
   return (
-    <header className="sticky top-0 z-40 py-5">
+    <header
+      className={cn(
+        "sticky top-0 z-40 py-5 transition-transform duration-300 ease-out",
+        isVisible ? "translate-y-0" : "-translate-y-[140%]",
+      )}
+    >
       <Container>
         <div
           className={cn(
@@ -38,7 +56,7 @@ export function SiteHeader() {
           )}
         >
           <Link href="/" aria-label="Renew home" className="shrink-0">
-            <BrandMark />
+            <Logo />
           </Link>
 
           <nav aria-label="Primary" className="hidden items-center gap-8 lg:flex">

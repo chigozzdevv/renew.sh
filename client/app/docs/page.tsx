@@ -1,11 +1,11 @@
 import { ButtonLink } from "@/components/ui/button";
 import { Container } from "@/components/ui/container";
-import { SiteHeader } from "@/components/shared/site-header";
+import { Header } from "@/components/shared/header";
 
 export default function DocsPage() {
   return (
     <div className="page-shell">
-      <SiteHeader />
+      <Header />
       <main className="pb-20 pt-8 sm:pt-12 lg:pb-28">
         <Container>
           <section className="glow-panel mx-auto max-w-4xl px-6 py-12 sm:px-10 sm:py-16">

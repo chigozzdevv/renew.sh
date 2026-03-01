@@ -2,9 +2,12 @@ import { flowSteps } from "@/lib/content";
 import { Container } from "@/components/ui/container";
 import { Reveal } from "@/components/ui/reveal";
 
-export function SettlementFlow() {
+export function BillingFlow() {
   return (
-    <section id="how-it-works" className="pb-28 pt-4">
+    <section
+      id="how-it-works"
+      className="flex min-h-[calc(100svh-6.5rem)] items-center pb-16 pt-8 sm:pb-20 sm:pt-10 lg:min-h-[calc(100svh-7rem)] lg:pb-24 lg:pt-12"
+    >
       <Container>
         <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
           <Reveal className="glow-panel p-6 sm:p-8">
@@ -67,4 +70,3 @@ export function SettlementFlow() {
     </section>
   );
 }
-

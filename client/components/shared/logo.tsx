@@ -1,4 +1,4 @@
-export function BrandMark() {
+export function Logo() {
   return (
     <div className="inline-flex items-center gap-3">
       <svg
@@ -18,4 +18,3 @@ export function BrandMark() {
     </div>
   );
 }
-
