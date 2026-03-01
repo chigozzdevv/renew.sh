@@ -1,0 +1,97 @@
+@import "tailwindcss";
+
+@theme inline {
+  --font-display: var(--font-outfit);
+  --font-sans: var(--font-manrope);
+}
+
+:root {
+  color-scheme: light;
+  --page-bg: #e5f0e3;
+  --ink: #102014;
+  --muted: #4d6351;
+  --brand: #0d4b28;
+  --line: rgba(16, 32, 20, 0.09);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top center, rgba(255, 255, 255, 0.8), rgba(255, 255, 255, 0) 36%),
+    linear-gradient(180deg, #edf7eb 0%, var(--page-bg) 50%, #f5faf5 100%);
+  color: var(--ink);
+  font-family: var(--font-manrope), sans-serif;
+  text-rendering: optimizeLegibility;
+}
+
+a {
+  text-decoration: none;
+}
+
+::selection {
+  background: rgba(13, 75, 40, 0.14);
+  color: var(--ink);
+}
+
+@keyframes hero-caret {
+  0%,
+  49% {
+    opacity: 1;
+  }
+
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
+.page-shell {
+  position: relative;
+  isolation: isolate;
+}
+
+.page-shell::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 15% 8%, rgba(255, 255, 255, 0.55), transparent 22%),
+    radial-gradient(circle at 85% 12%, rgba(61, 123, 78, 0.08), transparent 18%);
+}
+
+.glow-panel {
+  border: 1px solid rgba(255, 255, 255, 0.82);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.62));
+  box-shadow:
+    0 24px 80px rgba(18, 33, 23, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.85);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  border-radius: 2rem;
+}
+
+.hero-orb {
+  background:
+    radial-gradient(circle at center, rgba(112, 179, 110, 0.12), rgba(112, 179, 110, 0) 58%),
+    radial-gradient(circle, rgba(13, 75, 40, 0.18) 1.1px, transparent 1.3px);
+  background-size:
+    100% 100%,
+    18px 18px;
+  border-radius: 999px;
+  opacity: 0.9;
+  transform-origin: top center;
+  -webkit-mask-image: radial-gradient(circle at center, black 42%, transparent 76%);
+  mask-image: radial-gradient(circle at center, black 42%, transparent 76%);
+}
