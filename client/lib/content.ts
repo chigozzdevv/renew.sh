@@ -13,21 +13,20 @@ export const proofItems: ProofItem[] = [
   { value: "<60s", label: "operator confirmation loop" }
 ];
 
-// Seeded from Yellow Card widget-supported fiat codes. Keep this isolated so it is easy to update.
-export const supportedBillingFiatCodes = [
-  "NGN",
-  "KES",
-  "UGX",
-  "XAF",
-  "MWK",
-  "ZAR",
-  "ZMW",
-  "RWF",
-  "XOF",
-  "BWP",
-  "CDF",
-  "TZS",
-  "GHS",
+export const supportedBillingCurrencies = [
+  { code: "NGN", symbol: "\u20A6" },
+  { code: "KES", symbol: "KSh" },
+  { code: "UGX", symbol: "USh" },
+  { code: "XAF", symbol: "FCFA" },
+  { code: "MWK", symbol: "MK" },
+  { code: "ZAR", symbol: "R" },
+  { code: "ZMW", symbol: "ZK" },
+  { code: "RWF", symbol: "FRw" },
+  { code: "XOF", symbol: "CFA" },
+  { code: "BWP", symbol: "P" },
+  { code: "CDF", symbol: "FC" },
+  { code: "TZS", symbol: "TSh" },
+  { code: "GHS", symbol: "GH\u20B5" },
 ] as const;
 
 export const featureCards: FeatureCard[] = [

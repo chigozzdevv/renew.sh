@@ -53,13 +53,7 @@ export function SiteHeader() {
             ))}
           </nav>
 
-          <div className="flex items-center gap-2 sm:gap-3">
-            <ButtonLink href="#network" variant="ghost" className="hidden sm:inline-flex">
-              Why Avalanche
-            </ButtonLink>
-            <ButtonLink href="#contact" variant="secondary" className="hidden md:inline-flex">
-              Talk to us
-            </ButtonLink>
+          <div className="flex items-center">
             <ButtonLink href="#contact">Start accepting payments</ButtonLink>
           </div>
         </div>

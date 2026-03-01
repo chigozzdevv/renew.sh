@@ -3,7 +3,7 @@ import { Container } from "@/components/ui/container";
 import { Reveal } from "@/components/ui/reveal";
 import { HeroBillingTicker } from "@/components/landing/hero-billing-ticker";
 import { HeroNetworkPattern } from "@/components/landing/hero-network-pattern";
-import { supportedBillingFiatCodes } from "@/lib/content";
+import { supportedBillingCurrencies } from "@/lib/content";
 
 export function Hero() {
   return (
@@ -16,7 +16,7 @@ export function Hero() {
           <Reveal delay={0.05}>
             <h1 className="font-display leading-[0.9] tracking-[-0.08em] text-[color:var(--ink)]">
               <HeroBillingTicker
-                codes={supportedBillingFiatCodes}
+                currencies={supportedBillingCurrencies}
                 className="block text-[clamp(3.3rem,8vw,6.8rem)]"
               />
               <span className="block text-[clamp(2.8rem,6.7vw,5.8rem)]">
