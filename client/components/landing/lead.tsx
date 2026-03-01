@@ -24,7 +24,7 @@ function RevealWord({ progress, word, index, total }: RevealWordProps) {
   const color = useTransform(
     progress,
     [start, end],
-    ["rgba(77, 99, 81, 0.24)", "rgba(16, 32, 20, 1)"],
+    ["rgba(77, 99, 81, 0.24)", "rgba(12, 74, 39, 1)"],
   );
 
   return (
@@ -47,7 +47,7 @@ export function Lead() {
       <div className="sticky top-[5.75rem] flex min-h-[calc(100svh-5.75rem)] items-start pt-6 sm:pt-8 lg:pt-10">
         <Container>
           <div className="mx-auto max-w-5xl">
-            <p className="text-balance font-display text-[clamp(2rem,4.7vw,4.4rem)] leading-[1.04] tracking-[-0.06em]">
+            <p className="text-balance font-display text-[clamp(2rem,4.7vw,4.4rem)] leading-[1.04] tracking-[-0.06em] text-[#0c4a27]">
               {shouldReduceMotion
                 ? leadCopy
                 : leadWords.map((word, index) => (
