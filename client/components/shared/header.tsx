@@ -77,7 +77,7 @@ export function Header() {
           </nav>
 
           <div className="flex items-center">
-            <ButtonLink href="#contact">Start accepting payments</ButtonLink>
+            <ButtonLink href="#contact">Get started</ButtonLink>
           </div>
         </div>
       </Container>
