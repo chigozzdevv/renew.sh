@@ -5,7 +5,6 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 
 import { landingNav } from "@/lib/content";
-import { ButtonLink } from "@/components/ui/button";
 import { Container } from "@/components/ui/container";
 import { Logo } from "@/components/shared/logo";
 import { cn } from "@/lib/utils";
@@ -77,7 +76,41 @@ export function Header() {
           </nav>
 
           <div className="flex items-center">
-            <ButtonLink href="#contact">Get started</ButtonLink>
+            <Link
+              href="#contact"
+              className="group inline-flex items-center gap-2.5"
+            >
+              <span
+                className={cn(
+                  "text-base font-semibold tracking-[-0.03em] transition-colors",
+                  isScrolled ? "text-white" : "text-[color:var(--ink)]",
+                )}
+              >
+                Get started
+              </span>
+              <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-[#0c4a27] text-[#d9f6bc] transition-colors duration-200 group-hover:bg-[#093a1e]">
+                <svg
+                  aria-hidden="true"
+                  viewBox="0 0 16 16"
+                  className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5 group-hover:-translate-y-0.5"
+                  fill="none"
+                >
+                  <path
+                    d="M3.5 12.5L12.5 3.5"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                  />
+                  <path
+                    d="M6 3.5h6.5V10"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </span>
+            </Link>
           </div>
         </div>
       </Container>
