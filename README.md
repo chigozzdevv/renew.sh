@@ -5,7 +5,7 @@ Marketing-first scaffold for Renew, a stablecoin billing and settlement platform
 ## Workspace layout
 
 - `client/` contains the Next.js 16 App Router frontend.
-- `server/` is reserved for backend billing APIs later.
+- `server/` contains the Express + MongoDB backend API.
 - `contracts/` is reserved for Avalanche contract code and ABIs later.
 
 ## Frontend stack
@@ -16,6 +16,14 @@ Marketing-first scaffold for Renew, a stablecoin billing and settlement platform
 - Framer Motion
 - TypeScript
 
+## Backend stack
+
+- Node.js
+- Express
+- MongoDB + Mongoose
+- Zod
+- TypeScript
+
 ## Run the client
 
 ```bash
@@ -24,5 +32,13 @@ npm install
 npm run dev
 ```
 
-Use Node.js 20.9.0 or newer.
+## Run the server
 
+```bash
+cd server
+npm install
+cp .env.example .env
+npm run dev
+```
+
+Use Node.js 20.9.0 or newer.

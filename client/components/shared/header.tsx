@@ -64,7 +64,7 @@ export function Header() {
       <Container>
         <div
           className={cn(
-            "rounded-[1.75rem] px-3 py-3 transition-all duration-300 sm:px-5",
+            "rounded-[1.75rem] px-5 py-3 transition-all duration-300 max-sm:px-3",
             isScrolled
               ? "border border-white/10 bg-[#121312]/95"
               : "border border-transparent bg-transparent",
@@ -94,7 +94,7 @@ export function Header() {
 
             <div className="flex items-center gap-2 sm:gap-3">
               <Link
-                href="#contact"
+                href="/waitlist"
                 className="group inline-flex items-center gap-2.5"
                 onClick={() => setIsMenuOpen(false)}
               >
@@ -104,7 +104,7 @@ export function Header() {
                     isScrolled ? "text-white" : "text-[color:var(--ink)]",
                   )}
                 >
-                  Get started
+                  Request early access
                 </span>
                 <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-[#0c4a27] text-[#d9f6bc] transition-colors duration-200 group-hover:bg-[#093a1e]">
                   <svg

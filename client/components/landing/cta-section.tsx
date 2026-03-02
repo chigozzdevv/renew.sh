@@ -56,8 +56,8 @@ export function CTASection() {
             </div>
 
             <div className="mx-auto flex flex-row flex-wrap items-center justify-center gap-3 lg:mx-0 lg:flex-col lg:items-end lg:justify-start">
-              <ButtonLink href="mailto:hello@renew.sh" className="px-5 py-3 sm:px-7 sm:py-3.5">
-                Get started
+              <ButtonLink href="/waitlist" className="px-5 py-3 sm:px-7 sm:py-3.5">
+                Request early access
               </ButtonLink>
               <ButtonLink href="/docs" variant="secondary" className="px-5 py-3 sm:px-7 sm:py-3.5">
                 View docs

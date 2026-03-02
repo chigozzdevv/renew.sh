@@ -8,7 +8,7 @@ export function Logo({ inverted = false }: LogoProps) {
   return (
     <div
       className={cn(
-        "relative h-7 w-[6.75rem] overflow-hidden sm:h-9 sm:w-[8.5rem]",
+        "relative h-9 w-[8.5rem] overflow-hidden max-sm:h-7 max-sm:w-[6.75rem]",
         inverted ? "opacity-95" : "",
       )}
     >
@@ -18,7 +18,7 @@ export function Logo({ inverted = false }: LogoProps) {
         width={500}
         height={500}
         className={cn(
-          "h-full w-full origin-left object-cover object-center scale-[1.42] -translate-x-[10%] sm:scale-[1.18] sm:-translate-x-[5%]",
+          "h-full w-full object-cover object-center max-sm:origin-left max-sm:scale-[1.42] max-sm:-translate-x-[10%]",
           inverted ? "brightness-0 invert" : "",
         )}
       />
