@@ -1,15 +1,32 @@
 import cors from "cors";
 import express from "express";
 
+import { getAllowedCorsOrigins } from "@/config/env.config";
 import { waitlistRouter } from "@/features/waitlist/waitlist.routes";
 import { errorHandler, notFoundHandler } from "@/shared/middleware/error-handler";
 
 export function createApp() {
   const app = express();
+  const allowedOrigins = getAllowedCorsOrigins();
 
   app.use(
     cors({
-      origin: true,
+      origin: (requestOrigin, callback) => {
+        if (!requestOrigin) {
+          callback(null, true);
+          return;
+        }
+
+        if (
+          allowedOrigins.includes("*") ||
+          allowedOrigins.includes(requestOrigin)
+        ) {
+          callback(null, true);
+          return;
+        }
+
+        callback(new Error("Origin is not allowed by CORS."));
+      },
       credentials: false,
     })
   );
