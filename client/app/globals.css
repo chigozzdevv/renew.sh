@@ -38,8 +38,8 @@ a {
 }
 
 ::selection {
-  background: rgba(13, 75, 40, 0.14);
-  color: var(--ink);
+  background: rgba(13, 75, 40, 0.32);
+  color: #f5faf5;
 }
 
 @keyframes hero-caret {

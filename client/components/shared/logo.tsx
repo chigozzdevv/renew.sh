@@ -6,29 +6,22 @@ type LogoProps = {
 
 export function Logo({ inverted = false }: LogoProps) {
   return (
-    <div className="inline-flex items-center gap-3">
-      <svg
-        aria-hidden="true"
-        viewBox="0 0 32 32"
+    <div
+      className={cn(
+        "relative h-8 w-[7.75rem] overflow-hidden sm:h-9 sm:w-[8.5rem]",
+        inverted ? "opacity-95" : "",
+      )}
+    >
+      <img
+        src="/renew-logo.png"
+        alt="Renew"
+        width={500}
+        height={500}
         className={cn(
-          "h-8 w-8",
-          inverted ? "text-[#d9f6bc]" : "text-[color:var(--brand)]",
+          "h-full w-full object-cover object-center",
+          inverted ? "brightness-0 invert" : "",
         )}
-        fill="none"
-      >
-        <circle cx="9" cy="9" r="5" fill="currentColor" />
-        <circle cx="23" cy="9" r="5" fill="currentColor" opacity="0.92" />
-        <circle cx="9" cy="23" r="5" fill="currentColor" opacity="0.78" />
-        <circle cx="23" cy="23" r="5" fill="currentColor" opacity="0.62" />
-      </svg>
-      <span
-        className={cn(
-          "font-display text-3xl font-semibold tracking-[-0.06em]",
-          inverted ? "text-white" : "text-[color:var(--ink)]",
-        )}
-      >
-        renew
-      </span>
+      />
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { Lead } from "@/components/landing/lead";
 import { WhyRenewSection } from "@/components/landing/product-section";
 import { BillingFlow } from "@/components/landing/billing-flow";
 import { NetworkSection } from "@/components/landing/network-section";
+import { CTASection } from "@/components/landing/cta-section";
 import { Footer } from "@/components/landing/footer";
 import { Header } from "@/components/shared/header";
 
@@ -16,6 +17,7 @@ export default function Home() {
         <WhyRenewSection />
         <BillingFlow />
         <NetworkSection />
+        <CTASection />
       </main>
       <Footer />
     </div>
