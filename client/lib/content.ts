@@ -1,8 +1,9 @@
 import type { FeatureCard, FlowStep, NavItem, ProofItem } from "@/types/marketing";
 
 export const landingNav: NavItem[] = [
-  { label: "Product", href: "#product" },
-  { label: "How It Works", href: "#how-it-works" },
+  { label: "Overview", href: "#overview" },
+  { label: "Why Renew", href: "#why-renew" },
+  { label: "How it works", href: "#how-it-works" },
   { label: "Why Avalanche", href: "#network" },
 ];
 
@@ -31,22 +32,22 @@ export const supportedBillingCurrencies = [
 
 export const featureCards: FeatureCard[] = [
   {
-    eyebrow: "Billing",
-    title: "Issue invoices with stablecoin-native payment intent.",
+    eyebrow: "Local pricing",
+    title: "Charge customers in the currency they already understand.",
     body:
-      "Generate payment sessions with exact token amounts, expiry windows, and payer-safe metadata so merchants control the billing contract, not the browser."
+      "Renew lets merchants price subscriptions in local fiat so checkout stays familiar while the system handles the conversion layer behind the scenes."
   },
   {
-    eyebrow: "Settlement",
-    title: "Track the chain, but trust reconciled backend state.",
+    eyebrow: "USDC settlement",
+    title: "Settle every payment in USDC on Avalanche.",
     body:
-      "The UI can show pending writes and receipts, while your backend remains the source of truth for invoice settlement, confirmations, and retries."
+      "You keep stablecoin settlement at the treasury layer without forcing customers to pay in crypto or exposing operators to manual reconciliation."
   },
   {
-    eyebrow: "Treasury",
-    title: "Move from checkout to treasury visibility without a handoff.",
+    eyebrow: "Flexible billing",
+    title: "Support recurring and usage-based billing from one rail.",
     body:
-      "Give finance teams a clear view of payment status, token flows, and account-level exposure from the same system merchants use to collect."
+      "From monthly plans to metered charges, the same billing infrastructure can power repeated collections and programmable settlement logic."
   }
 ];
 

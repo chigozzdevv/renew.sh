@@ -43,7 +43,7 @@ export function Lead() {
   });
 
   return (
-    <section ref={sectionRef} className="relative min-h-[150svh] sm:min-h-[160svh] lg:min-h-[170svh]">
+    <section id="overview" ref={sectionRef} className="relative min-h-[150svh] sm:min-h-[160svh] lg:min-h-[170svh]">
       <div className="sticky top-[5.75rem] flex min-h-[calc(100svh-5.75rem)] items-start pt-6 sm:pt-8 lg:pt-10">
         <Container>
           <div className="mx-auto max-w-5xl">
