@@ -25,11 +25,11 @@ export function Hero() {
             </h1>
           </Reveal>
 
-          <Reveal className="mt-8 flex flex-col items-start gap-3 sm:flex-row" delay={0.12}>
-            <ButtonLink href="#contact" className="px-7 py-3.5">
+          <Reveal className="mt-8 flex flex-row flex-wrap items-center gap-3" delay={0.12}>
+            <ButtonLink href="#contact" className="px-5 py-3 sm:px-7 sm:py-3.5">
               Get started
             </ButtonLink>
-            <ButtonLink href="/docs" variant="secondary" className="px-7 py-3.5">
+            <ButtonLink href="/docs" variant="secondary" className="px-5 py-3 sm:px-7 sm:py-3.5">
               View docs
             </ButtonLink>
           </Reveal>

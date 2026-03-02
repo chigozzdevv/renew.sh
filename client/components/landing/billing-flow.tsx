@@ -6,7 +6,15 @@ export function BillingFlow() {
   return (
     <section id="how-it-works" className="pb-24 pt-8 sm:pb-28 sm:pt-10">
       <Container>
-        <div className="grid gap-8 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)] lg:items-start lg:gap-10">
+        <div className="mt-2 grid gap-8 sm:mt-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:items-start lg:gap-10">
+          <Reveal className="lg:sticky lg:top-28 lg:self-start" offset={24}>
+            <div className="max-w-2xl">
+              <h2 className="font-display text-4xl leading-[0.98] tracking-[-0.06em] text-[color:var(--ink)] text-balance sm:text-[3.25rem]">
+                From local checkout to USDC settlement.
+              </h2>
+            </div>
+          </Reveal>
+
           <div className="relative ml-5 border-l border-[color:var(--line)] pl-6 sm:ml-6 sm:pl-8 lg:ml-0">
             {flowSteps.map((step, index) => (
               <Reveal
@@ -32,14 +40,6 @@ export function BillingFlow() {
               </Reveal>
             ))}
           </div>
-
-          <Reveal className="lg:sticky lg:top-28 lg:self-start" offset={24}>
-            <div className="max-w-lg lg:ml-auto">
-              <h2 className="font-display text-4xl leading-[0.98] tracking-[-0.06em] text-[color:var(--ink)] sm:text-[3.25rem]">
-                From local checkout to USDC settlement.
-              </h2>
-            </div>
-          </Reveal>
         </div>
       </Container>
     </section>
