@@ -26,28 +26,8 @@ export function Hero() {
           </Reveal>
 
           <Reveal className="mt-8 flex flex-col items-start gap-3 sm:flex-row" delay={0.12}>
-            <ButtonLink href="#contact" className="group gap-2 px-7 py-3.5">
-              <span>Get started</span>
-              <svg
-                aria-hidden="true"
-                viewBox="0 0 16 16"
-                className="h-4 w-4 origin-left transition-transform duration-200 group-hover:translate-x-1 group-hover:scale-x-110"
-                fill="none"
-              >
-                <path
-                  d="M2 8h10"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  strokeLinecap="round"
-                />
-                <path
-                  d="M9 4.5L13 8l-4 3.5"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
+            <ButtonLink href="#contact" className="px-7 py-3.5">
+              Get started
             </ButtonLink>
             <ButtonLink href="/docs" variant="secondary" className="px-7 py-3.5">
               View docs

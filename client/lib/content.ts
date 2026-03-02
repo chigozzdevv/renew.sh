@@ -33,41 +33,37 @@ export const supportedBillingCurrencies = [
 export const featureCards: FeatureCard[] = [
   {
     eyebrow: "Local pricing",
-    title: "Keep checkout in local currency.",
-    body:
-      "Customers see familiar fiat pricing."
+    title: "Keep checkout in local fiat.",
+    body: "Customers see familiar pricing."
   },
   {
     eyebrow: "USDC settlement",
-    title: "Settle every payment in USDC.",
-    body:
-      "Treasury lands in stablecoins on Avalanche."
+    title: "Land treasury in USDC.",
+    body: "Every charge settles on Avalanche."
   },
   {
     eyebrow: "Recurring billing",
-    title: "Run subscriptions on one rail.",
-    body:
-      "Built for repeatable charges and renewals."
+    title: "Run renewals on one rail.",
+    body: "Subscriptions stay automated."
   },
   {
     eyebrow: "Usage-based billing",
-    title: "Meter and settle with the same system.",
-    body:
-      "Handle variable usage without leaving the billing flow."
+    title: "Meter and settle together.",
+    body: "Usage charges follow the same flow."
   }
 ];
 
 export const flowSteps: FlowStep[] = [
   {
-    title: "Create a payment session",
-    body: "Your backend defines the invoice amount, accepted stablecoin, expiry, and metadata for the payer."
+    title: "Set a price",
+    body: "Choose the amount, billing interval, and rules. Renew handles conversion into the customer's local fiat at checkout."
   },
   {
-    title: "Route the wallet flow",
-    body: "The client checks the connected wallet, enforces Avalanche C-Chain, verifies balance, and requests allowance only if needed."
+    title: "Collect the charge",
+    body: "Customers pay in familiar local fiat while Renew routes the charge into a settlement-ready payment flow behind the scenes."
   },
   {
-    title: "Submit and reconcile",
-    body: "The payer signs once, the transaction confirms on-chain, and backend reconciliation marks the invoice settled."
+    title: "Settle and reconcile",
+    body: "Funds land in USDC on Avalanche, with status updates ready for renewals, retries, and finance visibility."
   }
 ];
