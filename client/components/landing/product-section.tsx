@@ -10,28 +10,52 @@ export function WhyRenewSection() {
           <p className="text-sm font-semibold uppercase tracking-[0.22em] text-[color:var(--brand)]">
             Why Renew
           </p>
-          <h2 className="mt-4 font-display text-5xl leading-[0.94] tracking-[-0.08em] text-[color:var(--ink)] sm:text-6xl">
-            Built for modern billing, not just one-off payment collection.
+          <h2 className="mt-4 font-display text-4xl leading-[0.98] tracking-[-0.07em] text-[color:var(--ink)] sm:text-5xl">
+            Built for repeatable billing.
           </h2>
-          <p className="mt-5 text-lg leading-8 text-[color:var(--muted)]">
-            Renew gives operators a cleaner billing layer that keeps customer pricing local, treasury settlement stablecoin-native, and billing logic ready for repeatable charges.
+          <p className="mt-4 text-base leading-7 text-[color:var(--muted)] sm:text-lg">
+            Local collection, USDC settlement, and billing logic that scales.
           </p>
         </Reveal>
 
-        <div className="mt-10 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+        <div className="mt-10 grid gap-5 md:grid-cols-2">
           {featureCards.map((card, index) => (
             <Reveal
               key={card.title}
               delay={0.08 * (index + 1)}
-              className="glow-panel h-full p-6 sm:p-7"
+              className={
+                index === 0 || index === featureCards.length - 1
+                  ? "h-full rounded-[2rem] border border-white/10 bg-[linear-gradient(135deg,#1c1c1f,#121312)] p-6 sm:p-7"
+                  : "h-full rounded-[2rem] border border-white/80 bg-white/78 p-6 sm:p-7"
+              }
             >
-              <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[color:var(--brand)]">
+              <p
+                className={
+                  index === 0 || index === featureCards.length - 1
+                    ? "text-sm font-semibold uppercase tracking-[0.18em] text-[#d9f6bc]"
+                    : "text-sm font-semibold uppercase tracking-[0.18em] text-[color:var(--brand)]"
+                }
+              >
                 {card.eyebrow}
               </p>
-              <h3 className="mt-4 text-2xl font-semibold leading-tight tracking-[-0.04em] text-[color:var(--ink)]">
+              <h3
+                className={
+                  index === 0 || index === featureCards.length - 1
+                    ? "mt-4 text-[1.95rem] font-semibold leading-tight tracking-[-0.04em] text-white"
+                    : "mt-4 text-[1.95rem] font-semibold leading-tight tracking-[-0.04em] text-[color:var(--ink)]"
+                }
+              >
                 {card.title}
               </h3>
-              <p className="mt-4 text-base leading-7 text-[color:var(--muted)]">{card.body}</p>
+              <p
+                className={
+                  index === 0 || index === featureCards.length - 1
+                    ? "mt-4 text-base leading-7 text-white/72"
+                    : "mt-4 text-base leading-7 text-[color:var(--muted)]"
+                }
+              >
+                {card.body}
+              </p>
             </Reveal>
           ))}
         </div>

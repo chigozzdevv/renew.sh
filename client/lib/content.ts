@@ -33,21 +33,27 @@ export const supportedBillingCurrencies = [
 export const featureCards: FeatureCard[] = [
   {
     eyebrow: "Local pricing",
-    title: "Charge customers in the currency they already understand.",
+    title: "Keep checkout in local currency.",
     body:
-      "Renew lets merchants price subscriptions in local fiat so checkout stays familiar while the system handles the conversion layer behind the scenes."
+      "Customers see familiar fiat pricing."
   },
   {
     eyebrow: "USDC settlement",
-    title: "Settle every payment in USDC on Avalanche.",
+    title: "Settle every payment in USDC.",
     body:
-      "You keep stablecoin settlement at the treasury layer without forcing customers to pay in crypto or exposing operators to manual reconciliation."
+      "Treasury lands in stablecoins on Avalanche."
   },
   {
-    eyebrow: "Flexible billing",
-    title: "Support recurring and usage-based billing from one rail.",
+    eyebrow: "Recurring billing",
+    title: "Run subscriptions on one rail.",
     body:
-      "From monthly plans to metered charges, the same billing infrastructure can power repeated collections and programmable settlement logic."
+      "Built for repeatable charges and renewals."
+  },
+  {
+    eyebrow: "Usage-based billing",
+    title: "Meter and settle with the same system.",
+    body:
+      "Handle variable usage without leaving the billing flow."
   }
 ];
 
