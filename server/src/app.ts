@@ -40,7 +40,7 @@ export function createApp() {
     });
   });
 
-  app.use("/api/v1/waitlist", waitlistRouter);
+  app.use("/v1/waitlist", waitlistRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

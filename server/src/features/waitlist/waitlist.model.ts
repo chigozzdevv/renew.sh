@@ -43,8 +43,6 @@ const waitlistSchema = new Schema(
   }
 );
 
-waitlistSchema.index({ email: 1 }, { unique: true });
-
 type WaitlistEntry = InferSchemaType<typeof waitlistSchema> & {
   _id: Types.ObjectId;
   createdAt: Date;
