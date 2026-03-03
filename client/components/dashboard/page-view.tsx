@@ -12,15 +12,22 @@ type DashboardPageViewProps = {
 };
 
 export function DashboardPageView({ page }: DashboardPageViewProps) {
-  if (page.key === "customers" || page.key === "plans" || page.key === "subscriptions") {
+  if (
+    page.key === "customers" ||
+    page.key === "plans" ||
+    page.key === "subscriptions" ||
+    page.key === "payments"
+  ) {
     return (
       <section className="space-y-6">
         {page.key === "customers" ? (
           <CustomersSurface />
         ) : page.key === "plans" ? (
           <PlansSurface />
-        ) : (
+        ) : page.key === "subscriptions" ? (
           <SubscriptionsSurface />
+        ) : (
+          <PaymentsSurface />
         )}
       </section>
     );
@@ -1992,32 +1999,595 @@ function CreateSubscriptionModal({
   );
 }
 
+type PaymentStatus = "Settled" | "Pending" | "Failed";
+type PaymentFilter = "All" | PaymentStatus;
+
+type PaymentRecord = {
+  id: string;
+  reference: string;
+  customerName: string;
+  customerEmail: string;
+  market: string;
+  localAmount: string;
+  usdcAmount: string;
+  netAmount: string;
+  status: PaymentStatus;
+  settlementState: string;
+  dueWindow: string;
+  methodState: string;
+  note: string;
+  txHash: string;
+};
+
+type NewPaymentDraft = {
+  customerName: string;
+  customerEmail: string;
+  market: string;
+  localAmount: string;
+  usdcAmount: string;
+};
+
+const initialPaymentRecords: PaymentRecord[] = [
+  {
+    id: "inv-1042",
+    reference: "INV-1042",
+    customerName: "Axel Telecom",
+    customerEmail: "finance@axeltelecom.com",
+    market: "NGN",
+    localAmount: "₦78,500",
+    usdcAmount: "50.00",
+    netAmount: "49.42",
+    status: "Settled",
+    settlementState: "Confirmed onchain",
+    dueWindow: "Today, 09:12 UTC",
+    methodState: "Collected",
+    note: "Customer paid successfully and treasury has already picked up the settlement leg.",
+    txHash: "0x8a12...61f4",
+  },
+  {
+    id: "inv-1041",
+    reference: "INV-1041",
+    customerName: "Mazi Clinic",
+    customerEmail: "ops@maziclinic.com",
+    market: "GHS",
+    localAmount: "GH₵1,180",
+    usdcAmount: "74.60",
+    netAmount: "73.94",
+    status: "Pending",
+    settlementState: "Confirming",
+    dueWindow: "Today, 11:30 UTC",
+    methodState: "Awaiting confirmation",
+    note: "Customer approved payment and settlement is waiting for final confirmation before treasury sweep.",
+    txHash: "0x5c88...a104",
+  },
+  {
+    id: "inv-1040",
+    reference: "INV-1040",
+    customerName: "Geno Labs",
+    customerEmail: "billing@genolabs.io",
+    market: "KES",
+    localAmount: "KSh9,100",
+    usdcAmount: "71.20",
+    netAmount: "70.50",
+    status: "Failed",
+    settlementState: "Needs retry",
+    dueWindow: "Tomorrow, 08:00 UTC",
+    methodState: "Update needed",
+    note: "The payment method needs attention before the next retry window can clear the charge.",
+    txHash: "No hash yet",
+  },
+  {
+    id: "inv-1039",
+    reference: "INV-1039",
+    customerName: "Sabi Retail",
+    customerEmail: "accounts@sabiretail.africa",
+    market: "ZMW",
+    localAmount: "ZK5,400",
+    usdcAmount: "198.30",
+    netAmount: "196.81",
+    status: "Settled",
+    settlementState: "Settled",
+    dueWindow: "Yesterday, 17:18 UTC",
+    methodState: "Collected",
+    note: "Latest invoice settled cleanly and the receipt is ready for finance review.",
+    txHash: "0xf120...90de",
+  },
+];
+
 function PaymentsSurface() {
+  const [payments, setPayments] = useState<PaymentRecord[]>(initialPaymentRecords);
+  const [activeFilter, setActiveFilter] = useState<PaymentFilter>("All");
+  const [query, setQuery] = useState("");
+  const [selectedPaymentId, setSelectedPaymentId] = useState(initialPaymentRecords[0].id);
+  const [isCreatePaymentOpen, setIsCreatePaymentOpen] = useState(false);
+  const [draft, setDraft] = useState<NewPaymentDraft>({
+    customerName: "",
+    customerEmail: "",
+    market: "NGN",
+    localAmount: "",
+    usdcAmount: "",
+  });
+
+  const filteredPayments = payments.filter((payment) => {
+    const matchesFilter = activeFilter === "All" ? true : payment.status === activeFilter;
+    const normalizedQuery = query.trim().toLowerCase();
+    const matchesQuery =
+      normalizedQuery.length === 0
+        ? true
+        : [
+            payment.reference,
+            payment.customerName,
+            payment.customerEmail,
+            payment.market,
+            payment.localAmount,
+          ]
+            .join(" ")
+            .toLowerCase()
+            .includes(normalizedQuery);
+
+    return matchesFilter && matchesQuery;
+  });
+
+  useEffect(() => {
+    if (filteredPayments.length === 0) {
+      return;
+    }
+
+    const currentStillVisible = filteredPayments.some((payment) => payment.id === selectedPaymentId);
+
+    if (!currentStillVisible) {
+      setSelectedPaymentId(filteredPayments[0].id);
+    }
+  }, [activeFilter, filteredPayments, query, selectedPaymentId]);
+
+  const selectedPayment =
+    filteredPayments.find((payment) => payment.id === selectedPaymentId) ?? filteredPayments[0] ?? null;
+
+  const settledCount = payments.filter((payment) => payment.status === "Settled").length;
+  const pendingCount = payments.filter((payment) => payment.status === "Pending").length;
+  const failedCount = payments.filter((payment) => payment.status === "Failed").length;
+  const grossUsdc = payments.reduce((total, payment) => total + Number(payment.usdcAmount), 0);
+
+  function updateSelectedPayment(updater: (payment: PaymentRecord) => PaymentRecord) {
+    if (!selectedPayment) {
+      return;
+    }
+
+    setPayments((current) =>
+      current.map((payment) => (payment.id === selectedPayment.id ? updater(payment) : payment)),
+    );
+  }
+
+  function advancePaymentState() {
+    if (!selectedPayment) {
+      return;
+    }
+
+    if (selectedPayment.status === "Failed") {
+      updateSelectedPayment((payment) => ({
+        ...payment,
+        status: "Pending",
+        settlementState: "Retry queued",
+        methodState: "Retry scheduled",
+        note: "The next retry has been queued and this charge is waiting for customer confirmation again.",
+      }));
+      return;
+    }
+
+    if (selectedPayment.status === "Pending") {
+      updateSelectedPayment((payment) => ({
+        ...payment,
+        status: "Settled",
+        settlementState: "Confirmed onchain",
+        methodState: "Collected",
+        note: "Settlement has cleared and treasury can include this charge in the next sweep.",
+      }));
+      return;
+    }
+
+    updateSelectedPayment((payment) => ({
+      ...payment,
+      note: "Receipt export requested for finance review.",
+    }));
+  }
+
+  function handleDraftChange<K extends keyof NewPaymentDraft>(key: K, value: NewPaymentDraft[K]) {
+    setDraft((current) => ({
+      ...current,
+      [key]: value,
+    }));
+  }
+
+  function handleCreatePayment(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const customerName = draft.customerName.trim();
+    const customerEmail = draft.customerEmail.trim();
+    const localAmount = draft.localAmount.trim();
+    const usdcAmount = draft.usdcAmount.trim();
+
+    if (!customerName || !customerEmail || !localAmount || !usdcAmount) {
+      return;
+    }
+
+    const nextReference = `INV-${1043 + payments.length}`;
+    const nextPayment: PaymentRecord = {
+      id: `${nextReference.toLowerCase()}-${Date.now()}`,
+      reference: nextReference,
+      customerName,
+      customerEmail,
+      market: draft.market,
+      localAmount,
+      usdcAmount,
+      netAmount: usdcAmount,
+      status: "Pending",
+      settlementState: "Awaiting customer action",
+      dueWindow: "Today, 14:00 UTC",
+      methodState: "Payment link sent",
+      note: "Payment link issued and waiting for the customer to complete checkout.",
+      txHash: "Pending",
+    };
+
+    setPayments((current) => [nextPayment, ...current]);
+    setSelectedPaymentId(nextPayment.id);
+    setActiveFilter("All");
+    setQuery("");
+    setDraft({
+      customerName: "",
+      customerEmail: "",
+      market: "NGN",
+      localAmount: "",
+      usdcAmount: "",
+    });
+    setIsCreatePaymentOpen(false);
+  }
+
   return (
     <>
-      <Card title="Charge ledger" description="Every attempt, with state and settlement context.">
-        <TableHeader columns={["Reference", "Customer", "Local", "USDC", "Status"]} />
-        <TableRow columns={["INV-1042", "Axel Telecom", "₦78,500", "50.00", "Settled"]} tone="brand" />
-        <TableRow columns={["INV-1041", "Mazi Clinic", "GH₵1,180", "74.60", "Pending"]} />
-        <TableRow columns={["INV-1040", "Geno Labs", "KSh9,100", "71.20", "Failed"]} tone="warning" />
-        <TableRow columns={["INV-1039", "Sabi Retail", "ZK5,400", "198.30", "Settled"]} tone="brand" />
-      </Card>
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <PlanMetricCard
+          label="Settled today"
+          value={String(settledCount)}
+          note="Confirmed and cleared"
+          tone="brand"
+        />
+        <PlanMetricCard label="Pending" value={String(pendingCount)} note="Waiting to confirm" />
+        <PlanMetricCard label="Failed" value={String(failedCount)} note="Need intervention" />
+        <PlanMetricCard
+          label="Gross USDC"
+          value={grossUsdc.toLocaleString(undefined, {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })}
+          note="Current view volume"
+        />
+      </div>
 
-      <div className="grid gap-4 xl:grid-cols-[1fr_1fr]">
-        <Card title="Retry queue" description="Highest-value failed charges first.">
-          <TimelineItem title="Geno Labs" body="Retry allowed in 11 hours." tone="warning" />
-          <TimelineItem title="Mazi Clinic" body="Needs payment method update." />
-          <TimelineItem title="Sparrow AI" body="Manual review after limit rejection." />
-        </Card>
-        <DarkCard title="Daily settlement view" description="Where payment operations meet treasury.">
-          <div className="space-y-4">
-            <StatusLine label="Settled" value="186 charges" tone="brand" />
-            <StatusLine label="Pending" value="12 charges" />
-            <StatusLine label="Failed" value="9 charges" tone="warning" />
+      <div className="grid gap-4 xl:grid-cols-[1.18fr_0.82fr]">
+        <Card title="Payments">
+          <div className="flex flex-col gap-3 pb-4 lg:flex-row lg:items-center lg:justify-between">
+            <label className="flex min-w-0 flex-1 items-center gap-3 rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3">
+              <svg
+                aria-hidden="true"
+                viewBox="0 0 20 20"
+                className="h-4 w-4 shrink-0 text-[color:var(--muted)]"
+                fill="none"
+              >
+                <circle cx="9" cy="9" r="4.8" stroke="currentColor" strokeWidth="1.7" />
+                <path d="M12.8 12.8L16 16" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+              </svg>
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search by reference or customer"
+                className="w-full bg-transparent text-sm text-[color:var(--ink)] outline-none placeholder:text-[color:var(--muted)]"
+              />
+            </label>
+
+            <button
+              type="button"
+              onClick={() => setIsCreatePaymentOpen(true)}
+              className="inline-flex items-center justify-center rounded-2xl bg-[#0c4a27] px-4 py-3 text-sm font-semibold tracking-[-0.02em] text-[#d9f6bc]"
+            >
+              Create payment link
+            </button>
           </div>
+
+          <div className="flex flex-wrap gap-2 pb-3">
+            {(["All", "Settled", "Pending", "Failed"] as const).map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => setActiveFilter(tab)}
+                className={cn(
+                  "rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition-all duration-200",
+                  activeFilter === tab
+                    ? "bg-[#0c4a27] text-[#d9f6bc]"
+                    : "border border-[color:var(--line)] bg-white text-[color:var(--muted)] hover:bg-[#f7fbf5]",
+                )}
+              >
+                {tab}
+              </button>
+            ))}
+          </div>
+
+          {filteredPayments.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-[color:var(--line)] bg-white px-5 py-8 text-center text-sm text-[color:var(--muted)]">
+              No payments match this filter.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {filteredPayments.map((payment) => (
+                <PaymentListRow
+                  key={payment.id}
+                  payment={payment}
+                  isSelected={payment.id === selectedPaymentId}
+                  onSelect={() => setSelectedPaymentId(payment.id)}
+                />
+              ))}
+            </div>
+          )}
+        </Card>
+
+        <DarkCard
+          title={selectedPayment ? selectedPayment.reference : "Payment details"}
+          description={
+            selectedPayment ? `${selectedPayment.customerName} • ${selectedPayment.market}` : undefined
+          }
+        >
+          {selectedPayment ? (
+            <div className="space-y-5">
+              <div className="flex flex-wrap items-center gap-2">
+                <PaymentStatusBadge status={selectedPayment.status} dark />
+                <span className="inline-flex items-center rounded-full bg-white/8 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/72">
+                  {selectedPayment.settlementState}
+                </span>
+              </div>
+
+              <p className="text-sm leading-6 text-white/70">{selectedPayment.note}</p>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <ProfileMiniStat label="Local amount" value={selectedPayment.localAmount} />
+                <ProfileMiniStat label="USDC" value={selectedPayment.usdcAmount} />
+                <ProfileMiniStat label="Net" value={selectedPayment.netAmount} />
+                <ProfileMiniStat label="Due window" value={selectedPayment.dueWindow} />
+              </div>
+
+              <div className="rounded-2xl border border-white/10 bg-white/6 p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/46">
+                  Payment context
+                </p>
+                <div className="mt-3 space-y-3">
+                  <div className="flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-white/4 px-4 py-3">
+                    <span className="text-sm text-white/68">Payment method</span>
+                    <span className="text-sm font-semibold text-white">{selectedPayment.methodState}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-white/4 px-4 py-3">
+                    <span className="text-sm text-white/68">Transaction</span>
+                    <span className="text-sm font-semibold text-white">{selectedPayment.txHash}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={advancePaymentState}
+                  className="inline-flex items-center justify-center rounded-2xl border border-white/10 bg-white/6 px-4 py-3 text-sm font-semibold tracking-[-0.02em] text-white transition-all duration-200 hover:bg-white/10"
+                >
+                  {selectedPayment.status === "Failed"
+                    ? "Queue retry"
+                    : selectedPayment.status === "Pending"
+                      ? "Mark settled"
+                      : "Export receipt"}
+                </button>
+                <ProfileActionLink href="/dashboard/customers" label="View customer" />
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-dashed border-white/10 bg-white/6 px-5 py-10 text-center text-sm text-white/66">
+              Select a payment to review settlement and follow-up actions.
+            </div>
+          )}
         </DarkCard>
       </div>
+
+      {isCreatePaymentOpen ? (
+        <CreatePaymentModal
+          draft={draft}
+          onChange={handleDraftChange}
+          onClose={() => setIsCreatePaymentOpen(false)}
+          onSubmit={handleCreatePayment}
+        />
+      ) : null}
     </>
+  );
+}
+
+function PaymentListRow({
+  payment,
+  isSelected,
+  onSelect,
+}: {
+  payment: PaymentRecord;
+  isSelected: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={cn(
+        "w-full rounded-2xl border px-4 py-4 text-left transition-all duration-200",
+        isSelected
+          ? "border-[#0c4a27]/14 bg-[#edf7eb]"
+          : "border-[color:var(--line)] bg-white hover:border-[#0c4a27]/10 hover:bg-[#f7fbf5]",
+      )}
+    >
+      <div className="flex flex-col gap-3 lg:grid lg:grid-cols-[minmax(0,1.1fr)_auto_auto] lg:items-center">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)]">
+            {payment.reference}
+          </p>
+          <p className="mt-1 truncate text-sm text-[color:var(--muted)]">
+            {payment.customerName} • {payment.customerEmail}
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 lg:justify-self-start">
+          <CustomerMetaPill>{payment.market}</CustomerMetaPill>
+          <CustomerMetaPill>{payment.localAmount}</CustomerMetaPill>
+          <CustomerMetaPill>{payment.usdcAmount} USDC</CustomerMetaPill>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 lg:justify-self-end">
+          <span className="text-sm font-semibold text-[color:var(--muted)]">{payment.netAmount} net</span>
+          <PaymentStatusBadge status={payment.status} />
+        </div>
+      </div>
+    </button>
+  );
+}
+
+function PaymentStatusBadge({
+  status,
+  dark = false,
+}: {
+  status: PaymentStatus;
+  dark?: boolean;
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded-full px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em]",
+        status === "Settled"
+          ? dark
+            ? "border border-[#2f5a42] bg-[#d9f6bc]/10 text-[#d9f6bc]"
+            : "border border-[#bfe8cb] bg-[#dff7e6] text-[#0f8a47]"
+          : status === "Pending"
+            ? dark
+              ? "border border-white/12 bg-white/6 text-white/72"
+              : "border border-[#d9e7d6] bg-[#edf7eb] text-[color:var(--brand)]"
+            : dark
+              ? "border border-[#684920] bg-[#f5c98f]/10 text-[#f5c98f]"
+              : "border border-[#f0d0aa] bg-[#fff2e1] text-[#8a4b0f]",
+      )}
+    >
+      {status}
+    </span>
+  );
+}
+
+function CreatePaymentModal({
+  draft,
+  onChange,
+  onClose,
+  onSubmit,
+}: {
+  draft: NewPaymentDraft;
+  onChange: <K extends keyof NewPaymentDraft>(key: K, value: NewPaymentDraft[K]) => void;
+  onClose: () => void;
+  onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#121312]/45 px-4 backdrop-blur-sm">
+      <div className="w-full max-w-2xl rounded-[2rem] border border-[color:var(--line)] bg-white p-5 shadow-[0_24px_90px_rgba(16,32,20,0.16)] sm:p-6">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="font-display text-2xl font-semibold tracking-[-0.05em] text-[color:var(--ink)]">
+              Create payment link
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">
+              Issue a new payment request and track it from billing to settlement.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--line)] bg-[#f8faf7] text-[color:var(--muted)] transition-colors duration-200 hover:text-[color:var(--ink)]"
+            aria-label="Close create payment modal"
+          >
+            <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+              <path d="M5 5l10 10" strokeLinecap="round" />
+              <path d="M15 5L5 15" strokeLinecap="round" />
+            </svg>
+          </button>
+        </div>
+
+        <form className="mt-5 space-y-4" onSubmit={onSubmit}>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <PlanField label="Customer name">
+              <input
+                value={draft.customerName}
+                onChange={(event) => onChange("customerName", event.target.value)}
+                placeholder="Axel Telecom"
+                className="w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm text-[color:var(--ink)] outline-none placeholder:text-[color:var(--muted)]"
+              />
+            </PlanField>
+
+            <PlanField label="Billing email">
+              <input
+                type="email"
+                value={draft.customerEmail}
+                onChange={(event) => onChange("customerEmail", event.target.value)}
+                placeholder="finance@axeltelecom.com"
+                className="w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm text-[color:var(--ink)] outline-none placeholder:text-[color:var(--muted)]"
+              />
+            </PlanField>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-3">
+            <PlanField label="Market">
+              <select
+                value={draft.market}
+                onChange={(event) => onChange("market", event.target.value)}
+                className="w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm text-[color:var(--ink)] outline-none"
+              >
+                {["NGN", "GHS", "KES", "ZMW"].map((market) => (
+                  <option key={market} value={market}>
+                    {market}
+                  </option>
+                ))}
+              </select>
+            </PlanField>
+
+            <PlanField label="Local amount">
+              <input
+                value={draft.localAmount}
+                onChange={(event) => onChange("localAmount", event.target.value)}
+                placeholder="₦78,500"
+                className="w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm text-[color:var(--ink)] outline-none placeholder:text-[color:var(--muted)]"
+              />
+            </PlanField>
+
+            <PlanField label="USDC amount">
+              <input
+                value={draft.usdcAmount}
+                onChange={(event) => onChange("usdcAmount", event.target.value)}
+                placeholder="50.00"
+                className="w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm text-[color:var(--ink)] outline-none placeholder:text-[color:var(--muted)]"
+              />
+            </PlanField>
+          </div>
+
+          <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex items-center justify-center rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm font-semibold tracking-[-0.02em] text-[color:var(--muted)]"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="inline-flex items-center justify-center rounded-2xl bg-[#0c4a27] px-4 py-3 text-sm font-semibold tracking-[-0.02em] text-[#d9f6bc]"
+            >
+              Save payment link
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
   );
 }
 
