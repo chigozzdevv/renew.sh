@@ -2591,23 +2591,516 @@ function CreatePaymentModal({
   );
 }
 
-function TreasurySurface() {
-  return (
-    <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-      <Card title="Settlement batches" description="Recent payout-ready groups.">
-        <TableHeader columns={["Batch", "Gross", "Net", "State"]} />
-        <TableRow columns={["248", "21,440", "18,420", "Confirming"]} />
-        <TableRow columns={["247", "14,180", "12,900", "Settled"]} tone="brand" />
-        <TableRow columns={["246", "8,020", "7,450", "Settled"]} tone="brand" />
-      </Card>
+type TreasuryBatchStatus = "Queued" | "Confirming" | "Settled";
+type TreasuryBatchFilter = "All" | TreasuryBatchStatus;
 
-      <DarkCard title="Wallet destinations" description="Treasury endpoints">
-        <div className="space-y-3">
-          <WalletRow name="Primary settlement" address="0x8A12...61F4" active />
-          <WalletRow name="Reserve wallet" address="0x5C88...A104" />
-          <WalletRow name="Ops float" address="0xF120...90DE" />
+type TreasuryBatchRecord = {
+  id: string;
+  batch: string;
+  gross: string;
+  fees: string;
+  net: string;
+  status: TreasuryBatchStatus;
+  destination: string;
+  createdAt: string;
+  eta: string;
+  txHash: string;
+  note: string;
+};
+
+type NewSweepDraft = {
+  gross: string;
+  destination: string;
+};
+
+const initialTreasuryBatches: TreasuryBatchRecord[] = [
+  {
+    id: "batch-248",
+    batch: "248",
+    gross: "21,440",
+    fees: "2,020",
+    net: "19,420",
+    status: "Confirming",
+    destination: "Primary settlement",
+    createdAt: "Today, 10:18 UTC",
+    eta: "6 mins",
+    txHash: "0x8a12...61f4",
+    note: "Current sweep is in confirmation and should land in the primary treasury wallet shortly.",
+  },
+  {
+    id: "batch-247",
+    batch: "247",
+    gross: "14,180",
+    fees: "1,280",
+    net: "12,900",
+    status: "Settled",
+    destination: "Primary settlement",
+    createdAt: "Today, 08:42 UTC",
+    eta: "Cleared",
+    txHash: "0x5c88...a104",
+    note: "This batch has cleared and is ready for reconciliation export.",
+  },
+  {
+    id: "batch-246",
+    batch: "246",
+    gross: "8,020",
+    fees: "570",
+    net: "7,450",
+    status: "Settled",
+    destination: "Reserve wallet",
+    createdAt: "Yesterday, 17:04 UTC",
+    eta: "Cleared",
+    txHash: "0xf120...90de",
+    note: "Reserve allocation completed successfully and is available for treasury review.",
+  },
+  {
+    id: "batch-249",
+    batch: "249",
+    gross: "6,880",
+    fees: "520",
+    net: "6,360",
+    status: "Queued",
+    destination: "Ops float",
+    createdAt: "Today, 12:10 UTC",
+    eta: "Ready to sweep",
+    txHash: "Pending",
+    note: "This queue is waiting for the next treasury sweep to be initiated.",
+  },
+];
+
+function TreasurySurface() {
+  const [batches, setBatches] = useState<TreasuryBatchRecord[]>(initialTreasuryBatches);
+  const [activeFilter, setActiveFilter] = useState<TreasuryBatchFilter>("All");
+  const [query, setQuery] = useState("");
+  const [selectedBatchId, setSelectedBatchId] = useState(initialTreasuryBatches[0].id);
+  const [isCreateSweepOpen, setIsCreateSweepOpen] = useState(false);
+  const [draft, setDraft] = useState<NewSweepDraft>({
+    gross: "",
+    destination: "Primary settlement",
+  });
+
+  const filteredBatches = batches.filter((batch) => {
+    const matchesFilter = activeFilter === "All" ? true : batch.status === activeFilter;
+    const normalizedQuery = query.trim().toLowerCase();
+    const matchesQuery =
+      normalizedQuery.length === 0
+        ? true
+        : [batch.batch, batch.destination, batch.txHash].join(" ").toLowerCase().includes(normalizedQuery);
+
+    return matchesFilter && matchesQuery;
+  });
+
+  useEffect(() => {
+    if (filteredBatches.length === 0) {
+      return;
+    }
+
+    const currentStillVisible = filteredBatches.some((batch) => batch.id === selectedBatchId);
+
+    if (!currentStillVisible) {
+      setSelectedBatchId(filteredBatches[0].id);
+    }
+  }, [activeFilter, filteredBatches, query, selectedBatchId]);
+
+  const selectedBatch =
+    filteredBatches.find((batch) => batch.id === selectedBatchId) ?? filteredBatches[0] ?? null;
+
+  const queuedCount = batches.filter((batch) => batch.status === "Queued").length;
+  const confirmingCount = batches.filter((batch) => batch.status === "Confirming").length;
+  const settledCount = batches.filter((batch) => batch.status === "Settled").length;
+  const readyNet = batches
+    .filter((batch) => batch.status !== "Settled")
+    .reduce((total, batch) => total + Number(batch.net), 0);
+
+  function updateSelectedBatch(updater: (batch: TreasuryBatchRecord) => TreasuryBatchRecord) {
+    if (!selectedBatch) {
+      return;
+    }
+
+    setBatches((current) =>
+      current.map((batch) => (batch.id === selectedBatch.id ? updater(batch) : batch)),
+    );
+  }
+
+  function advanceBatchState() {
+    if (!selectedBatch) {
+      return;
+    }
+
+    if (selectedBatch.status === "Queued") {
+      updateSelectedBatch((batch) => ({
+        ...batch,
+        status: "Confirming",
+        eta: "8 mins",
+        txHash: "0xnew8...72af",
+        note: "Sweep started and the batch is now waiting for onchain confirmation.",
+      }));
+      return;
+    }
+
+    if (selectedBatch.status === "Confirming") {
+      updateSelectedBatch((batch) => ({
+        ...batch,
+        status: "Settled",
+        eta: "Cleared",
+        note: "Settlement has cleared and this batch is ready for reconciliation export.",
+      }));
+      return;
+    }
+
+    updateSelectedBatch((batch) => ({
+      ...batch,
+      note: "Settlement export requested for the finance team.",
+    }));
+  }
+
+  function handleDraftChange<K extends keyof NewSweepDraft>(key: K, value: NewSweepDraft[K]) {
+    setDraft((current) => ({
+      ...current,
+      [key]: value,
+    }));
+  }
+
+  function handleCreateSweep(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const gross = draft.gross.trim();
+
+    if (!gross) {
+      return;
+    }
+
+    const nextBatchNumber = 250 + batches.length;
+    const nextBatch: TreasuryBatchRecord = {
+      id: `batch-${nextBatchNumber}-${Date.now()}`,
+      batch: String(nextBatchNumber),
+      gross,
+      fees: "0.00",
+      net: gross,
+      status: "Queued",
+      destination: draft.destination,
+      createdAt: "Now",
+      eta: "Ready to sweep",
+      txHash: "Pending",
+      note: "A new treasury sweep has been queued and is waiting for confirmation to begin.",
+    };
+
+    setBatches((current) => [nextBatch, ...current]);
+    setSelectedBatchId(nextBatch.id);
+    setActiveFilter("All");
+    setQuery("");
+    setDraft({
+      gross: "",
+      destination: "Primary settlement",
+    });
+    setIsCreateSweepOpen(false);
+  }
+
+  return (
+    <>
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <PlanMetricCard label="Queued" value={String(queuedCount)} note="Ready to sweep" tone="brand" />
+        <PlanMetricCard label="Confirming" value={String(confirmingCount)} note="Onchain now" />
+        <PlanMetricCard label="Settled" value={String(settledCount)} note="Cleared today" />
+        <PlanMetricCard
+          label="Ready net"
+          value={readyNet.toLocaleString(undefined, {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })}
+          note="Pending treasury value"
+        />
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-[1.16fr_0.84fr]">
+        <Card title="Treasury batches">
+          <div className="flex flex-col gap-3 pb-4 lg:flex-row lg:items-center lg:justify-between">
+            <label className="flex min-w-0 flex-1 items-center gap-3 rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3">
+              <svg
+                aria-hidden="true"
+                viewBox="0 0 20 20"
+                className="h-4 w-4 shrink-0 text-[color:var(--muted)]"
+                fill="none"
+              >
+                <circle cx="9" cy="9" r="4.8" stroke="currentColor" strokeWidth="1.7" />
+                <path d="M12.8 12.8L16 16" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+              </svg>
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search by batch or destination"
+                className="w-full bg-transparent text-sm text-[color:var(--ink)] outline-none placeholder:text-[color:var(--muted)]"
+              />
+            </label>
+
+            <button
+              type="button"
+              onClick={() => setIsCreateSweepOpen(true)}
+              className="inline-flex items-center justify-center rounded-2xl bg-[#0c4a27] px-4 py-3 text-sm font-semibold tracking-[-0.02em] text-[#d9f6bc]"
+            >
+              Create sweep
+            </button>
+          </div>
+
+          <div className="flex flex-wrap gap-2 pb-3">
+            {(["All", "Queued", "Confirming", "Settled"] as const).map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => setActiveFilter(tab)}
+                className={cn(
+                  "rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition-all duration-200",
+                  activeFilter === tab
+                    ? "bg-[#0c4a27] text-[#d9f6bc]"
+                    : "border border-[color:var(--line)] bg-white text-[color:var(--muted)] hover:bg-[#f7fbf5]",
+                )}
+              >
+                {tab}
+              </button>
+            ))}
+          </div>
+
+          {filteredBatches.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-[color:var(--line)] bg-white px-5 py-8 text-center text-sm text-[color:var(--muted)]">
+              No treasury batches match this filter.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {filteredBatches.map((batch) => (
+                <TreasuryBatchRow
+                  key={batch.id}
+                  batch={batch}
+                  isSelected={batch.id === selectedBatchId}
+                  onSelect={() => setSelectedBatchId(batch.id)}
+                />
+              ))}
+            </div>
+          )}
+        </Card>
+
+        <DarkCard
+          title={selectedBatch ? `Batch ${selectedBatch.batch}` : "Batch details"}
+          description={selectedBatch ? selectedBatch.destination : undefined}
+        >
+          {selectedBatch ? (
+            <div className="space-y-5">
+              <div className="flex flex-wrap items-center gap-2">
+                <TreasuryStatusBadge status={selectedBatch.status} dark />
+                <span className="inline-flex items-center rounded-full bg-white/8 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/72">
+                  {selectedBatch.createdAt}
+                </span>
+              </div>
+
+              <p className="text-sm leading-6 text-white/70">{selectedBatch.note}</p>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <ProfileMiniStat label="Gross" value={`${selectedBatch.gross} USDC`} />
+                <ProfileMiniStat label="Fees" value={`${selectedBatch.fees} USDC`} />
+                <ProfileMiniStat label="Net" value={`${selectedBatch.net} USDC`} />
+                <ProfileMiniStat label="ETA" value={selectedBatch.eta} />
+              </div>
+
+              <div className="rounded-2xl border border-white/10 bg-white/6 p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/46">
+                  Settlement route
+                </p>
+                <div className="mt-3 space-y-3">
+                  <div className="flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-white/4 px-4 py-3">
+                    <span className="text-sm text-white/68">Destination</span>
+                    <span className="text-sm font-semibold text-white">{selectedBatch.destination}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-white/4 px-4 py-3">
+                    <span className="text-sm text-white/68">Transaction</span>
+                    <span className="text-sm font-semibold text-white">{selectedBatch.txHash}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={advanceBatchState}
+                  className="inline-flex items-center justify-center rounded-2xl border border-white/10 bg-white/6 px-4 py-3 text-sm font-semibold tracking-[-0.02em] text-white transition-all duration-200 hover:bg-white/10"
+                >
+                  {selectedBatch.status === "Queued"
+                    ? "Start confirmation"
+                    : selectedBatch.status === "Confirming"
+                      ? "Mark settled"
+                      : "Export settlement"}
+                </button>
+                <ProfileActionLink href="/dashboard/payments" label="View payments" />
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-dashed border-white/10 bg-white/6 px-5 py-10 text-center text-sm text-white/66">
+              Select a batch to review settlement routing and treasury state.
+            </div>
+          )}
+        </DarkCard>
+      </div>
+
+      {isCreateSweepOpen ? (
+        <CreateSweepModal
+          draft={draft}
+          onChange={handleDraftChange}
+          onClose={() => setIsCreateSweepOpen(false)}
+          onSubmit={handleCreateSweep}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function TreasuryBatchRow({
+  batch,
+  isSelected,
+  onSelect,
+}: {
+  batch: TreasuryBatchRecord;
+  isSelected: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={cn(
+        "w-full rounded-2xl border px-4 py-4 text-left transition-all duration-200",
+        isSelected
+          ? "border-[#0c4a27]/14 bg-[#edf7eb]"
+          : "border-[color:var(--line)] bg-white hover:border-[#0c4a27]/10 hover:bg-[#f7fbf5]",
+      )}
+    >
+      <div className="flex flex-col gap-3 lg:grid lg:grid-cols-[minmax(0,1fr)_auto_auto] lg:items-center">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)]">
+            Batch {batch.batch}
+          </p>
+          <p className="mt-1 truncate text-sm text-[color:var(--muted)]">
+            {batch.destination} • {batch.createdAt}
+          </p>
         </div>
-      </DarkCard>
+
+        <div className="flex flex-wrap items-center gap-2 lg:justify-self-start">
+          <CustomerMetaPill>{batch.gross} gross</CustomerMetaPill>
+          <CustomerMetaPill>{batch.net} net</CustomerMetaPill>
+          <CustomerMetaPill>{batch.eta}</CustomerMetaPill>
+        </div>
+
+        <div className="flex justify-start lg:justify-self-end">
+          <TreasuryStatusBadge status={batch.status} />
+        </div>
+      </div>
+    </button>
+  );
+}
+
+function TreasuryStatusBadge({
+  status,
+  dark = false,
+}: {
+  status: TreasuryBatchStatus;
+  dark?: boolean;
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded-full px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em]",
+        status === "Settled"
+          ? dark
+            ? "border border-[#2f5a42] bg-[#d9f6bc]/10 text-[#d9f6bc]"
+            : "border border-[#bfe8cb] bg-[#dff7e6] text-[#0f8a47]"
+          : status === "Confirming"
+            ? dark
+              ? "border border-white/12 bg-white/6 text-white/72"
+              : "border border-[#d9e7d6] bg-[#edf7eb] text-[color:var(--brand)]"
+            : dark
+              ? "border border-[#684920] bg-[#f5c98f]/10 text-[#f5c98f]"
+              : "border border-[#f0d0aa] bg-[#fff2e1] text-[#8a4b0f]",
+      )}
+    >
+      {status}
+    </span>
+  );
+}
+
+function CreateSweepModal({
+  draft,
+  onChange,
+  onClose,
+  onSubmit,
+}: {
+  draft: NewSweepDraft;
+  onChange: <K extends keyof NewSweepDraft>(key: K, value: NewSweepDraft[K]) => void;
+  onClose: () => void;
+  onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#121312]/45 px-4 backdrop-blur-sm">
+      <div className="w-full max-w-xl rounded-[2rem] border border-[color:var(--line)] bg-white p-5 shadow-[0_24px_90px_rgba(16,32,20,0.16)] sm:p-6">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="font-display text-2xl font-semibold tracking-[-0.05em] text-[color:var(--ink)]">
+              Create sweep
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">
+              Queue the next treasury sweep and assign its destination wallet.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--line)] bg-[#f8faf7] text-[color:var(--muted)] transition-colors duration-200 hover:text-[color:var(--ink)]"
+            aria-label="Close create sweep modal"
+          >
+            <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+              <path d="M5 5l10 10" strokeLinecap="round" />
+              <path d="M15 5L5 15" strokeLinecap="round" />
+            </svg>
+          </button>
+        </div>
+
+        <form className="mt-5 space-y-4" onSubmit={onSubmit}>
+          <PlanField label="Gross amount">
+            <input
+              value={draft.gross}
+              onChange={(event) => onChange("gross", event.target.value)}
+              placeholder="6,360"
+              className="w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm text-[color:var(--ink)] outline-none placeholder:text-[color:var(--muted)]"
+            />
+          </PlanField>
+
+          <PlanField label="Destination wallet">
+            <select
+              value={draft.destination}
+              onChange={(event) => onChange("destination", event.target.value)}
+              className="w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm text-[color:var(--ink)] outline-none"
+            >
+              {["Primary settlement", "Reserve wallet", "Ops float"].map((destination) => (
+                <option key={destination} value={destination}>
+                  {destination}
+                </option>
+              ))}
+            </select>
+          </PlanField>
+
+          <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex items-center justify-center rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm font-semibold tracking-[-0.02em] text-[color:var(--muted)]"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="inline-flex items-center justify-center rounded-2xl bg-[#0c4a27] px-4 py-3 text-sm font-semibold tracking-[-0.02em] text-[#d9f6bc]"
+            >
+              Save sweep
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
