@@ -1,0 +1,246 @@
+import type { DashboardNavItem, DashboardPageContent, DashboardRouteKey } from "@/types/dashboard";
+
+export const dashboardNav: DashboardNavItem[] = [
+  { key: "overview", label: "Overview", href: "/dashboard", icon: "home" },
+  { key: "customers", label: "Customers", href: "/dashboard/customers", icon: "users" },
+  { key: "plans", label: "Plans", href: "/dashboard/plans", icon: "stack" },
+  {
+    key: "subscriptions",
+    label: "Subscriptions",
+    href: "/dashboard/subscriptions",
+    icon: "refresh",
+  },
+  { key: "payments", label: "Payments", href: "/dashboard/payments", icon: "card" },
+  { key: "treasury", label: "Treasury", href: "/dashboard/treasury", icon: "vault" },
+  { key: "teams", label: "Teams", href: "/dashboard/teams", icon: "team" },
+  { key: "developers", label: "Developers", href: "/dashboard/developers", icon: "code" },
+  { key: "settings", label: "Settings", href: "/dashboard/settings", icon: "gear" },
+];
+
+export const dashboardPages: Record<DashboardRouteKey, DashboardPageContent> = {
+  overview: {
+    key: "overview",
+    title: "Overview",
+    description: "Monitor collections, renewals, and settlement from one operator view.",
+    actions: ["Review renewals", "Open treasury"],
+    stats: [
+      {
+        label: "Active subscriptions",
+        value: "1,284",
+        note: "Across 20 markets",
+        tone: "brand",
+      },
+      {
+        label: "Successful collections",
+        value: "96.8%",
+        note: "Last 30 days",
+      },
+      {
+        label: "Failed renewals",
+        value: "34",
+        note: "Need action",
+      },
+      {
+        label: "Pending settlement",
+        value: "18,420 USDC",
+        note: "Awaiting sweep",
+      },
+    ],
+  },
+  customers: {
+    key: "customers",
+    title: "Customers",
+    description: "View accounts, payment health, and market coverage in one list.",
+    actions: ["Add customer", "Import list"],
+    stats: [
+      {
+        label: "Total customers",
+        value: "842",
+        note: "Active records",
+        tone: "brand",
+      },
+      {
+        label: "Markets",
+        value: "20",
+        note: "Live coverage",
+      },
+      {
+        label: "At-risk accounts",
+        value: "16",
+        note: "Need follow-up",
+      },
+    ],
+  },
+  plans: {
+    key: "plans",
+    title: "Plans",
+    description: "Define pricing, intervals, trials, and retry logic without leaving operations.",
+    actions: ["New plan", "Duplicate plan"],
+    stats: [
+      {
+        label: "Live plans",
+        value: "18",
+        note: "Currently active",
+        tone: "brand",
+      },
+      {
+        label: "Metered plans",
+        value: "4",
+        note: "Usage enabled",
+      },
+      {
+        label: "Trials",
+        value: "6",
+        note: "Deferred start",
+      },
+    ],
+  },
+  subscriptions: {
+    key: "subscriptions",
+    title: "Subscriptions",
+    description: "Track every recurring agreement from setup through retry, pause, and renewal.",
+    actions: ["Create subscription", "Pause renewal"],
+    stats: [
+      {
+        label: "Active subscriptions",
+        value: "1,284",
+        note: "Currently renewing",
+        tone: "brand",
+      },
+      {
+        label: "Past due",
+        value: "51",
+        note: "Awaiting retry",
+      },
+      {
+        label: "Paused",
+        value: "23",
+        note: "Held manually",
+      },
+    ],
+  },
+  payments: {
+    key: "payments",
+    title: "Payments",
+    description: "Operate the charge ledger with clear statuses, retries, and export-ready rows.",
+    actions: ["Retry charge", "Export ledger"],
+    stats: [
+      {
+        label: "Successful today",
+        value: "186",
+        note: "Charges cleared",
+        tone: "brand",
+      },
+      {
+        label: "Pending reconciliation",
+        value: "12",
+        note: "Waiting on final state",
+      },
+      {
+        label: "Failed attempts",
+        value: "9",
+        note: "Require intervention",
+      },
+    ],
+  },
+  treasury: {
+    key: "treasury",
+    title: "Treasury",
+    description: "Watch batches, wallet destinations, and settlement health from one treasury surface.",
+    actions: ["Review batches", "Manage wallets"],
+    stats: [
+      {
+        label: "Pending batches",
+        value: "7",
+        note: "Awaiting sweep",
+        tone: "brand",
+      },
+      {
+        label: "Pending USDC",
+        value: "18,420",
+        note: "Ready to settle",
+      },
+      {
+        label: "Wallets",
+        value: "3",
+        note: "Active endpoints",
+      },
+    ],
+  },
+  teams: {
+    key: "teams",
+    title: "Teams",
+    description: "Manage workspace access, roles, and billing-critical team actions.",
+    actions: ["Invite member", "Manage roles"],
+    stats: [
+      {
+        label: "Team members",
+        value: "14",
+        note: "Across all roles",
+        tone: "brand",
+      },
+      {
+        label: "Admins",
+        value: "3",
+        note: "Full access",
+      },
+      {
+        label: "Pending invites",
+        value: "2",
+        note: "Awaiting acceptance",
+      },
+    ],
+  },
+  developers: {
+    key: "developers",
+    title: "Developers",
+    description: "Keep API keys, webhooks, and event delivery visible while teams integrate.",
+    actions: ["Create API key", "Add webhook"],
+    stats: [
+      {
+        label: "Live API keys",
+        value: "4",
+        note: "Production credentials",
+        tone: "brand",
+      },
+      {
+        label: "Webhook endpoints",
+        value: "3",
+        note: "Active endpoints",
+      },
+      {
+        label: "Daily events",
+        value: "12.8k",
+        note: "Average volume",
+      },
+    ],
+  },
+  settings: {
+    key: "settings",
+    title: "Settings",
+    description: "Configure workspace identity, settlement defaults, and access-sensitive controls.",
+    actions: ["Update profile", "Review security"],
+    stats: [
+      {
+        label: "Payout wallets",
+        value: "2",
+        note: "Ready for payout",
+        tone: "brand",
+      },
+      {
+        label: "Enabled markets",
+        value: "20",
+        note: "Billing supported",
+      },
+      {
+        label: "Branding",
+        value: "1",
+        note: "Active theme",
+      },
+    ],
+  },
+};
+
+export function getDashboardPage(key: DashboardRouteKey) {
+  return dashboardPages[key];
+}
