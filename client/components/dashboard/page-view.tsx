@@ -1,3 +1,8 @@
+"use client";
+
+import Link from "next/link";
+import { useEffect, useState } from "react";
+
 import type { DashboardPageContent } from "@/types/dashboard";
 
 import { cn } from "@/lib/utils";
@@ -7,6 +12,14 @@ type DashboardPageViewProps = {
 };
 
 export function DashboardPageView({ page }: DashboardPageViewProps) {
+  if (page.key === "customers" || page.key === "plans") {
+    return (
+      <section className="space-y-6">
+        {page.key === "customers" ? <CustomersSurface /> : <PlansSurface />}
+      </section>
+    );
+  }
+
   return (
     <section className="space-y-6">
       <MetricRow stats={page.stats} />
@@ -134,19 +147,18 @@ function OverviewSurface() {
           <div className="space-y-3">
             <RenewalCheckpoint
               time="Tomorrow, 09:00 UTC"
-              title="NGN core run"
-              metric="184 queued"
-              tone="brand"
+              title="Core Plan"
+              metric="184 due"
             />
             <RenewalCheckpoint
               time="Tomorrow, 12:00 UTC"
-              title="Meter approvals"
+              title="Usage Flex"
               metric="3 pending"
             />
             <RenewalCheckpoint
               time="Friday, 08:00 UTC"
-              title="KES annual cycle"
-              metric="Large run"
+              title="Scale Annual"
+              metric="27 due"
             />
           </div>
         </Card>
@@ -221,9 +233,7 @@ function RenewalCheckpoint({
           >
             {time}
           </p>
-          <p className="text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)]">
-            {title}
-          </p>
+          <p className="text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)]">{title}</p>
         </div>
         <span
           className={cn(
@@ -313,95 +323,1031 @@ function QuickActionIcon({
   );
 }
 
-function CustomersSurface() {
-  return (
-    <div className="grid gap-4 xl:grid-cols-[1.45fr_0.95fr]">
-      <Card title="Customer directory" description="Billing health and region stay visible in one list.">
-        <div className="flex flex-wrap gap-2 pb-4">
-          {["All", "At risk", "Active", "Paused"].map((tab, index) => (
-            <button
-              key={tab}
-              type="button"
-              className={cn(
-                "rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em]",
-                index === 0
-                  ? "bg-[#0c4a27] text-[#d9f6bc]"
-                  : "border border-[color:var(--line)] bg-white text-[color:var(--muted)]",
-              )}
-            >
-              {tab}
-            </button>
-          ))}
-        </div>
-        <TableHeader columns={["Customer", "Market", "Subscriptions", "Status"]} />
-        <TableRow columns={["Axel Telecom", "NGN", "4 active", "Healthy"]} tone="brand" />
-        <TableRow columns={["Mazi Clinic", "GHS", "2 active", "At risk"]} tone="warning" />
-        <TableRow columns={["Geno Labs", "KES", "1 paused", "Paused"]} />
-        <TableRow columns={["Sabi Retail", "ZMW", "5 active", "Healthy"]} />
-      </Card>
+type CustomerFilter = "All" | "At risk" | "Active" | "Paused";
 
-      <DarkCard title="Selected profile" description="Mazi Clinic">
-        <div className="space-y-4">
-          <StatusLine label="Last successful charge" value="Jun 04" />
-          <StatusLine label="Next renewal" value="Jun 11" />
-          <StatusLine label="Risk state" value="Needs card update" tone="warning" />
-          <div className="rounded-2xl bg-white/6 p-4 text-sm leading-7 text-white/76">
-            One payment method update is required before the next renewal cycle. Support can
-            resend the billing link directly from this profile.
+type CustomerRecord = {
+  id: string;
+  name: string;
+  email: string;
+  market: string;
+  lifecycle: "Active" | "At risk" | "Paused";
+  plans: string[];
+  nextRenewal: string;
+  lastCharge: string;
+  paymentMethod: string;
+  paymentMethodTone: "brand" | "warning";
+};
+
+type NewCustomerDraft = {
+  name: string;
+  email: string;
+  market: string;
+  plan: string;
+};
+
+const customerRecords: CustomerRecord[] = [
+  {
+    id: "axel-telecom",
+    name: "Axel Telecom",
+    email: "finance@axeltelecom.com",
+    market: "NGN",
+    lifecycle: "Active",
+    plans: ["Core Plan", "Usage Flex"],
+    nextRenewal: "Tomorrow",
+    lastCharge: "Jun 05",
+    paymentMethod: "Ready",
+    paymentMethodTone: "brand",
+  },
+  {
+    id: "mazi-clinic",
+    name: "Mazi Clinic",
+    email: "ops@maziclinic.com",
+    market: "GHS",
+    lifecycle: "At risk",
+    plans: ["Core Plan", "Usage Flex"],
+    nextRenewal: "Jun 11",
+    lastCharge: "Jun 04",
+    paymentMethod: "Update needed",
+    paymentMethodTone: "warning",
+  },
+  {
+    id: "geno-labs",
+    name: "Geno Labs",
+    email: "billing@genolabs.io",
+    market: "KES",
+    lifecycle: "Paused",
+    plans: ["Scale Annual"],
+    nextRenewal: "Paused",
+    lastCharge: "May 29",
+    paymentMethod: "On hold",
+    paymentMethodTone: "warning",
+  },
+  {
+    id: "sabi-retail",
+    name: "Sabi Retail",
+    email: "accounts@sabiretail.africa",
+    market: "ZMW",
+    lifecycle: "Active",
+    plans: ["Core Plan", "Scale Annual"],
+    nextRenewal: "Jun 13",
+    lastCharge: "Jun 03",
+    paymentMethod: "Ready",
+    paymentMethodTone: "brand",
+  },
+];
+
+function CustomersSurface() {
+  const [customers, setCustomers] = useState<CustomerRecord[]>(customerRecords);
+  const [activeFilter, setActiveFilter] = useState<CustomerFilter>("All");
+  const [query, setQuery] = useState("");
+  const [selectedCustomerId, setSelectedCustomerId] = useState("mazi-clinic");
+  const [isAddCustomerOpen, setIsAddCustomerOpen] = useState(false);
+  const [draft, setDraft] = useState<NewCustomerDraft>({
+    name: "",
+    email: "",
+    market: "NGN",
+    plan: "Core Plan",
+  });
+
+  const filteredCustomers = customers.filter((customer) => {
+    const matchesFilter =
+      activeFilter === "All"
+        ? true
+        : activeFilter === "Active"
+          ? customer.lifecycle === "Active"
+          : activeFilter === "Paused"
+            ? customer.lifecycle === "Paused"
+            : customer.lifecycle === "At risk";
+
+    const normalizedQuery = query.trim().toLowerCase();
+
+    const matchesQuery =
+      normalizedQuery.length === 0
+        ? true
+        : [customer.name, customer.email, customer.market, ...customer.plans]
+            .join(" ")
+            .toLowerCase()
+            .includes(normalizedQuery);
+
+    return matchesFilter && matchesQuery;
+  });
+
+  useEffect(() => {
+    if (filteredCustomers.length === 0) {
+      return;
+    }
+
+    const currentStillVisible = filteredCustomers.some((customer) => customer.id === selectedCustomerId);
+
+    if (!currentStillVisible) {
+      setSelectedCustomerId(filteredCustomers[0].id);
+    }
+  }, [activeFilter, query, selectedCustomerId, filteredCustomers]);
+
+  const selectedCustomer =
+    filteredCustomers.find((customer) => customer.id === selectedCustomerId) ??
+    (filteredCustomers.length > 0 ? filteredCustomers[0] : null);
+
+  const activeCustomers = customers.filter((customer) => customer.lifecycle !== "Paused").length;
+  const liveMarkets = new Set(customers.map((customer) => customer.market)).size;
+  const attentionCount = customers.filter((customer) => customer.lifecycle === "At risk").length;
+  const unassignedCount = customers.filter((customer) => customer.plans.length === 0).length;
+
+  const attentionSummary = selectedCustomer
+    ? selectedCustomer.paymentMethodTone === "warning"
+      ? selectedCustomer.lifecycle === "Paused"
+        ? "Billing is paused until the payment method is updated."
+        : "Auto reminders and retries are already running."
+        : "Billing is healthy and following the active plan rules."
+    : null;
+
+  function handleDraftChange<K extends keyof NewCustomerDraft>(key: K, value: NewCustomerDraft[K]) {
+    setDraft((current) => ({
+      ...current,
+      [key]: value,
+    }));
+  }
+
+  function handleAddCustomer(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const name = draft.name.trim();
+    const email = draft.email.trim();
+
+    if (!name || !email) {
+      return;
+    }
+
+    const nextCustomer: CustomerRecord = {
+      id: `${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Date.now()}`,
+      name,
+      email,
+      market: draft.market,
+      lifecycle: "Active",
+      plans: draft.plan ? [draft.plan] : [],
+      nextRenewal: "Not scheduled",
+      lastCharge: "No charges",
+      paymentMethod: "Awaiting setup",
+      paymentMethodTone: "warning",
+    };
+
+    setCustomers((current) => [nextCustomer, ...current]);
+    setSelectedCustomerId(nextCustomer.id);
+    setActiveFilter("All");
+    setQuery("");
+    setDraft({
+      name: "",
+      email: "",
+      market: "NGN",
+      plan: "Core Plan",
+    });
+    setIsAddCustomerOpen(false);
+  }
+
+  return (
+    <>
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <CustomerMetricCard label="Billable customers" value={String(activeCustomers)} note="Ready to charge" tone="brand" />
+        <CustomerMetricCard label="Live markets" value={String(liveMarkets)} note="Billing coverage" />
+        <CustomerMetricCard label="Need attention" value={String(attentionCount)} note="Follow-up needed" />
+        <CustomerMetricCard label="Need setup" value={String(unassignedCount)} note="No plan attached" />
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-[1.45fr_0.95fr]">
+        <Card title="Customers">
+          <div className="flex flex-col gap-3 pb-4 lg:flex-row lg:items-center lg:justify-between">
+            <label className="flex min-w-0 flex-1 items-center gap-3 rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3">
+              <svg
+                aria-hidden="true"
+                viewBox="0 0 20 20"
+                className="h-4 w-4 shrink-0 text-[color:var(--muted)]"
+                fill="none"
+              >
+                <circle cx="9" cy="9" r="4.8" stroke="currentColor" strokeWidth="1.7" />
+                <path
+                  d="M12.8 12.8L16 16"
+                  stroke="currentColor"
+                  strokeWidth="1.7"
+                  strokeLinecap="round"
+                />
+              </svg>
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search by customer, email, or plan"
+                className="w-full bg-transparent text-sm text-[color:var(--ink)] outline-none placeholder:text-[color:var(--muted)]"
+              />
+            </label>
+            <button
+              type="button"
+              onClick={() => setIsAddCustomerOpen(true)}
+              className="inline-flex items-center justify-center rounded-2xl bg-[#0c4a27] px-4 py-3 text-sm font-semibold tracking-[-0.02em] text-[#d9f6bc]"
+            >
+              Add customer
+            </button>
           </div>
-        </div>
-      </DarkCard>
+
+          <div className="flex flex-wrap gap-2 pb-3">
+            {(["All", "At risk", "Active", "Paused"] as const).map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => setActiveFilter(tab)}
+                className={cn(
+                  "rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition-all duration-200",
+                  activeFilter === tab
+                    ? "bg-[#0c4a27] text-[#d9f6bc]"
+                    : "border border-[color:var(--line)] bg-white text-[color:var(--muted)] hover:bg-[#f7fbf5]",
+                )}
+              >
+                {tab}
+              </button>
+            ))}
+          </div>
+
+          {filteredCustomers.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-[color:var(--line)] bg-white px-5 py-8 text-center text-sm text-[color:var(--muted)]">
+              No customers match this filter.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {filteredCustomers.map((customer) => (
+                <CustomerListRow
+                  key={customer.id}
+                  customer={customer}
+                  isSelected={customer.id === selectedCustomerId}
+                  onSelect={() => setSelectedCustomerId(customer.id)}
+                />
+              ))}
+            </div>
+          )}
+        </Card>
+
+        <DarkCard
+          title={selectedCustomer ? selectedCustomer.name : "Customer details"}
+          description={selectedCustomer?.email}
+        >
+          {selectedCustomer ? (
+            <div className="space-y-5">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center rounded-full bg-white/8 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#d9f6bc]">
+                  {selectedCustomer.market}
+                </span>
+                <span
+                  className={cn(
+                    "inline-flex items-center rounded-full px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em]",
+                    selectedCustomer.lifecycle === "At risk"
+                      ? "bg-[#8a4b0f]/18 text-[#f6c887]"
+                      : selectedCustomer.lifecycle === "Paused"
+                        ? "bg-white/8 text-white/62"
+                        : "bg-[#133726] text-[#7fe8ae]",
+                  )}
+                >
+                  {selectedCustomer.lifecycle}
+                </span>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-3">
+                <ProfileMiniStat label="Plans" value={String(selectedCustomer.plans.length)} />
+                <ProfileMiniStat label="Next renewal" value={selectedCustomer.nextRenewal} />
+                <ProfileMiniStat label="Last charge" value={selectedCustomer.lastCharge} />
+              </div>
+
+              <div className="rounded-2xl border border-white/10 bg-white/6 p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/46">
+                  Payment method
+                </p>
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                  <p
+                    className={cn(
+                      "text-sm font-semibold tracking-[-0.02em]",
+                      selectedCustomer.paymentMethodTone === "warning"
+                        ? "text-[#f6c887]"
+                        : "text-[#d9f6bc]",
+                    )}
+                  >
+                    {selectedCustomer.paymentMethod}
+                  </p>
+                  <span
+                    className={cn(
+                      "inline-flex items-center rounded-full px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em]",
+                      selectedCustomer.lifecycle === "At risk"
+                        ? "bg-[#8a4b0f]/18 text-[#f6c887]"
+                        : selectedCustomer.lifecycle === "Paused"
+                          ? "bg-white/8 text-white/62"
+                          : "bg-[#133726] text-[#7fe8ae]",
+                    )}
+                  >
+                    {selectedCustomer.lifecycle}
+                  </span>
+                </div>
+                {attentionSummary ? (
+                  <p className="mt-3 text-sm leading-6 text-white/62">{attentionSummary}</p>
+                ) : null}
+              </div>
+
+              <div className="rounded-2xl border border-white/10 bg-white/6 p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/46">
+                  Plans
+                </p>
+                {selectedCustomer.plans.length > 0 ? (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {selectedCustomer.plans.map((plan) => (
+                      <span
+                        key={plan}
+                        className="inline-flex items-center rounded-full border border-white/10 bg-white/6 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-white"
+                      >
+                        {plan}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-3 text-sm leading-6 text-white/62">No plans attached yet.</p>
+                )}
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <ProfileActionLink href="/dashboard/subscriptions" label="View subscriptions" />
+                <ProfileActionLink href="/dashboard/payments" label="View payment history" />
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-dashed border-white/10 bg-white/6 px-5 py-10 text-center text-sm text-white/66">
+              Pick a customer from the list to review billing state and actions.
+            </div>
+          )}
+        </DarkCard>
+      </div>
+
+      {isAddCustomerOpen ? (
+        <CustomerModal
+          draft={draft}
+          onChange={handleDraftChange}
+          onClose={() => setIsAddCustomerOpen(false)}
+          onSubmit={handleAddCustomer}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function CustomerMetricCard({
+  label,
+  value,
+  note,
+  tone = "neutral",
+}: {
+  label: string;
+  value: string;
+  note: string;
+  tone?: "brand" | "neutral";
+}) {
+  return (
+    <div
+      className={cn(
+        "rounded-[1.6rem] border p-4",
+        tone === "brand"
+          ? "border-[#0c4a27]/10 bg-[#0c4a27] text-[#d9f6bc]"
+          : "border-[color:var(--line)] bg-white/82 text-[color:var(--ink)]",
+      )}
+    >
+      <p
+        className={cn(
+          "text-[11px] font-semibold uppercase tracking-[0.16em]",
+          tone === "brand" ? "text-[#d9f6bc]/76" : "text-[color:var(--muted)]",
+        )}
+      >
+        {label}
+      </p>
+      <p className="mt-3 font-display text-2xl font-semibold tracking-[-0.05em]">{value}</p>
+      <p
+        className={cn(
+          "mt-2 text-sm leading-6",
+          tone === "brand" ? "text-[#d9f6bc]/78" : "text-[color:var(--muted)]",
+        )}
+      >
+        {note}
+      </p>
     </div>
   );
 }
 
+function CustomerListRow({
+  customer,
+  isSelected,
+  onSelect,
+}: {
+  customer: CustomerRecord;
+  isSelected: boolean;
+  onSelect: () => void;
+}) {
+  const statusTone =
+    customer.lifecycle === "Active"
+      ? "brand"
+      : customer.lifecycle === "At risk"
+        ? "warning"
+        : "neutral";
+
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={cn(
+        "w-full rounded-2xl border px-4 py-4 text-left transition-all duration-200",
+        isSelected
+          ? "border-[#0c4a27]/14 bg-[#edf7eb]"
+          : "border-[color:var(--line)] bg-white hover:border-[#0c4a27]/10 hover:bg-[#f7fbf5]",
+      )}
+    >
+      <div className="flex flex-col gap-3 md:grid md:grid-cols-[minmax(0,1.3fr)_auto_auto_auto] md:items-center">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white text-sm font-semibold text-[color:var(--brand)]">
+            {customer.name
+              .split(" ")
+              .map((part) => part[0])
+              .join("")
+              .slice(0, 2)}
+          </span>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)]">
+              {customer.name}
+            </p>
+            <p className="truncate text-sm text-[color:var(--muted)]">{customer.email}</p>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 md:justify-self-start">
+          <CustomerMetaPill>{customer.market}</CustomerMetaPill>
+        </div>
+
+        <div className="text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)] md:justify-self-start">
+          {customer.plans.length > 0
+            ? `${customer.plans.length} plan${customer.plans.length === 1 ? "" : "s"}`
+            : "No plan"}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 md:justify-self-end">
+          <CustomerMetaPill>{customer.nextRenewal}</CustomerMetaPill>
+          <span
+            className={cn(
+              "inline-flex items-center rounded-full px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em]",
+              statusTone === "brand"
+                ? "bg-[#dff7e6] text-[#0f8a47]"
+                : statusTone === "warning"
+                  ? "bg-[#8a4b0f]/12 text-[#8a4b0f]"
+                  : "border border-[color:var(--line)] bg-white text-[color:var(--muted)]",
+            )}
+          >
+            {customer.lifecycle}
+          </span>
+        </div>
+      </div>
+    </button>
+  );
+}
+
+function CustomerMetaPill({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="inline-flex items-center rounded-full border border-[color:var(--line)] bg-white/76 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[color:var(--muted)]">
+      {children}
+    </span>
+  );
+}
+
+function ProfileMiniStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl bg-white/6 px-3 py-3">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/46">{label}</p>
+      <p className="mt-2 text-sm font-semibold tracking-[-0.02em] text-white">{value}</p>
+    </div>
+  );
+}
+
+function ProfileActionLink({ href, label }: { href: string; label: string }) {
+  return (
+    <Link
+      href={href}
+      className="inline-flex items-center justify-center rounded-2xl border border-white/10 bg-white/6 px-4 py-3 text-sm font-semibold tracking-[-0.02em] text-white transition-all duration-200 hover:bg-white/10"
+    >
+      {label}
+    </Link>
+  );
+}
+
+function CustomerModal({
+  draft,
+  onChange,
+  onClose,
+  onSubmit,
+}: {
+  draft: NewCustomerDraft;
+  onChange: <K extends keyof NewCustomerDraft>(key: K, value: NewCustomerDraft[K]) => void;
+  onClose: () => void;
+  onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#121312]/45 px-4 backdrop-blur-sm">
+      <div className="w-full max-w-xl rounded-[2rem] border border-[color:var(--line)] bg-white p-5 shadow-[0_24px_90px_rgba(16,32,20,0.16)] sm:p-6">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="font-display text-2xl font-semibold tracking-[-0.05em] text-[color:var(--ink)]">
+              Add customer
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">
+              Create the customer record before attaching subscriptions and billing rules.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--line)] bg-[#f8faf7] text-[color:var(--muted)] transition-colors duration-200 hover:text-[color:var(--ink)]"
+            aria-label="Close add customer modal"
+          >
+            <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+              <path d="M5 5l10 10" strokeLinecap="round" />
+              <path d="M15 5L5 15" strokeLinecap="round" />
+            </svg>
+          </button>
+        </div>
+
+        <form className="mt-5 space-y-4" onSubmit={onSubmit}>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="space-y-2">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--muted)]">
+                Business name
+              </span>
+              <input
+                value={draft.name}
+                onChange={(event) => onChange("name", event.target.value)}
+                placeholder="Mazi Clinic"
+                className="w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm text-[color:var(--ink)] outline-none placeholder:text-[color:var(--muted)]"
+              />
+            </label>
+
+            <label className="space-y-2">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--muted)]">
+                Billing email
+              </span>
+              <input
+                type="email"
+                value={draft.email}
+                onChange={(event) => onChange("email", event.target.value)}
+                placeholder="ops@maziclinic.com"
+                className="w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm text-[color:var(--ink)] outline-none placeholder:text-[color:var(--muted)]"
+              />
+            </label>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="space-y-2">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--muted)]">
+                Market
+              </span>
+              <select
+                value={draft.market}
+                onChange={(event) => onChange("market", event.target.value)}
+                className="w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm text-[color:var(--ink)] outline-none"
+              >
+                {["NGN", "GHS", "KES", "ZMW"].map((market) => (
+                  <option key={market} value={market}>
+                    {market}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="space-y-2">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--muted)]">
+                Starter plan
+              </span>
+              <select
+                value={draft.plan}
+                onChange={(event) => onChange("plan", event.target.value)}
+                className="w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm text-[color:var(--ink)] outline-none"
+              >
+                <option value="Core Plan">Core Plan</option>
+                <option value="Usage Flex">Usage Flex</option>
+                <option value="Scale Annual">Scale Annual</option>
+                <option value="">No plan yet</option>
+              </select>
+            </label>
+          </div>
+
+          <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex items-center justify-center rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm font-semibold tracking-[-0.02em] text-[color:var(--muted)]"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="inline-flex items-center justify-center rounded-2xl bg-[#0c4a27] px-4 py-3 text-sm font-semibold tracking-[-0.02em] text-[#d9f6bc]"
+            >
+              Save customer
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+type PlanStatus = "Live" | "Draft" | "Archived";
+type PlanInterval = "Monthly" | "Quarterly" | "Annual" | "Metered";
+type BillingMode = "Recurring" | "Metered";
+type PlanFilter = "All" | PlanStatus;
+
+type PlanRecord = {
+  id: string;
+  name: string;
+  amount: string;
+  interval: PlanInterval;
+  status: PlanStatus;
+  subscribers: number;
+  trial: string;
+  retryRule: string;
+  billingMode: BillingMode;
+  markets: string[];
+  note: string;
+};
+
+type NewPlanDraft = {
+  name: string;
+  amount: string;
+  interval: PlanInterval;
+  billingMode: BillingMode;
+  market: string;
+};
+
+const initialPlanRecords: PlanRecord[] = [
+  {
+    id: "core-plan",
+    name: "Core Plan",
+    amount: "49.00",
+    interval: "Monthly",
+    status: "Live",
+    subscribers: 412,
+    trial: "7 days",
+    retryRule: "3 attempts / 5 days",
+    billingMode: "Recurring",
+    markets: ["NGN", "GHS", "KES", "ZMW"],
+    note: "Baseline recurring plan for stable monthly billing.",
+  },
+  {
+    id: "usage-flex",
+    name: "Usage Flex",
+    amount: "0.00",
+    interval: "Metered",
+    status: "Live",
+    subscribers: 128,
+    trial: "No trial",
+    retryRule: "2 attempts / 3 days",
+    billingMode: "Metered",
+    markets: ["NGN", "KES", "RWF"],
+    note: "Metered billing with usage approval before charge.",
+  },
+  {
+    id: "scale-annual",
+    name: "Scale Annual",
+    amount: "499.00",
+    interval: "Annual",
+    status: "Draft",
+    subscribers: 18,
+    trial: "14 days",
+    retryRule: "1 attempt / 7 days",
+    billingMode: "Recurring",
+    markets: ["GHS", "ZMW", "ZAR"],
+    note: "High-value annual plan for larger contracts.",
+  },
+];
+
 function PlansSurface() {
+  const [plans, setPlans] = useState<PlanRecord[]>(initialPlanRecords);
+  const [activeFilter, setActiveFilter] = useState<PlanFilter>("All");
+  const [selectedPlanId, setSelectedPlanId] = useState(initialPlanRecords[0].id);
+  const [isCreatePlanOpen, setIsCreatePlanOpen] = useState(false);
+  const [draft, setDraft] = useState<NewPlanDraft>({
+    name: "",
+    amount: "49.00",
+    interval: "Monthly",
+    billingMode: "Recurring",
+    market: "NGN",
+  });
+
+  const filteredPlans = plans.filter((plan) => (activeFilter === "All" ? true : plan.status === activeFilter));
+
+  useEffect(() => {
+    if (filteredPlans.length === 0) {
+      return;
+    }
+
+    const currentStillVisible = filteredPlans.some((plan) => plan.id === selectedPlanId);
+
+    if (!currentStillVisible) {
+      setSelectedPlanId(filteredPlans[0].id);
+    }
+  }, [activeFilter, filteredPlans, selectedPlanId]);
+
+  const selectedPlan = filteredPlans.find((plan) => plan.id === selectedPlanId) ?? filteredPlans[0] ?? null;
+
+  const livePlanCount = plans.filter((plan) => plan.status === "Live").length;
+  const totalSubscribers = plans.reduce((sum, plan) => sum + plan.subscribers, 0);
+  const meteredPlanCount = plans.filter((plan) => plan.billingMode === "Metered").length;
+  const liveMarketCount = new Set(plans.flatMap((plan) => plan.markets)).size;
+
+  function updateSelectedPlan(updater: (plan: PlanRecord) => PlanRecord) {
+    if (!selectedPlan) {
+      return;
+    }
+
+    setPlans((current) =>
+      current.map((plan) => (plan.id === selectedPlan.id ? updater(plan) : plan)),
+    );
+  }
+
+  function handlePlanFieldChange<K extends keyof PlanRecord>(key: K, value: PlanRecord[K]) {
+    updateSelectedPlan((plan) => ({
+      ...plan,
+      [key]: value,
+    }));
+  }
+
+  function toggleMarket(market: string) {
+    updateSelectedPlan((plan) => {
+      const nextMarkets = plan.markets.includes(market)
+        ? plan.markets.filter((item) => item !== market)
+        : [...plan.markets, market];
+
+      return {
+        ...plan,
+        markets: nextMarkets,
+      };
+    });
+  }
+
+  function duplicateSelectedPlan() {
+    if (!selectedPlan) {
+      return;
+    }
+
+    const duplicate: PlanRecord = {
+      ...selectedPlan,
+      id: `${selectedPlan.id}-copy-${Date.now()}`,
+      name: `${selectedPlan.name} Copy`,
+      status: "Draft",
+      subscribers: 0,
+    };
+
+    setPlans((current) => [duplicate, ...current]);
+    setActiveFilter("All");
+    setSelectedPlanId(duplicate.id);
+  }
+
+  function togglePlanArchiveState() {
+    if (!selectedPlan) {
+      return;
+    }
+
+    updateSelectedPlan((plan) => ({
+      ...plan,
+      status: plan.status === "Archived" ? "Live" : "Archived",
+    }));
+  }
+
+  function handleDraftChange<K extends keyof NewPlanDraft>(key: K, value: NewPlanDraft[K]) {
+    setDraft((current) => ({
+      ...current,
+      [key]: value,
+    }));
+  }
+
+  function handleCreatePlan(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const name = draft.name.trim();
+
+    if (!name) {
+      return;
+    }
+
+    const nextPlan: PlanRecord = {
+      id: `${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Date.now()}`,
+      name,
+      amount: draft.amount,
+      interval: draft.interval,
+      status: "Draft",
+      subscribers: 0,
+      trial: "No trial",
+      retryRule: "3 attempts / 5 days",
+      billingMode: draft.billingMode,
+      markets: [draft.market],
+      note: "New plan draft ready for rollout.",
+    };
+
+    setPlans((current) => [nextPlan, ...current]);
+    setActiveFilter("All");
+    setSelectedPlanId(nextPlan.id);
+    setDraft({
+      name: "",
+      amount: "49.00",
+      interval: "Monthly",
+      billingMode: "Recurring",
+      market: "NGN",
+    });
+    setIsCreatePlanOpen(false);
+  }
+
   return (
     <>
-      <div className="grid gap-4 xl:grid-cols-3">
-        <PlanCard
-          title="Growth"
-          price="$49"
-          interval="Monthly"
-          meta="412 active subscribers"
-          features={["7-day trial", "3 retries", "Local checkout enabled"]}
-          highlighted
-        />
-        <PlanCard
-          title="Scale"
-          price="$199"
-          interval="Monthly"
-          meta="128 active subscribers"
-          features={["Metered usage", "Priority retries", "Manual approval path"]}
-        />
-        <PlanCard
-          title="Enterprise"
-          price="Custom"
-          interval="Annual"
-          meta="18 active subscribers"
-          features={["Custom pricing", "Quote controls", "Dedicated settlement rules"]}
-        />
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <PlanMetricCard label="Live plans" value={String(livePlanCount)} note="Ready for billing" tone="brand" />
+        <PlanMetricCard label="Subscribers" value={String(totalSubscribers)} note="Across all plans" />
+        <PlanMetricCard label="Metered plans" value={String(meteredPlanCount)} note="Usage-based billing" />
+        <PlanMetricCard label="Markets" value={String(liveMarketCount)} note="Rollout coverage" />
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-        <Card title="Plan editor" description="Growth plan defaults">
-          <div className="grid gap-3 md:grid-cols-2">
-            <FieldMock label="Base amount" value="$49.00" />
-            <FieldMock label="Interval" value="Monthly" />
-            <FieldMock label="Trial" value="7 days" />
-            <FieldMock label="Retry rule" value="3 attempts / 5 days" />
+      <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+        <Card title="Plans">
+          <div className="flex flex-col gap-3 pb-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-wrap gap-2">
+              {(["All", "Live", "Draft", "Archived"] as const).map((tab) => (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => setActiveFilter(tab)}
+                  className={cn(
+                    "rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition-all duration-200",
+                    activeFilter === tab
+                      ? "bg-[#0c4a27] text-[#d9f6bc]"
+                      : "border border-[color:var(--line)] bg-white text-[color:var(--muted)] hover:bg-[#f7fbf5]",
+                  )}
+                >
+                  {tab}
+                </button>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setIsCreatePlanOpen(true)}
+              className="inline-flex items-center justify-center rounded-2xl bg-[#0c4a27] px-4 py-3 text-sm font-semibold tracking-[-0.02em] text-[#d9f6bc]"
+            >
+              Create plan
+            </button>
           </div>
+
+          {filteredPlans.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-[color:var(--line)] bg-white px-5 py-8 text-center text-sm text-[color:var(--muted)]">
+              No plans in this state.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {filteredPlans.map((plan) => (
+                <PlanCatalogRow
+                  key={plan.id}
+                  plan={plan}
+                  isSelected={plan.id === selectedPlanId}
+                  onSelect={() => setSelectedPlanId(plan.id)}
+                />
+              ))}
+            </div>
+          )}
         </Card>
-        <Card title="Rollout coverage" description="Where this plan is currently enabled.">
-          <div className="grid gap-2 grid-cols-2">
-            {["NGN", "KES", "GHS", "ZMW", "RWF", "ZAR"].map((market) => (
-              <div key={market} className="rounded-2xl border border-[color:var(--line)] bg-[#edf7eb] px-4 py-3 text-sm font-semibold text-[color:var(--brand)]">
-                {market}
+
+        <Card title={selectedPlan ? selectedPlan.name : "Plan details"}>
+          {selectedPlan ? (
+            <div className="space-y-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <PlanStatusBadge status={selectedPlan.status} />
+                <span className="text-sm font-semibold text-[color:var(--muted)]">
+                  {selectedPlan.subscribers} subscribers
+                </span>
               </div>
-            ))}
-          </div>
+
+              <p className="text-sm leading-6 text-[color:var(--muted)]">{selectedPlan.note}</p>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <PlanField label="Amount">
+                  <div className="flex items-center gap-2 rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3">
+                    <span className="text-sm font-semibold text-[color:var(--muted)]">$</span>
+                    <input
+                      value={selectedPlan.amount}
+                      onChange={(event) => handlePlanFieldChange("amount", event.target.value)}
+                      className="w-full bg-transparent text-sm font-semibold text-[color:var(--ink)] outline-none"
+                    />
+                  </div>
+                </PlanField>
+
+                <PlanField label="Interval">
+                  <select
+                    value={selectedPlan.interval}
+                    onChange={(event) => handlePlanFieldChange("interval", event.target.value as PlanInterval)}
+                    className="w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm font-semibold text-[color:var(--ink)] outline-none"
+                  >
+                    {["Monthly", "Quarterly", "Annual", "Metered"].map((interval) => (
+                      <option key={interval} value={interval}>
+                        {interval}
+                      </option>
+                    ))}
+                  </select>
+                </PlanField>
+
+                <PlanField label="Trial">
+                  <select
+                    value={selectedPlan.trial}
+                    onChange={(event) => handlePlanFieldChange("trial", event.target.value)}
+                    className="w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm font-semibold text-[color:var(--ink)] outline-none"
+                  >
+                    {["No trial", "7 days", "14 days", "30 days"].map((trial) => (
+                      <option key={trial} value={trial}>
+                        {trial}
+                      </option>
+                    ))}
+                  </select>
+                </PlanField>
+
+                <PlanField label="Retry rule">
+                  <select
+                    value={selectedPlan.retryRule}
+                    onChange={(event) => handlePlanFieldChange("retryRule", event.target.value)}
+                    className="w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm font-semibold text-[color:var(--ink)] outline-none"
+                  >
+                    {["1 attempt / 7 days", "2 attempts / 3 days", "3 attempts / 5 days"].map((rule) => (
+                      <option key={rule} value={rule}>
+                        {rule}
+                      </option>
+                    ))}
+                  </select>
+                </PlanField>
+
+                <PlanField label="Billing mode">
+                  <select
+                    value={selectedPlan.billingMode}
+                    onChange={(event) => handlePlanFieldChange("billingMode", event.target.value as BillingMode)}
+                    className="w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm font-semibold text-[color:var(--ink)] outline-none"
+                  >
+                    {["Recurring", "Metered"].map((mode) => (
+                      <option key={mode} value={mode}>
+                        {mode}
+                      </option>
+                    ))}
+                  </select>
+                </PlanField>
+              </div>
+
+              <div className="rounded-2xl border border-[color:var(--line)] bg-[#f8faf7] p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--muted)]">
+                  Markets
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {["NGN", "GHS", "KES", "ZMW", "RWF", "ZAR"].map((market) => {
+                    const isActive = selectedPlan.markets.includes(market);
+
+                    return (
+                      <button
+                        key={market}
+                        type="button"
+                        onClick={() => toggleMarket(market)}
+                        className={cn(
+                          "inline-flex items-center rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] transition-all duration-200",
+                          isActive
+                            ? "bg-[#0c4a27] text-[#d9f6bc]"
+                            : "border border-[color:var(--line)] bg-white text-[color:var(--muted)] hover:bg-[#edf7eb]",
+                        )}
+                      >
+                        {market}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <PlanActionButton label="Duplicate plan" onClick={duplicateSelectedPlan} />
+                <PlanActionButton
+                  label={selectedPlan.status === "Archived" ? "Restore plan" : "Archive plan"}
+                  onClick={togglePlanArchiveState}
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-dashed border-[color:var(--line)] bg-white px-5 py-8 text-center text-sm text-[color:var(--muted)]">
+              Select a plan to review pricing and rollout settings.
+            </div>
+          )}
         </Card>
       </div>
+
+      {isCreatePlanOpen ? (
+        <CreatePlanModal
+          draft={draft}
+          onChange={handleDraftChange}
+          onClose={() => setIsCreatePlanOpen(false)}
+          onSubmit={handleCreatePlan}
+        />
+      ) : null}
     </>
   );
 }
@@ -688,7 +1634,7 @@ function ProgressRow({
         <span className="font-semibold text-[color:var(--ink)]">{label}</span>
         <span className="text-[color:var(--muted)]">{value}</span>
       </div>
-      <div className="mt-2 h-2 rounded-full bg-black/6">
+      <div className="mt-2 h-2 rounded-full bg-[#dde4db]">
         <div className="h-2 rounded-full bg-[#0c4a27]" style={{ width }} />
       </div>
     </div>
@@ -723,70 +1669,279 @@ function StatusLine({
   );
 }
 
-function PlanCard({
-  title,
-  price,
-  interval,
-  meta,
-  features,
-  highlighted = false,
+function PlanMetricCard({
+  label,
+  value,
+  note,
+  tone = "neutral",
 }: {
-  title: string;
-  price: string;
-  interval: string;
-  meta: string;
-  features: string[];
-  highlighted?: boolean;
+  label: string;
+  value: string;
+  note: string;
+  tone?: "brand" | "neutral";
 }) {
   return (
     <div
       className={cn(
-        "rounded-[2rem] border p-5 sm:p-6",
-        highlighted
-          ? "border-[#0c4a27]/10 bg-[#0c4a27] text-white"
+        "rounded-[1.6rem] border p-4",
+        tone === "brand"
+          ? "border-[#0c4a27]/10 bg-[#0c4a27] text-[#d9f6bc]"
           : "border-[color:var(--line)] bg-white/82 text-[color:var(--ink)]",
       )}
     >
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p
-            className={cn(
-              "text-sm font-semibold uppercase tracking-[0.14em]",
-              highlighted ? "text-[#d9f6bc]" : "text-[color:var(--brand)]",
-            )}
-          >
-            {title}
-          </p>
-          <p className="mt-3 font-display text-4xl font-semibold tracking-[-0.06em]">{price}</p>
-          <p className={cn("mt-1 text-sm", highlighted ? "text-white/70" : "text-[color:var(--muted)]")}>
-            {interval}
-          </p>
-        </div>
-        <span
-          className={cn(
-            "rounded-2xl px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em]",
-            highlighted
-              ? "bg-white/10 text-[#d9f6bc]"
-              : "border border-[color:var(--line)] bg-[#edf7eb] text-[color:var(--brand)]",
-          )}
-        >
-          {meta}
-        </span>
-      </div>
-      <div className="mt-5 space-y-3">
-        {features.map((feature) => (
-          <div key={feature} className="flex items-center gap-3">
-            <span
-              className={cn(
-                "h-2 w-2 rounded-full",
-                highlighted ? "bg-[#d9f6bc]" : "bg-[#0c4a27]",
-              )}
-            />
-            <span className={cn("text-sm", highlighted ? "text-white/78" : "text-[color:var(--muted)]")}>
-              {feature}
-            </span>
+      <p
+        className={cn(
+          "text-[11px] font-semibold uppercase tracking-[0.16em]",
+          tone === "brand" ? "text-[#d9f6bc]/76" : "text-[color:var(--muted)]",
+        )}
+      >
+        {label}
+      </p>
+      <p className="mt-3 font-display text-2xl font-semibold tracking-[-0.05em]">{value}</p>
+      <p
+        className={cn(
+          "mt-2 text-sm leading-6",
+          tone === "brand" ? "text-[#d9f6bc]/78" : "text-[color:var(--muted)]",
+        )}
+      >
+        {note}
+      </p>
+    </div>
+  );
+}
+
+function PlanCatalogRow({
+  plan,
+  isSelected,
+  onSelect,
+}: {
+  plan: PlanRecord;
+  isSelected: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={cn(
+        "w-full rounded-2xl border px-4 py-4 text-left transition-all duration-200",
+        isSelected
+          ? "border-[#0c4a27]/14 bg-[#edf7eb]"
+          : "border-[color:var(--line)] bg-white hover:border-[#0c4a27]/10 hover:bg-[#f7fbf5]",
+      )}
+    >
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)]">{plan.name}</p>
+            <p className="mt-1 text-sm text-[color:var(--muted)]">{plan.note}</p>
           </div>
-        ))}
+          <PlanStatusBadge status={plan.status} compact />
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="font-display text-2xl font-semibold tracking-[-0.05em] text-[color:var(--ink)]">
+            ${plan.amount}
+          </span>
+          <span className="text-sm text-[color:var(--muted)]">/{plan.interval.toLowerCase()}</span>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <PlanMetaPill>{plan.billingMode}</PlanMetaPill>
+          <PlanMetaPill>{plan.subscribers} subscribers</PlanMetaPill>
+          <PlanMetaPill>{plan.markets.length} markets</PlanMetaPill>
+        </div>
+      </div>
+    </button>
+  );
+}
+
+function PlanStatusBadge({
+  status,
+  compact = false,
+}: {
+  status: PlanStatus;
+  compact?: boolean;
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded-full px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em]",
+        status === "Live"
+          ? "border border-[#bfe8cb] bg-[#dff7e6] text-[#0f8a47]"
+          : status === "Draft"
+            ? "border border-[#d9e7d6] bg-[#edf7eb] text-[color:var(--brand)]"
+            : "border border-[#e2e6e0] bg-[#f3f5f2] text-[color:var(--muted)]",
+        compact ? "px-2.5 py-1.5" : "",
+      )}
+    >
+      {status}
+    </span>
+  );
+}
+
+function PlanMetaPill({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="inline-flex items-center rounded-full border border-[color:var(--line)] bg-white/76 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[color:var(--muted)]">
+      {children}
+    </span>
+  );
+}
+
+function PlanField({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="space-y-2">
+      <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--muted)]">
+        {label}
+      </span>
+      {children}
+    </label>
+  );
+}
+
+function PlanActionButton({
+  label,
+  onClick,
+}: {
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex items-center justify-center rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)] transition-all duration-200 hover:bg-[#f7fbf5]"
+    >
+      {label}
+    </button>
+  );
+}
+
+function CreatePlanModal({
+  draft,
+  onChange,
+  onClose,
+  onSubmit,
+}: {
+  draft: NewPlanDraft;
+  onChange: <K extends keyof NewPlanDraft>(key: K, value: NewPlanDraft[K]) => void;
+  onClose: () => void;
+  onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#121312]/45 px-4 backdrop-blur-sm">
+      <div className="w-full max-w-xl rounded-[2rem] border border-[color:var(--line)] bg-white p-5 shadow-[0_24px_90px_rgba(16,32,20,0.16)] sm:p-6">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="font-display text-2xl font-semibold tracking-[-0.05em] text-[color:var(--ink)]">
+              Create plan
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">
+              Set the pricing, cadence, and first rollout market.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--line)] bg-[#f8faf7] text-[color:var(--muted)] transition-colors duration-200 hover:text-[color:var(--ink)]"
+            aria-label="Close create plan modal"
+          >
+            <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+              <path d="M5 5l10 10" strokeLinecap="round" />
+              <path d="M15 5L5 15" strokeLinecap="round" />
+            </svg>
+          </button>
+        </div>
+
+        <form className="mt-5 space-y-4" onSubmit={onSubmit}>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <PlanField label="Plan name">
+              <input
+                value={draft.name}
+                onChange={(event) => onChange("name", event.target.value)}
+                placeholder="Core Plan"
+                className="w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm text-[color:var(--ink)] outline-none placeholder:text-[color:var(--muted)]"
+              />
+            </PlanField>
+
+            <PlanField label="Amount">
+              <div className="flex items-center gap-2 rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3">
+                <span className="text-sm font-semibold text-[color:var(--muted)]">$</span>
+                <input
+                  value={draft.amount}
+                  onChange={(event) => onChange("amount", event.target.value)}
+                  className="w-full bg-transparent text-sm text-[color:var(--ink)] outline-none"
+                />
+              </div>
+            </PlanField>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-3">
+            <PlanField label="Interval">
+              <select
+                value={draft.interval}
+                onChange={(event) => onChange("interval", event.target.value as PlanInterval)}
+                className="w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm text-[color:var(--ink)] outline-none"
+              >
+                {["Monthly", "Quarterly", "Annual", "Metered"].map((interval) => (
+                  <option key={interval} value={interval}>
+                    {interval}
+                  </option>
+                ))}
+              </select>
+            </PlanField>
+
+            <PlanField label="Billing mode">
+              <select
+                value={draft.billingMode}
+                onChange={(event) => onChange("billingMode", event.target.value as BillingMode)}
+                className="w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm text-[color:var(--ink)] outline-none"
+              >
+                {["Recurring", "Metered"].map((mode) => (
+                  <option key={mode} value={mode}>
+                    {mode}
+                  </option>
+                ))}
+              </select>
+            </PlanField>
+
+            <PlanField label="First market">
+              <select
+                value={draft.market}
+                onChange={(event) => onChange("market", event.target.value)}
+                className="w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm text-[color:var(--ink)] outline-none"
+              >
+                {["NGN", "GHS", "KES", "ZMW", "RWF", "ZAR"].map((market) => (
+                  <option key={market} value={market}>
+                    {market}
+                  </option>
+                ))}
+              </select>
+            </PlanField>
+          </div>
+
+          <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex items-center justify-center rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm font-semibold tracking-[-0.02em] text-[color:var(--muted)]"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="inline-flex items-center justify-center rounded-2xl bg-[#0c4a27] px-4 py-3 text-sm font-semibold tracking-[-0.02em] text-[#d9f6bc]"
+            >
+              Save plan
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );

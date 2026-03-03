@@ -54,9 +54,9 @@ export const dashboardPages: Record<DashboardRouteKey, DashboardPageContent> = {
     actions: ["Add customer", "Import list"],
     stats: [
       {
-        label: "Total customers",
+        label: "Active customers",
         value: "842",
-        note: "Active records",
+        note: "Currently billable",
         tone: "brand",
       },
       {
@@ -68,6 +68,11 @@ export const dashboardPages: Record<DashboardRouteKey, DashboardPageContent> = {
         label: "At-risk accounts",
         value: "16",
         note: "Need follow-up",
+      },
+      {
+        label: "New this month",
+        value: "34",
+        note: "Recently onboarded",
       },
     ],
   },
