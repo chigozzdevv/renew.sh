@@ -16,7 +16,9 @@ export function DashboardPageView({ page }: DashboardPageViewProps) {
     page.key === "customers" ||
     page.key === "plans" ||
     page.key === "subscriptions" ||
-    page.key === "payments"
+    page.key === "payments" ||
+    page.key === "treasury" ||
+    page.key === "teams"
   ) {
     return (
       <section className="space-y-6">
@@ -26,8 +28,12 @@ export function DashboardPageView({ page }: DashboardPageViewProps) {
           <PlansSurface />
         ) : page.key === "subscriptions" ? (
           <SubscriptionsSurface />
-        ) : (
+        ) : page.key === "payments" ? (
           <PaymentsSurface />
+        ) : page.key === "treasury" ? (
+          <TreasurySurface />
+        ) : (
+          <TeamsSurface />
         )}
       </section>
     );
@@ -2591,6 +2597,13 @@ function CreatePaymentModal({
   );
 }
 
+function parseAmountValue(value: string) {
+  const normalizedValue = value.replace(/,/g, "");
+  const parsedValue = Number.parseFloat(normalizedValue);
+
+  return Number.isFinite(parsedValue) ? parsedValue : 0;
+}
+
 type TreasuryBatchStatus = "Queued" | "Confirming" | "Settled";
 type TreasuryBatchFilter = "All" | TreasuryBatchStatus;
 
@@ -2710,7 +2723,7 @@ function TreasurySurface() {
   const settledCount = batches.filter((batch) => batch.status === "Settled").length;
   const readyNet = batches
     .filter((batch) => batch.status !== "Settled")
-    .reduce((total, batch) => total + Number(batch.net), 0);
+    .reduce((total, batch) => total + parseAmountValue(batch.net), 0);
 
   function updateSelectedBatch(updater: (batch: TreasuryBatchRecord) => TreasuryBatchRecord) {
     if (!selectedBatch) {
@@ -3105,25 +3118,853 @@ function CreateSweepModal({
   );
 }
 
-function TeamsSurface() {
-  return (
-    <div className="grid gap-4 xl:grid-cols-[1.25fr_0.95fr]">
-      <Card title="Team directory" description="Operators, finance, and support in one workspace.">
-        <TableHeader columns={["Member", "Role", "Last active", "Access"]} />
-        <TableRow columns={["Ada N.", "Owner", "2 min ago", "Full"]} tone="brand" />
-        <TableRow columns={["Kola M.", "Operations", "18 min ago", "Billing"]} />
-        <TableRow columns={["Jules A.", "Finance", "1 hour ago", "Treasury"]} />
-        <TableRow columns={["Mina S.", "Developer", "3 hours ago", "API + webhooks"]} />
-      </Card>
+type TeamRole = "Owner" | "Admin" | "Operations" | "Finance" | "Developer" | "Support";
+type TeamMemberStatus = "Active" | "Invited";
+type TeamFilter = "All" | "Active" | "Invited" | "Owner" | "Admin" | "Operations" | "Finance" | "Developer" | "Support";
+type TeamPermission =
+  | "Customers"
+  | "Plans"
+  | "Subscriptions"
+  | "Payments"
+  | "Treasury"
+  | "Developers"
+  | "Team admin";
 
-      <Card title="Role split" description="Access by function">
-        <div className="space-y-4">
-          <ProgressRow label="Owner / Admin" value="4" width="28%" />
-          <ProgressRow label="Operations" value="5" width="36%" />
-          <ProgressRow label="Finance" value="3" width="21%" />
-          <ProgressRow label="Developer" value="2" width="15%" />
+type TeamActivity = {
+  label: string;
+  meta: string;
+};
+
+type TeamMemberRecord = {
+  id: string;
+  name: string;
+  email: string;
+  role: TeamRole;
+  status: TeamMemberStatus;
+  lastActive: string;
+  access: string;
+  markets: string[];
+  note: string;
+  permissions: TeamPermission[];
+  activity: TeamActivity[];
+};
+
+type NewTeamDraft = {
+  name: string;
+  email: string;
+  role: TeamRole;
+};
+
+const initialTeamMembers: TeamMemberRecord[] = [
+  {
+    id: "member-ada",
+    name: "Ada Nwosu",
+    email: "ada@renew.sh",
+    role: "Owner",
+    status: "Active",
+    lastActive: "2 min ago",
+    access: "Full workspace",
+    markets: ["NGN", "GHS", "KES"],
+    note: "Owns billing policy, payout approvals, and final permission review.",
+    permissions: ["Customers", "Plans", "Subscriptions", "Payments", "Treasury", "Developers", "Team admin"],
+    activity: [
+      { label: "Approved treasury sweep", meta: "18,420 USDC · 12 min ago" },
+      { label: "Updated team permissions", meta: "Kola Martins · 1 hour ago" },
+      { label: "Changed retry policy", meta: "Core Plan · Yesterday" },
+    ],
+  },
+  {
+    id: "member-kola",
+    name: "Kola Martins",
+    email: "kola@renew.sh",
+    role: "Operations",
+    status: "Active",
+    lastActive: "18 min ago",
+    access: "Customers + subscriptions",
+    markets: ["NGN", "ZMW"],
+    note: "Handles renewals, intervention queues, and manual subscription exceptions.",
+    permissions: ["Customers", "Plans", "Subscriptions"],
+    activity: [
+      { label: "Paused subscription", meta: "Sabi Retail · 18 min ago" },
+      { label: "Created customer", meta: "KudaFit Health · 42 min ago" },
+      { label: "Updated plan assignment", meta: "Growth Plan · Today" },
+    ],
+  },
+  {
+    id: "member-jules",
+    name: "Jules Amani",
+    email: "jules@renew.sh",
+    role: "Finance",
+    status: "Active",
+    lastActive: "1 hour ago",
+    access: "Payments + treasury",
+    markets: ["GHS", "KES"],
+    note: "Owns reconciliation, settlement review, payout exports, and exception handling.",
+    permissions: ["Payments", "Treasury"],
+    activity: [
+      { label: "Exported settlement report", meta: "Batch 248 · 1 hour ago" },
+      { label: "Marked payment settled", meta: "PAY-2041 · 3 hours ago" },
+      { label: "Reviewed payout variance", meta: "KES corridor · Today" },
+    ],
+  },
+  {
+    id: "member-mina",
+    name: "Mina Sule",
+    email: "mina@renew.sh",
+    role: "Developer",
+    status: "Active",
+    lastActive: "3 hours ago",
+    access: "API + webhooks",
+    markets: ["All"],
+    note: "Maintains API keys, webhooks, internal tooling, and sandbox configuration.",
+    permissions: ["Developers"],
+    activity: [
+      { label: "Rotated webhook secret", meta: "billing-prod · Today" },
+      { label: "Added test key", meta: "Sandbox env · Yesterday" },
+      { label: "Validated callback retries", meta: "payments webhook · Yesterday" },
+    ],
+  },
+  {
+    id: "member-nuru",
+    name: "Nuru Okeke",
+    email: "nuru@renew.sh",
+    role: "Support",
+    status: "Active",
+    lastActive: "27 min ago",
+    access: "Customer support",
+    markets: ["NGN", "GHS"],
+    note: "Handles billing inquiries, failed charge follow-up, and account-level escalations.",
+    permissions: ["Customers", "Subscriptions"],
+    activity: [
+      { label: "Reviewed failed renewal", meta: "Mazi Clinic · 27 min ago" },
+      { label: "Updated account notes", meta: "Axel Telecom · 1 hour ago" },
+      { label: "Escalated payment method issue", meta: "Geno Labs · Today" },
+    ],
+  },
+  {
+    id: "member-farah",
+    name: "Farah Mensah",
+    email: "farah@renew.sh",
+    role: "Admin",
+    status: "Invited",
+    lastActive: "Pending invite",
+    access: "Workspace admin",
+    markets: ["GHS"],
+    note: "Invitation is queued. Access will activate after acceptance.",
+    permissions: ["Customers", "Plans", "Subscriptions", "Payments", "Treasury", "Team admin"],
+    activity: [
+      { label: "Invite created", meta: "Awaiting acceptance · Today" },
+      { label: "Role assigned", meta: "Admin access · Today" },
+    ],
+  },
+];
+
+function TeamsSurface() {
+  const [members, setMembers] = useState<TeamMemberRecord[]>(initialTeamMembers);
+  const [activeFilter, setActiveFilter] = useState<TeamFilter>("All");
+  const [query, setQuery] = useState("");
+  const [selectedMemberId, setSelectedMemberId] = useState(initialTeamMembers[0].id);
+  const [isInviteOpen, setIsInviteOpen] = useState(false);
+  const [openPanel, setOpenPanel] = useState<"access" | "activity" | null>(null);
+  const [draft, setDraft] = useState<NewTeamDraft>({
+    name: "",
+    email: "",
+    role: "Operations",
+  });
+
+  const filteredMembers = members.filter((member) => {
+    const matchesFilter =
+      activeFilter === "All"
+        ? true
+        : activeFilter === "Active"
+          ? member.status === "Active"
+          : activeFilter === "Invited"
+            ? member.status === "Invited"
+            : member.role === activeFilter;
+    const normalizedQuery = query.trim().toLowerCase();
+    const matchesQuery =
+      normalizedQuery.length === 0
+        ? true
+        : [member.name, member.email, member.role, member.access]
+            .join(" ")
+            .toLowerCase()
+            .includes(normalizedQuery);
+
+    return matchesFilter && matchesQuery;
+  });
+
+  useEffect(() => {
+    if (filteredMembers.length === 0) {
+      return;
+    }
+
+    const currentStillVisible = filteredMembers.some((member) => member.id === selectedMemberId);
+
+    if (!currentStillVisible) {
+      setSelectedMemberId(filteredMembers[0].id);
+    }
+  }, [filteredMembers, selectedMemberId]);
+
+  useEffect(() => {
+    setOpenPanel(null);
+  }, [selectedMemberId]);
+
+  const selectedMember =
+    filteredMembers.find((member) => member.id === selectedMemberId) ?? filteredMembers[0] ?? null;
+
+  const activeCount = members.filter((member) => member.status === "Active").length;
+  const adminsCount = members.filter(
+    (member) => member.role === "Owner" || member.role === "Admin",
+  ).length;
+  const roleCount = new Set(members.map((member) => member.role)).size;
+  const inviteCount = members.filter((member) => member.status === "Invited").length;
+
+  function handleDraftChange<K extends keyof NewTeamDraft>(key: K, value: NewTeamDraft[K]) {
+    setDraft((current) => ({
+      ...current,
+      [key]: value,
+    }));
+  }
+
+  function handleInviteMember(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const name = draft.name.trim();
+    const email = draft.email.trim();
+
+    if (!name || !email) {
+      return;
+    }
+
+    const role = draft.role;
+    const nextMember: TeamMemberRecord = {
+      id: `member-${Date.now()}`,
+      name,
+      email,
+      role,
+      status: "Invited",
+      lastActive: "Pending invite",
+      access: getTeamAccessLabel(role),
+      markets: getTeamDefaultMarkets(role),
+      note: "Invitation is queued. Access will activate after acceptance.",
+      permissions: getTeamPermissions(role),
+      activity: [
+        { label: "Invite created", meta: "Awaiting acceptance · Just now" },
+        { label: "Role assigned", meta: `${role} access · Just now` },
+      ],
+    };
+
+    setMembers((current) => [nextMember, ...current]);
+    setSelectedMemberId(nextMember.id);
+    setActiveFilter("All");
+    setQuery("");
+    setDraft({
+      name: "",
+      email: "",
+      role: "Operations",
+    });
+    setIsInviteOpen(false);
+  }
+
+  function updateSelectedRole(role: TeamRole) {
+    if (!selectedMember) {
+      return;
+    }
+
+    setMembers((current) =>
+      current.map((member) =>
+        member.id === selectedMember.id
+          ? {
+              ...member,
+              role,
+              access: getTeamAccessLabel(role),
+              permissions: getTeamPermissions(role),
+              markets: member.status === "Invited" ? getTeamDefaultMarkets(role) : member.markets,
+            }
+          : member,
+      ),
+    );
+  }
+
+  function toggleSelectedPermission(permission: TeamPermission) {
+    if (!selectedMember) {
+      return;
+    }
+
+    setMembers((current) =>
+      current.map((member) => {
+        if (member.id !== selectedMember.id) {
+          return member;
+        }
+
+        const nextPermissions = member.permissions.includes(permission)
+          ? member.permissions.filter((item) => item !== permission)
+          : [...member.permissions, permission];
+
+        return {
+          ...member,
+          permissions: nextPermissions,
+          access: getTeamAccessFromPermissions(nextPermissions),
+        };
+      }),
+    );
+  }
+
+  function resetSelectedPermissions() {
+    if (!selectedMember) {
+      return;
+    }
+
+    const nextPermissions = getTeamPermissions(selectedMember.role);
+    setMembers((current) =>
+      current.map((member) =>
+        member.id === selectedMember.id
+          ? {
+              ...member,
+              permissions: nextPermissions,
+              access: getTeamAccessFromPermissions(nextPermissions),
+            }
+          : member,
+      ),
+    );
+  }
+
+  function resendInvite(memberId: string) {
+    setMembers((current) =>
+      current.map((member) =>
+        member.id === memberId && member.status === "Invited"
+          ? {
+              ...member,
+              lastActive: "Invite re-sent just now",
+              note: "Reminder sent. Access will activate after acceptance.",
+              activity: [{ label: "Invite re-sent", meta: "Just now" }, ...member.activity],
+            }
+          : member,
+      ),
+    );
+  }
+
+  function revokeInvite(memberId: string) {
+    setMembers((current) => current.filter((member) => member.id !== memberId));
+  }
+
+  return (
+    <>
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <PlanMetricCard label="Team members" value={String(members.length)} note="Workspace seats" tone="brand" />
+        <PlanMetricCard label="Active access" value={String(activeCount)} note="Can operate now" />
+        <PlanMetricCard label="Admins" value={String(adminsCount)} note="Owner + admin roles" />
+        <PlanMetricCard label="Pending invites" value={String(inviteCount)} note="Awaiting acceptance" />
+      </div>
+
+      <div className="grid gap-4 xl:items-start xl:grid-cols-[1.16fr_0.84fr]">
+        <Card title="Team">
+          <div className="flex flex-col gap-3 pb-4 lg:flex-row lg:items-center lg:justify-between">
+            <label className="flex min-w-0 flex-1 items-center gap-3 rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3">
+              <svg
+                aria-hidden="true"
+                viewBox="0 0 20 20"
+                className="h-4 w-4 shrink-0 text-[color:var(--muted)]"
+                fill="none"
+              >
+                <circle cx="9" cy="9" r="4.8" stroke="currentColor" strokeWidth="1.7" />
+                <path d="M12.8 12.8L16 16" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+              </svg>
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search by member, role, or access"
+                className="w-full bg-transparent text-sm text-[color:var(--ink)] outline-none placeholder:text-[color:var(--muted)]"
+              />
+            </label>
+
+            <button
+              type="button"
+              onClick={() => setIsInviteOpen(true)}
+              className="inline-flex items-center justify-center rounded-2xl bg-[#0c4a27] px-4 py-3 text-sm font-semibold tracking-[-0.02em] text-[#d9f6bc]"
+            >
+              Invite member
+            </button>
+          </div>
+
+          <div className="flex flex-wrap gap-2 pb-4">
+            {(["All", "Active", "Invited", "Owner", "Admin", "Operations", "Finance", "Developer", "Support"] as const).map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => setActiveFilter(tab)}
+                className={cn(
+                  "rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition-all duration-200",
+                  activeFilter === tab
+                    ? "bg-[#0c4a27] text-[#d9f6bc]"
+                    : "border border-[color:var(--line)] bg-white text-[color:var(--muted)] hover:bg-[#f7fbf5]",
+                )}
+              >
+                {tab}
+              </button>
+            ))}
+          </div>
+
+          <div className="max-h-[44rem] overflow-y-auto pr-1">
+            {filteredMembers.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-[color:var(--line)] bg-white px-5 py-8 text-center text-sm text-[color:var(--muted)]">
+                No team members match this filter.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {filteredMembers.map((member) => (
+                  <TeamMemberRow
+                    key={member.id}
+                    member={member}
+                    isSelected={member.id === selectedMemberId}
+                    onSelect={() => setSelectedMemberId(member.id)}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        </Card>
+
+        <Card title={selectedMember ? selectedMember.name : "Team member"} description={selectedMember?.email}>
+          {selectedMember ? (
+            <div className="space-y-5">
+              <div className="flex flex-wrap items-center gap-2">
+                <TeamRoleBadge role={selectedMember.role} />
+                <TeamStatusBadge status={selectedMember.status} />
+                <span className="inline-flex items-center rounded-full border border-[color:var(--line)] bg-white px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[color:var(--muted)]">
+                  {selectedMember.markets.includes("All") ? "Global" : `${selectedMember.markets.length} markets`}
+                </span>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <TeamMiniStat label="Access" value={selectedMember.access} />
+                <TeamMiniStat label="Last active" value={selectedMember.lastActive} />
+                <TeamMiniStat label="Permissions" value={String(selectedMember.permissions.length)} />
+                <TeamMiniStat
+                  label="Coverage"
+                  value={
+                    selectedMember.markets.includes("All")
+                      ? "Global"
+                      : `${selectedMember.markets.length} markets`
+                  }
+                />
+              </div>
+
+              <div className="rounded-2xl border border-[color:var(--line)] bg-[#f8faf7] p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--muted)]">Team info</p>
+                <p className="mt-3 text-sm leading-6 text-[color:var(--muted)]">{selectedMember.note}</p>
+              </div>
+
+              <div className="rounded-2xl border border-[color:var(--line)] bg-[#f8faf7]">
+                <button
+                  type="button"
+                  onClick={() => setOpenPanel((current) => (current === "access" ? null : "access"))}
+                  className="flex w-full items-center justify-between gap-3 px-4 py-4 text-left"
+                >
+                  <div>
+                    <p className="text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)]">Role and access</p>
+                    <p className="mt-1 text-xs text-[color:var(--muted)]">
+                      Review role defaults or override permission scope.
+                    </p>
+                  </div>
+                  <svg
+                    viewBox="0 0 20 20"
+                    className={cn(
+                      "h-4 w-4 shrink-0 text-[color:var(--muted)] transition-transform duration-200",
+                      openPanel === "access" ? "rotate-180" : "",
+                    )}
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                  >
+                    <path d="M5 8l5 5 5-5" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </button>
+
+                {openPanel === "access" ? (
+                  <div className="border-t border-[color:var(--line)] px-4 py-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--muted)]">Role</p>
+                      <button
+                        type="button"
+                        onClick={resetSelectedPermissions}
+                        className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#0c4a27]"
+                      >
+                        Reset to default
+                      </button>
+                    </div>
+                    <select
+                      value={selectedMember.role}
+                      onChange={(event) => updateSelectedRole(event.target.value as TeamRole)}
+                      className="mt-3 w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm font-semibold text-[color:var(--ink)] outline-none"
+                    >
+                      {(["Owner", "Admin", "Operations", "Finance", "Developer", "Support"] as const).map((role) => (
+                        <option key={role} value={role}>
+                          {role}
+                        </option>
+                      ))}
+                    </select>
+
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      {(["Customers", "Plans", "Subscriptions", "Payments", "Treasury", "Developers", "Team admin"] as const).map((permission) => {
+                        const active = selectedMember.permissions.includes(permission);
+                        return (
+                          <button
+                            key={permission}
+                            type="button"
+                            onClick={() => toggleSelectedPermission(permission)}
+                            className={cn(
+                              "inline-flex items-center rounded-full px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] transition-all duration-200",
+                              active
+                                ? "bg-[#0c4a27] text-[#d9f6bc]"
+                                : "border border-[color:var(--line)] bg-white text-[color:var(--muted)] hover:bg-[#edf7eb]",
+                            )}
+                          >
+                            {permission}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="rounded-2xl border border-[color:var(--line)] bg-[#f8faf7]">
+                <button
+                  type="button"
+                  onClick={() => setOpenPanel((current) => (current === "activity" ? null : "activity"))}
+                  className="flex w-full items-center justify-between gap-3 px-4 py-4 text-left"
+                >
+                  <div>
+                    <p className="text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)]">Recent activity</p>
+                    <p className="mt-1 text-xs text-[color:var(--muted)]">
+                      See recent access and billing actions from this member.
+                    </p>
+                  </div>
+                  <svg
+                    viewBox="0 0 20 20"
+                    className={cn(
+                      "h-4 w-4 shrink-0 text-[color:var(--muted)] transition-transform duration-200",
+                      openPanel === "activity" ? "rotate-180" : "",
+                    )}
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                  >
+                    <path d="M5 8l5 5 5-5" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </button>
+
+                {openPanel === "activity" ? (
+                  <div className="space-y-3 border-t border-[color:var(--line)] px-4 py-4">
+                    {selectedMember.activity.map((entry) => (
+                      <div
+                        key={`${entry.label}-${entry.meta}`}
+                        className="flex items-start justify-between gap-3 rounded-2xl border border-[color:var(--line)] bg-white px-3 py-3"
+                      >
+                        <p className="text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)]">{entry.label}</p>
+                        <p className="text-right text-xs text-[color:var(--muted)]">{entry.meta}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                {selectedMember.status === "Invited" ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => resendInvite(selectedMember.id)}
+                      className="inline-flex items-center justify-center rounded-2xl bg-[#0c4a27] px-4 py-3 text-sm font-semibold tracking-[-0.02em] text-[#d9f6bc]"
+                    >
+                      Resend invite
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => revokeInvite(selectedMember.id)}
+                      className="inline-flex items-center justify-center rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)]"
+                    >
+                      Cancel invite
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      className="inline-flex items-center justify-center rounded-2xl bg-[#0c4a27] px-4 py-3 text-sm font-semibold tracking-[-0.02em] text-[#d9f6bc]"
+                    >
+                      Sync role access
+                    </button>
+                    <a
+                      href="/dashboard/settings"
+                      className="inline-flex items-center justify-center rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)]"
+                    >
+                      View audit log
+                    </a>
+                  </>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-dashed border-[color:var(--line)] bg-[#f8faf7] px-5 py-10 text-center text-sm text-[color:var(--muted)]">
+              Select a team member to review access and permissions.
+            </div>
+          )}
+        </Card>
+      </div>
+
+      {isInviteOpen ? (
+        <InviteMemberModal
+          draft={draft}
+          onChange={handleDraftChange}
+          onClose={() => setIsInviteOpen(false)}
+          onSubmit={handleInviteMember}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function getTeamAccessLabel(role: TeamRole) {
+  switch (role) {
+    case "Owner":
+      return "Full workspace";
+    case "Admin":
+      return "Workspace admin";
+    case "Operations":
+      return "Customers + subscriptions";
+    case "Finance":
+      return "Payments + treasury";
+    case "Developer":
+      return "API + webhooks";
+    case "Support":
+      return "Customer support";
+  }
+}
+
+function getTeamPermissions(role: TeamRole): TeamPermission[] {
+  switch (role) {
+    case "Owner":
+      return ["Customers", "Plans", "Subscriptions", "Payments", "Treasury", "Developers", "Team admin"];
+    case "Admin":
+      return ["Customers", "Plans", "Subscriptions", "Payments", "Treasury", "Team admin"];
+    case "Operations":
+      return ["Customers", "Plans", "Subscriptions"];
+    case "Finance":
+      return ["Payments", "Treasury"];
+    case "Developer":
+      return ["Developers"];
+    case "Support":
+      return ["Customers", "Subscriptions"];
+  }
+}
+
+function getTeamAccessFromPermissions(permissions: TeamPermission[]) {
+  const next = [...permissions];
+
+  if (next.includes("Team admin")) {
+    return "Workspace admin";
+  }
+
+  if (next.length === 0) {
+    return "No access";
+  }
+
+  if (next.length === 1) {
+    return next[0];
+  }
+
+  return `${next.length} scopes`;
+}
+
+function getTeamDefaultMarkets(role: TeamRole) {
+  switch (role) {
+    case "Owner":
+    case "Developer":
+      return ["All"];
+    case "Admin":
+      return ["NGN", "GHS"];
+    case "Operations":
+      return ["NGN", "ZMW"];
+    case "Finance":
+      return ["GHS", "KES"];
+    case "Support":
+      return ["NGN"];
+  }
+}
+
+function TeamMemberRow({
+  member,
+  isSelected,
+  onSelect,
+}: {
+  member: TeamMemberRecord;
+  isSelected: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={cn(
+        "w-full rounded-2xl border px-4 py-4 text-left transition-all duration-200",
+        isSelected
+          ? "border-[#0c4a27]/14 bg-[#edf7eb]"
+          : "border-[color:var(--line)] bg-white hover:border-[#0c4a27]/10 hover:bg-[#f7fbf5]",
+      )}
+    >
+      <div className="flex flex-col gap-3 lg:grid lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)]">{member.name}</p>
+            <TeamRoleBadge role={member.role} />
+            <TeamStatusBadge status={member.status} />
+          </div>
+          <p className="mt-1 truncate text-sm text-[color:var(--muted)]">{member.email}</p>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <CustomerMetaPill>{member.lastActive}</CustomerMetaPill>
+            <CustomerMetaPill>{member.access}</CustomerMetaPill>
+            <CustomerMetaPill>
+              {member.markets.includes("All") ? "Global" : `${member.markets.length} markets`}
+            </CustomerMetaPill>
+          </div>
         </div>
-      </Card>
+
+        <div className="flex justify-start lg:justify-self-end">
+          <span className="inline-flex items-center rounded-full border border-[color:var(--line)] bg-white/76 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[color:var(--muted)]">
+            {member.status === "Invited" ? "Invite pending" : "Active access"}
+          </span>
+        </div>
+      </div>
+    </button>
+  );
+}
+
+function TeamRoleBadge({ role }: { role: TeamRole }) {
+  return (
+    <span className="inline-flex items-center rounded-full border border-[color:var(--line)] bg-white px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[color:var(--muted)]">
+      {role}
+    </span>
+  );
+}
+
+function TeamStatusBadge({ status }: { status: TeamMemberStatus }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded-full px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em]",
+        status === "Active"
+          ? "border border-[#bfe8cb] bg-[#dff7e6] text-[#0f8a47]"
+          : "border border-[#f0d0aa] bg-[#fff2e1] text-[#8a4b0f]",
+      )}
+    >
+      {status}
+    </span>
+  );
+}
+
+function TeamMiniStat({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-[color:var(--line)] bg-[#f8faf7] px-4 py-4">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--muted)]">{label}</p>
+      <p className="mt-3 text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)]">{value}</p>
+    </div>
+  );
+}
+
+function InviteMemberModal({
+  draft,
+  onChange,
+  onClose,
+  onSubmit,
+}: {
+  draft: NewTeamDraft;
+  onChange: <K extends keyof NewTeamDraft>(key: K, value: NewTeamDraft[K]) => void;
+  onClose: () => void;
+  onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#121312]/45 px-4 backdrop-blur-sm">
+      <div className="w-full max-w-xl rounded-[2rem] border border-[color:var(--line)] bg-white p-5 shadow-[0_24px_90px_rgba(16,32,20,0.16)] sm:p-6">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="font-display text-2xl font-semibold tracking-[-0.05em] text-[color:var(--ink)]">
+              Invite member
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">
+              Add a new operator, finance lead, or developer to this workspace.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--line)] bg-[#f8faf7] text-[color:var(--muted)] transition-colors duration-200 hover:text-[color:var(--ink)]"
+            aria-label="Close invite member modal"
+          >
+            <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+              <path d="M5 5l10 10" strokeLinecap="round" />
+              <path d="M15 5L5 15" strokeLinecap="round" />
+            </svg>
+          </button>
+        </div>
+
+        <form className="mt-5 space-y-4" onSubmit={onSubmit}>
+          <PlanField label="Full name">
+            <input
+              value={draft.name}
+              onChange={(event) => onChange("name", event.target.value)}
+              placeholder="Amaka Obi"
+              className="w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm text-[color:var(--ink)] outline-none placeholder:text-[color:var(--muted)]"
+            />
+          </PlanField>
+
+          <PlanField label="Work email">
+            <input
+              value={draft.email}
+              onChange={(event) => onChange("email", event.target.value)}
+              placeholder="amaka@renew.sh"
+              className="w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm text-[color:var(--ink)] outline-none placeholder:text-[color:var(--muted)]"
+            />
+          </PlanField>
+
+          <PlanField label="Role">
+            <select
+              value={draft.role}
+              onChange={(event) => onChange("role", event.target.value as TeamRole)}
+              className="w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm text-[color:var(--ink)] outline-none"
+            >
+              {(["Owner", "Admin", "Operations", "Finance", "Developer", "Support"] as const).map((role) => (
+                <option key={role} value={role}>
+                  {role}
+                </option>
+              ))}
+            </select>
+          </PlanField>
+
+          <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex items-center justify-center rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm font-semibold tracking-[-0.02em] text-[color:var(--muted)]"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="inline-flex items-center justify-center rounded-2xl bg-[#0c4a27] px-4 py-3 text-sm font-semibold tracking-[-0.02em] text-[#d9f6bc]"
+            >
+              Send invite
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
