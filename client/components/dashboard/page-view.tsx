@@ -12,10 +12,16 @@ type DashboardPageViewProps = {
 };
 
 export function DashboardPageView({ page }: DashboardPageViewProps) {
-  if (page.key === "customers" || page.key === "plans") {
+  if (page.key === "customers" || page.key === "plans" || page.key === "subscriptions") {
     return (
       <section className="space-y-6">
-        {page.key === "customers" ? <CustomersSurface /> : <PlansSurface />}
+        {page.key === "customers" ? (
+          <CustomersSurface />
+        ) : page.key === "plans" ? (
+          <PlansSurface />
+        ) : (
+          <SubscriptionsSurface />
+        )}
       </section>
     );
   }
@@ -1352,25 +1358,636 @@ function PlansSurface() {
   );
 }
 
-function SubscriptionsSurface() {
-  return (
-    <div className="grid gap-4 xl:grid-cols-[1.35fr_1fr]">
-      <Card title="Renewal queue" description="Sorted by next billing date.">
-        <TableHeader columns={["Customer", "Plan", "Next bill", "State"]} />
-        <TableRow columns={["Axel Telecom", "Growth", "Jun 06", "Active"]} tone="brand" />
-        <TableRow columns={["Geno Labs", "Scale", "Jun 06", "Past due"]} tone="warning" />
-        <TableRow columns={["Mazi Clinic", "Growth", "Jun 11", "Needs update"]} tone="warning" />
-        <TableRow columns={["Sabi Retail", "Enterprise", "Jun 13", "Paused"]} />
-      </Card>
+type SubscriptionFilter = "All" | "Active" | "At risk" | "Paused";
+type SubscriptionLifecycle = Exclude<SubscriptionFilter, "All">;
 
-      <Card title="Lifecycle" description="Selected subscription">
-        <div className="space-y-3">
-          <TimelineItem title="Created" body="Growth plan attached on May 03." tone="brand" />
-          <TimelineItem title="May 10" body="Renewal paid successfully in local fiat." />
-          <TimelineItem title="May 17" body="Retry succeeded after low-balance failure." />
-          <TimelineItem title="Next" body="Meter snapshot required before the next renewal." />
+type SubscriptionRecord = {
+  id: string;
+  customerName: string;
+  customerEmail: string;
+  planName: string;
+  market: string;
+  status: SubscriptionLifecycle;
+  nextBill: string;
+  lastCharge: string;
+  retryRule: string;
+  billingMode: BillingMode;
+  amount: string;
+  interval: PlanInterval;
+  note: string;
+};
+
+type NewSubscriptionDraft = {
+  customerName: string;
+  customerEmail: string;
+  planName: string;
+  market: string;
+  amount: string;
+  interval: PlanInterval;
+  billingMode: BillingMode;
+};
+
+const initialSubscriptionRecords: SubscriptionRecord[] = [
+  {
+    id: "axel-core",
+    customerName: "Axel Telecom",
+    customerEmail: "finance@axeltelecom.com",
+    planName: "Core Plan",
+    market: "NGN",
+    status: "Active",
+    nextBill: "Jun 06",
+    lastCharge: "Jun 01",
+    retryRule: "3 attempts / 5 days",
+    billingMode: "Recurring",
+    amount: "49.00",
+    interval: "Monthly",
+    note: "Baseline monthly subscription for the primary operator account.",
+  },
+  {
+    id: "mazi-usage-flex",
+    customerName: "Mazi Clinic",
+    customerEmail: "ops@maziclinic.com",
+    planName: "Usage Flex",
+    market: "GHS",
+    status: "At risk",
+    nextBill: "Jun 11",
+    lastCharge: "Jun 04",
+    retryRule: "2 attempts / 3 days",
+    billingMode: "Metered",
+    amount: "0.00",
+    interval: "Metered",
+    note: "Usage charges are waiting on final meter approval before billing.",
+  },
+  {
+    id: "geno-scale-annual",
+    customerName: "Geno Labs",
+    customerEmail: "billing@genolabs.io",
+    planName: "Scale Annual",
+    market: "KES",
+    status: "Paused",
+    nextBill: "Paused",
+    lastCharge: "May 29",
+    retryRule: "1 attempt / 7 days",
+    billingMode: "Recurring",
+    amount: "499.00",
+    interval: "Annual",
+    note: "Subscription is paused while procurement completes approval.",
+  },
+  {
+    id: "sabi-core",
+    customerName: "Sabi Retail",
+    customerEmail: "accounts@sabiretail.africa",
+    planName: "Core Plan",
+    market: "ZMW",
+    status: "Active",
+    nextBill: "Jun 13",
+    lastCharge: "Jun 03",
+    retryRule: "3 attempts / 5 days",
+    billingMode: "Recurring",
+    amount: "49.00",
+    interval: "Monthly",
+    note: "Standard monthly renewal with automatic retries enabled.",
+  },
+];
+
+function SubscriptionsSurface() {
+  const [subscriptions, setSubscriptions] = useState<SubscriptionRecord[]>(initialSubscriptionRecords);
+  const [activeFilter, setActiveFilter] = useState<SubscriptionFilter>("All");
+  const [query, setQuery] = useState("");
+  const [selectedSubscriptionId, setSelectedSubscriptionId] = useState(initialSubscriptionRecords[0].id);
+  const [isCreateSubscriptionOpen, setIsCreateSubscriptionOpen] = useState(false);
+  const [draft, setDraft] = useState<NewSubscriptionDraft>({
+    customerName: "",
+    customerEmail: "",
+    planName: "Core Plan",
+    market: "NGN",
+    amount: "49.00",
+    interval: "Monthly",
+    billingMode: "Recurring",
+  });
+
+  const filteredSubscriptions = subscriptions.filter((subscription) => {
+    const matchesFilter = activeFilter === "All" ? true : subscription.status === activeFilter;
+
+    const normalizedQuery = query.trim().toLowerCase();
+    const matchesQuery =
+      normalizedQuery.length === 0
+        ? true
+        : [
+            subscription.customerName,
+            subscription.customerEmail,
+            subscription.planName,
+            subscription.market,
+          ]
+            .join(" ")
+            .toLowerCase()
+            .includes(normalizedQuery);
+
+    return matchesFilter && matchesQuery;
+  });
+
+  useEffect(() => {
+    if (filteredSubscriptions.length === 0) {
+      return;
+    }
+
+    const currentStillVisible = filteredSubscriptions.some(
+      (subscription) => subscription.id === selectedSubscriptionId,
+    );
+
+    if (!currentStillVisible) {
+      setSelectedSubscriptionId(filteredSubscriptions[0].id);
+    }
+  }, [activeFilter, filteredSubscriptions, query, selectedSubscriptionId]);
+
+  const selectedSubscription =
+    filteredSubscriptions.find((subscription) => subscription.id === selectedSubscriptionId) ??
+    filteredSubscriptions[0] ??
+    null;
+
+  const activeCount = subscriptions.filter((subscription) => subscription.status === "Active").length;
+  const atRiskCount = subscriptions.filter((subscription) => subscription.status === "At risk").length;
+  const pausedCount = subscriptions.filter((subscription) => subscription.status === "Paused").length;
+  const meteredCount = subscriptions.filter((subscription) => subscription.billingMode === "Metered").length;
+
+  function updateSelectedSubscription(updater: (subscription: SubscriptionRecord) => SubscriptionRecord) {
+    if (!selectedSubscription) {
+      return;
+    }
+
+    setSubscriptions((current) =>
+      current.map((subscription) =>
+        subscription.id === selectedSubscription.id ? updater(subscription) : subscription,
+      ),
+    );
+  }
+
+  function handleSubscriptionFieldChange<K extends keyof SubscriptionRecord>(
+    key: K,
+    value: SubscriptionRecord[K],
+  ) {
+    updateSelectedSubscription((subscription) => ({
+      ...subscription,
+      [key]: value,
+    }));
+  }
+
+  function toggleSubscriptionState() {
+    if (!selectedSubscription) {
+      return;
+    }
+
+    updateSelectedSubscription((subscription) => ({
+      ...subscription,
+      status: subscription.status === "Paused" ? "Active" : "Paused",
+      nextBill: subscription.status === "Paused" ? "Jun 20" : "On hold",
+      note:
+        subscription.status === "Paused"
+          ? "Billing resumes on the next scheduled cycle with automatic retries restored."
+          : "Subscription is paused and removed from the next billing run until it is resumed.",
+    }));
+  }
+
+  function handleDraftChange<K extends keyof NewSubscriptionDraft>(
+    key: K,
+    value: NewSubscriptionDraft[K],
+  ) {
+    setDraft((current) => ({
+      ...current,
+      [key]: value,
+    }));
+  }
+
+  function handleCreateSubscription(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const customerName = draft.customerName.trim();
+    const customerEmail = draft.customerEmail.trim();
+
+    if (!customerName || !customerEmail) {
+      return;
+    }
+
+    const nextSubscription: SubscriptionRecord = {
+      id: `${customerName.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Date.now()}`,
+      customerName,
+      customerEmail,
+      planName: draft.planName,
+      market: draft.market,
+      status: "Active",
+      nextBill: "Jun 20",
+      lastCharge: "Not billed",
+      retryRule: "3 attempts / 5 days",
+      billingMode: draft.billingMode,
+      amount: draft.amount,
+      interval: draft.interval,
+      note:
+        draft.billingMode === "Metered"
+          ? "Usage will accumulate until the first metered billing checkpoint is approved."
+          : "New subscription is ready for the first billing cycle.",
+    };
+
+    setSubscriptions((current) => [nextSubscription, ...current]);
+    setSelectedSubscriptionId(nextSubscription.id);
+    setActiveFilter("All");
+    setQuery("");
+    setDraft({
+      customerName: "",
+      customerEmail: "",
+      planName: "Core Plan",
+      market: "NGN",
+      amount: "49.00",
+      interval: "Monthly",
+      billingMode: "Recurring",
+    });
+    setIsCreateSubscriptionOpen(false);
+  }
+
+  return (
+    <>
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <PlanMetricCard label="Active" value={String(activeCount)} note="Billing as scheduled" tone="brand" />
+        <PlanMetricCard label="At risk" value={String(atRiskCount)} note="Need intervention" />
+        <PlanMetricCard label="Paused" value={String(pausedCount)} note="Billing on hold" />
+        <PlanMetricCard label="Metered" value={String(meteredCount)} note="Usage-based billing" />
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+        <Card title="Subscriptions">
+          <div className="flex flex-col gap-3 pb-4 lg:flex-row lg:items-center lg:justify-between">
+            <label className="flex min-w-0 flex-1 items-center gap-3 rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3">
+              <svg
+                aria-hidden="true"
+                viewBox="0 0 20 20"
+                className="h-4 w-4 shrink-0 text-[color:var(--muted)]"
+                fill="none"
+              >
+                <circle cx="9" cy="9" r="4.8" stroke="currentColor" strokeWidth="1.7" />
+                <path
+                  d="M12.8 12.8L16 16"
+                  stroke="currentColor"
+                  strokeWidth="1.7"
+                  strokeLinecap="round"
+                />
+              </svg>
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search by customer or plan"
+                className="w-full bg-transparent text-sm text-[color:var(--ink)] outline-none placeholder:text-[color:var(--muted)]"
+              />
+            </label>
+
+            <button
+              type="button"
+              onClick={() => setIsCreateSubscriptionOpen(true)}
+              className="inline-flex items-center justify-center rounded-2xl bg-[#0c4a27] px-4 py-3 text-sm font-semibold tracking-[-0.02em] text-[#d9f6bc]"
+            >
+              Create subscription
+            </button>
+          </div>
+
+          <div className="flex flex-wrap gap-2 pb-3">
+            {(["All", "Active", "At risk", "Paused"] as const).map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => setActiveFilter(tab)}
+                className={cn(
+                  "rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition-all duration-200",
+                  activeFilter === tab
+                    ? "bg-[#0c4a27] text-[#d9f6bc]"
+                    : "border border-[color:var(--line)] bg-white text-[color:var(--muted)] hover:bg-[#f7fbf5]",
+                )}
+              >
+                {tab}
+              </button>
+            ))}
+          </div>
+
+          {filteredSubscriptions.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-[color:var(--line)] bg-white px-5 py-8 text-center text-sm text-[color:var(--muted)]">
+              No subscriptions match this filter.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {filteredSubscriptions.map((subscription) => (
+                <SubscriptionListRow
+                  key={subscription.id}
+                  subscription={subscription}
+                  isSelected={subscription.id === selectedSubscriptionId}
+                  onSelect={() => setSelectedSubscriptionId(subscription.id)}
+                />
+              ))}
+            </div>
+          )}
+        </Card>
+
+        <DarkCard
+          title={selectedSubscription ? selectedSubscription.planName : "Subscription details"}
+          description={
+            selectedSubscription
+              ? `${selectedSubscription.customerName} • ${selectedSubscription.market}`
+              : undefined
+          }
+        >
+          {selectedSubscription ? (
+            <div className="space-y-5">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center rounded-full bg-white/8 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#d9f6bc]">
+                  {selectedSubscription.billingMode}
+                </span>
+                <SubscriptionStatusBadge status={selectedSubscription.status} dark />
+              </div>
+
+              <p className="text-sm leading-6 text-white/70">{selectedSubscription.note}</p>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <ProfileMiniStat label="Amount" value={`$${selectedSubscription.amount}`} />
+                <ProfileMiniStat label="Interval" value={selectedSubscription.interval} />
+                <ProfileMiniStat label="Next bill" value={selectedSubscription.nextBill} />
+                <ProfileMiniStat label="Last charge" value={selectedSubscription.lastCharge} />
+              </div>
+
+              <div className="rounded-2xl border border-white/10 bg-white/6 p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/46">
+                  Billing rules
+                </p>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-2xl border border-white/10 bg-white/6 px-4 py-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/46">
+                      Retry rule
+                    </p>
+                    <p className="mt-2 text-sm font-semibold tracking-[-0.02em] text-white">
+                      {selectedSubscription.retryRule}
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl border border-white/10 bg-white/6 px-4 py-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/46">
+                      Customer
+                    </p>
+                    <p className="mt-2 text-sm font-semibold tracking-[-0.02em] text-white">
+                      {selectedSubscription.customerEmail}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={toggleSubscriptionState}
+                  className="inline-flex items-center justify-center rounded-2xl border border-white/10 bg-white/6 px-4 py-3 text-sm font-semibold tracking-[-0.02em] text-white transition-all duration-200 hover:bg-white/10"
+                >
+                  {selectedSubscription.status === "Paused" ? "Resume subscription" : "Pause subscription"}
+                </button>
+                <ProfileActionLink href="/dashboard/payments" label="View payments" />
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-dashed border-white/10 bg-white/6 px-5 py-10 text-center text-sm text-white/66">
+              Select a subscription to review billing rules and lifecycle state.
+            </div>
+          )}
+        </DarkCard>
+      </div>
+
+      {isCreateSubscriptionOpen ? (
+        <CreateSubscriptionModal
+          draft={draft}
+          onChange={handleDraftChange}
+          onClose={() => setIsCreateSubscriptionOpen(false)}
+          onSubmit={handleCreateSubscription}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function SubscriptionListRow({
+  subscription,
+  isSelected,
+  onSelect,
+}: {
+  subscription: SubscriptionRecord;
+  isSelected: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={cn(
+        "w-full rounded-2xl border px-4 py-4 text-left transition-all duration-200",
+        isSelected
+          ? "border-[#0c4a27]/14 bg-[#edf7eb]"
+          : "border-[color:var(--line)] bg-white hover:border-[#0c4a27]/10 hover:bg-[#f7fbf5]",
+      )}
+    >
+      <div className="flex flex-col gap-3 lg:grid lg:grid-cols-[minmax(0,1.2fr)_auto_auto] lg:items-center">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)]">
+            {subscription.planName}
+          </p>
+          <p className="mt-1 truncate text-sm text-[color:var(--muted)]">
+            {subscription.customerName} • {subscription.customerEmail}
+          </p>
         </div>
-      </Card>
+
+        <div className="flex flex-wrap items-center gap-2 lg:justify-self-start">
+          <CustomerMetaPill>{subscription.market}</CustomerMetaPill>
+          <CustomerMetaPill>{subscription.nextBill}</CustomerMetaPill>
+          <CustomerMetaPill>
+            {subscription.billingMode === "Metered"
+              ? "Usage based"
+              : `$${subscription.amount} • ${subscription.interval}`}
+          </CustomerMetaPill>
+        </div>
+
+        <div className="flex justify-start lg:justify-self-end">
+          <SubscriptionStatusBadge status={subscription.status} />
+        </div>
+      </div>
+    </button>
+  );
+}
+
+function SubscriptionStatusBadge({
+  status,
+  dark = false,
+}: {
+  status: SubscriptionLifecycle;
+  dark?: boolean;
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded-full px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em]",
+        status === "Active"
+          ? dark
+            ? "border border-[#2f5a42] bg-[#d9f6bc]/10 text-[#d9f6bc]"
+            : "border border-[#bfe8cb] bg-[#dff7e6] text-[#0f8a47]"
+          : status === "At risk"
+            ? dark
+              ? "border border-[#684920] bg-[#f5c98f]/10 text-[#f5c98f]"
+              : "border border-[#f0d0aa] bg-[#fff2e1] text-[#8a4b0f]"
+            : dark
+              ? "border border-white/12 bg-white/6 text-white/72"
+              : "border border-[color:var(--line)] bg-white text-[color:var(--muted)]",
+      )}
+    >
+      {status}
+    </span>
+  );
+}
+
+function CreateSubscriptionModal({
+  draft,
+  onChange,
+  onClose,
+  onSubmit,
+}: {
+  draft: NewSubscriptionDraft;
+  onChange: <K extends keyof NewSubscriptionDraft>(key: K, value: NewSubscriptionDraft[K]) => void;
+  onClose: () => void;
+  onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#121312]/45 px-4 backdrop-blur-sm">
+      <div className="w-full max-w-2xl rounded-[2rem] border border-[color:var(--line)] bg-white p-5 shadow-[0_24px_90px_rgba(16,32,20,0.16)] sm:p-6">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="font-display text-2xl font-semibold tracking-[-0.05em] text-[color:var(--ink)]">
+              Create subscription
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">
+              Attach a customer to a billing plan and set the first billing cycle.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--line)] bg-[#f8faf7] text-[color:var(--muted)] transition-colors duration-200 hover:text-[color:var(--ink)]"
+            aria-label="Close create subscription modal"
+          >
+            <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+              <path d="M5 5l10 10" strokeLinecap="round" />
+              <path d="M15 5L5 15" strokeLinecap="round" />
+            </svg>
+          </button>
+        </div>
+
+        <form className="mt-5 space-y-4" onSubmit={onSubmit}>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <PlanField label="Customer name">
+              <input
+                value={draft.customerName}
+                onChange={(event) => onChange("customerName", event.target.value)}
+                placeholder="Mazi Clinic"
+                className="w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm text-[color:var(--ink)] outline-none placeholder:text-[color:var(--muted)]"
+              />
+            </PlanField>
+
+            <PlanField label="Billing email">
+              <input
+                type="email"
+                value={draft.customerEmail}
+                onChange={(event) => onChange("customerEmail", event.target.value)}
+                placeholder="ops@maziclinic.com"
+                className="w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm text-[color:var(--ink)] outline-none placeholder:text-[color:var(--muted)]"
+              />
+            </PlanField>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <PlanField label="Plan">
+              <select
+                value={draft.planName}
+                onChange={(event) => onChange("planName", event.target.value)}
+                className="w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm text-[color:var(--ink)] outline-none"
+              >
+                {["Core Plan", "Usage Flex", "Scale Annual"].map((plan) => (
+                  <option key={plan} value={plan}>
+                    {plan}
+                  </option>
+                ))}
+              </select>
+            </PlanField>
+
+            <PlanField label="Market">
+              <select
+                value={draft.market}
+                onChange={(event) => onChange("market", event.target.value)}
+                className="w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm text-[color:var(--ink)] outline-none"
+              >
+                {["NGN", "GHS", "KES", "ZMW"].map((market) => (
+                  <option key={market} value={market}>
+                    {market}
+                  </option>
+                ))}
+              </select>
+            </PlanField>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-3">
+            <PlanField label="Amount">
+              <div className="flex items-center gap-2 rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3">
+                <span className="text-sm font-semibold text-[color:var(--muted)]">$</span>
+                <input
+                  value={draft.amount}
+                  onChange={(event) => onChange("amount", event.target.value)}
+                  className="w-full bg-transparent text-sm text-[color:var(--ink)] outline-none"
+                />
+              </div>
+            </PlanField>
+
+            <PlanField label="Interval">
+              <select
+                value={draft.interval}
+                onChange={(event) => onChange("interval", event.target.value as PlanInterval)}
+                className="w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm text-[color:var(--ink)] outline-none"
+              >
+                {["Monthly", "Quarterly", "Annual", "Metered"].map((interval) => (
+                  <option key={interval} value={interval}>
+                    {interval}
+                  </option>
+                ))}
+              </select>
+            </PlanField>
+
+            <PlanField label="Billing mode">
+              <select
+                value={draft.billingMode}
+                onChange={(event) => onChange("billingMode", event.target.value as BillingMode)}
+                className="w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm text-[color:var(--ink)] outline-none"
+              >
+                {["Recurring", "Metered"].map((mode) => (
+                  <option key={mode} value={mode}>
+                    {mode}
+                  </option>
+                ))}
+              </select>
+            </PlanField>
+          </div>
+
+          <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex items-center justify-center rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm font-semibold tracking-[-0.02em] text-[color:var(--muted)]"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="inline-flex items-center justify-center rounded-2xl bg-[#0c4a27] px-4 py-3 text-sm font-semibold tracking-[-0.02em] text-[#d9f6bc]"
+            >
+              Save subscription
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
