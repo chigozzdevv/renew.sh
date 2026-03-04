@@ -18,6 +18,7 @@ export function DashboardPageView({ page }: DashboardPageViewProps) {
     page.key === "subscriptions" ||
     page.key === "payments" ||
     page.key === "treasury" ||
+    page.key === "developers" ||
     page.key === "teams"
   ) {
     return (
@@ -32,6 +33,8 @@ export function DashboardPageView({ page }: DashboardPageViewProps) {
           <PaymentsSurface />
         ) : page.key === "treasury" ? (
           <TreasurySurface />
+        ) : page.key === "developers" ? (
+          <DevelopersSurface />
         ) : (
           <TeamsSurface />
         )}
@@ -89,22 +92,10 @@ function renderMockSurface(page: DashboardPageContent) {
   switch (page.key) {
     case "overview":
       return <OverviewSurface />;
-    case "customers":
-      return <CustomersSurface />;
-    case "plans":
-      return <PlansSurface />;
-    case "subscriptions":
-      return <SubscriptionsSurface />;
-    case "payments":
-      return <PaymentsSurface />;
-    case "treasury":
-      return <TreasurySurface />;
-    case "teams":
-      return <TeamsSurface />;
-    case "developers":
-      return <DevelopersSurface />;
     case "settings":
       return <SettingsSurface />;
+    default:
+      return null;
   }
 }
 
@@ -608,23 +599,10 @@ function CustomersSurface() {
         >
           {selectedCustomer ? (
             <div className="space-y-5">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center rounded-full bg-white/8 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#d9f6bc]">
-                  {selectedCustomer.market}
-                </span>
-                <span
-                  className={cn(
-                    "inline-flex items-center rounded-full px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em]",
-                    selectedCustomer.lifecycle === "At risk"
-                      ? "bg-[#8a4b0f]/18 text-[#f6c887]"
-                      : selectedCustomer.lifecycle === "Paused"
-                        ? "bg-white/8 text-white/62"
-                        : "bg-[#133726] text-[#7fe8ae]",
-                  )}
-                >
-                  {selectedCustomer.lifecycle}
-                </span>
-              </div>
+              <DetailMetaRow>
+                <DarkMetaPill tone="brand">{selectedCustomer.market}</DarkMetaPill>
+                <CustomerLifecycleBadge lifecycle={selectedCustomer.lifecycle} dark />
+              </DetailMetaRow>
 
               <div className="grid gap-3 sm:grid-cols-3">
                 <ProfileMiniStat label="Plans" value={String(selectedCustomer.plans.length)} />
@@ -1187,7 +1165,7 @@ function PlansSurface() {
         <PlanMetricCard label="Markets" value={String(liveMarketCount)} note="Rollout coverage" />
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+      <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr] xl:items-start">
         <Card title="Plans">
           <div className="flex flex-col gap-3 pb-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex flex-wrap gap-2">
@@ -1222,7 +1200,7 @@ function PlansSurface() {
               No plans in this state.
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="max-h-[44rem] space-y-3 overflow-y-auto pr-1">
               {filteredPlans.map((plan) => (
                 <PlanCatalogRow
                   key={plan.id}
@@ -1235,35 +1213,33 @@ function PlansSurface() {
           )}
         </Card>
 
-        <Card title={selectedPlan ? selectedPlan.name : "Plan details"}>
+        <SidePanel title={selectedPlan ? selectedPlan.name : "Plan details"}>
           {selectedPlan ? (
             <div className="space-y-5">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <PlanStatusBadge status={selectedPlan.status} />
-                <span className="text-sm font-semibold text-[color:var(--muted)]">
-                  {selectedPlan.subscribers} subscribers
-                </span>
-              </div>
+              <DetailMetaRow>
+                <PlanStatusBadge status={selectedPlan.status} dark />
+                <DarkMetaPill>{selectedPlan.subscribers} subscribers</DarkMetaPill>
+              </DetailMetaRow>
 
-              <p className="text-sm leading-6 text-[color:var(--muted)]">{selectedPlan.note}</p>
+              <p className="text-sm leading-6 text-white/70">{selectedPlan.note}</p>
 
               <div className="grid gap-3 sm:grid-cols-2">
-                <PlanField label="Amount">
-                  <div className="flex items-center gap-2 rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3">
-                    <span className="text-sm font-semibold text-[color:var(--muted)]">$</span>
+                <PlanField label="Amount" dark>
+                  <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/6 px-4 py-3">
+                    <span className="text-sm font-semibold text-white/56">$</span>
                     <input
                       value={selectedPlan.amount}
                       onChange={(event) => handlePlanFieldChange("amount", event.target.value)}
-                      className="w-full bg-transparent text-sm font-semibold text-[color:var(--ink)] outline-none"
+                      className="w-full bg-transparent text-sm font-semibold text-white outline-none"
                     />
                   </div>
                 </PlanField>
 
-                <PlanField label="Interval">
+                <PlanField label="Interval" dark>
                   <select
                     value={selectedPlan.interval}
                     onChange={(event) => handlePlanFieldChange("interval", event.target.value as PlanInterval)}
-                    className="w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm font-semibold text-[color:var(--ink)] outline-none"
+                    className="w-full rounded-2xl border border-white/10 bg-white/6 px-4 py-3 text-sm font-semibold text-white outline-none"
                   >
                     {["Monthly", "Quarterly", "Annual", "Metered"].map((interval) => (
                       <option key={interval} value={interval}>
@@ -1273,11 +1249,11 @@ function PlansSurface() {
                   </select>
                 </PlanField>
 
-                <PlanField label="Trial">
+                <PlanField label="Trial" dark>
                   <select
                     value={selectedPlan.trial}
                     onChange={(event) => handlePlanFieldChange("trial", event.target.value)}
-                    className="w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm font-semibold text-[color:var(--ink)] outline-none"
+                    className="w-full rounded-2xl border border-white/10 bg-white/6 px-4 py-3 text-sm font-semibold text-white outline-none"
                   >
                     {["No trial", "7 days", "14 days", "30 days"].map((trial) => (
                       <option key={trial} value={trial}>
@@ -1287,11 +1263,11 @@ function PlansSurface() {
                   </select>
                 </PlanField>
 
-                <PlanField label="Retry rule">
+                <PlanField label="Retry rule" dark>
                   <select
                     value={selectedPlan.retryRule}
                     onChange={(event) => handlePlanFieldChange("retryRule", event.target.value)}
-                    className="w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm font-semibold text-[color:var(--ink)] outline-none"
+                    className="w-full rounded-2xl border border-white/10 bg-white/6 px-4 py-3 text-sm font-semibold text-white outline-none"
                   >
                     {["1 attempt / 7 days", "2 attempts / 3 days", "3 attempts / 5 days"].map((rule) => (
                       <option key={rule} value={rule}>
@@ -1301,11 +1277,11 @@ function PlansSurface() {
                   </select>
                 </PlanField>
 
-                <PlanField label="Billing mode">
+                <PlanField label="Billing mode" dark>
                   <select
                     value={selectedPlan.billingMode}
                     onChange={(event) => handlePlanFieldChange("billingMode", event.target.value as BillingMode)}
-                    className="w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm font-semibold text-[color:var(--ink)] outline-none"
+                    className="w-full rounded-2xl border border-white/10 bg-white/6 px-4 py-3 text-sm font-semibold text-white outline-none"
                   >
                     {["Recurring", "Metered"].map((mode) => (
                       <option key={mode} value={mode}>
@@ -1316,8 +1292,8 @@ function PlansSurface() {
                 </PlanField>
               </div>
 
-              <div className="rounded-2xl border border-[color:var(--line)] bg-[#f8faf7] p-4">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--muted)]">
+              <div className="rounded-2xl border border-white/10 bg-white/6 p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/46">
                   Markets
                 </p>
                 <div className="mt-3 flex flex-wrap gap-2">
@@ -1333,7 +1309,7 @@ function PlansSurface() {
                           "inline-flex items-center rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] transition-all duration-200",
                           isActive
                             ? "bg-[#0c4a27] text-[#d9f6bc]"
-                            : "border border-[color:var(--line)] bg-white text-[color:var(--muted)] hover:bg-[#edf7eb]",
+                            : "border border-white/10 bg-white/6 text-white/70 hover:bg-white/10",
                         )}
                       >
                         {market}
@@ -1344,19 +1320,20 @@ function PlansSurface() {
               </div>
 
               <div className="grid gap-3 sm:grid-cols-2">
-                <PlanActionButton label="Duplicate plan" onClick={duplicateSelectedPlan} />
+                <PlanActionButton label="Duplicate plan" onClick={duplicateSelectedPlan} dark />
                 <PlanActionButton
                   label={selectedPlan.status === "Archived" ? "Restore plan" : "Archive plan"}
                   onClick={togglePlanArchiveState}
+                  dark
                 />
               </div>
             </div>
           ) : (
-            <div className="rounded-2xl border border-dashed border-[color:var(--line)] bg-white px-5 py-8 text-center text-sm text-[color:var(--muted)]">
+            <div className="rounded-2xl border border-dashed border-white/10 bg-white/6 px-5 py-8 text-center text-sm text-white/66">
               Select a plan to review pricing and rollout settings.
             </div>
           )}
-        </Card>
+        </SidePanel>
       </div>
 
       {isCreatePlanOpen ? (
@@ -1706,12 +1683,10 @@ function SubscriptionsSurface() {
         >
           {selectedSubscription ? (
             <div className="space-y-5">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center rounded-full bg-white/8 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#d9f6bc]">
-                  {selectedSubscription.billingMode}
-                </span>
+              <DetailMetaRow>
+                <DarkMetaPill tone="brand">{selectedSubscription.billingMode}</DarkMetaPill>
                 <SubscriptionStatusBadge status={selectedSubscription.status} dark />
-              </div>
+              </DetailMetaRow>
 
               <p className="text-sm leading-6 text-white/70">{selectedSubscription.note}</p>
 
@@ -2343,12 +2318,10 @@ function PaymentsSurface() {
         >
           {selectedPayment ? (
             <div className="space-y-5">
-              <div className="flex flex-wrap items-center gap-2">
+              <DetailMetaRow>
                 <PaymentStatusBadge status={selectedPayment.status} dark />
-                <span className="inline-flex items-center rounded-full bg-white/8 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/72">
-                  {selectedPayment.settlementState}
-                </span>
-              </div>
+                <DarkMetaPill>{selectedPayment.settlementState}</DarkMetaPill>
+              </DetailMetaRow>
 
               <p className="text-sm leading-6 text-white/70">{selectedPayment.note}</p>
 
@@ -2897,12 +2870,10 @@ function TreasurySurface() {
         >
           {selectedBatch ? (
             <div className="space-y-5">
-              <div className="flex flex-wrap items-center gap-2">
+              <DetailMetaRow>
                 <TreasuryStatusBadge status={selectedBatch.status} dark />
-                <span className="inline-flex items-center rounded-full bg-white/8 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/72">
-                  {selectedBatch.createdAt}
-                </span>
-              </div>
+                <DarkMetaPill>{selectedBatch.createdAt}</DarkMetaPill>
+              </DetailMetaRow>
 
               <p className="text-sm leading-6 text-white/70">{selectedBatch.note}</p>
 
@@ -3525,21 +3496,21 @@ function TeamsSurface() {
           </div>
         </Card>
 
-        <Card title={selectedMember ? selectedMember.name : "Team member"} description={selectedMember?.email}>
+        <SidePanel title={selectedMember ? selectedMember.name : "Team member"} description={selectedMember?.email}>
           {selectedMember ? (
             <div className="space-y-5">
-              <div className="flex flex-wrap items-center gap-2">
-                <TeamRoleBadge role={selectedMember.role} />
-                <TeamStatusBadge status={selectedMember.status} />
-                <span className="inline-flex items-center rounded-full border border-[color:var(--line)] bg-white px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[color:var(--muted)]">
+              <DetailMetaRow>
+                <TeamRoleBadge role={selectedMember.role} dark />
+                <TeamStatusBadge status={selectedMember.status} dark />
+                <DarkMetaPill>
                   {selectedMember.markets.includes("All") ? "Global" : `${selectedMember.markets.length} markets`}
-                </span>
-              </div>
+                </DarkMetaPill>
+              </DetailMetaRow>
 
               <div className="grid gap-3 sm:grid-cols-2">
-                <TeamMiniStat label="Access" value={selectedMember.access} />
-                <TeamMiniStat label="Last active" value={selectedMember.lastActive} />
-                <TeamMiniStat label="Permissions" value={String(selectedMember.permissions.length)} />
+                <TeamMiniStat label="Access" value={selectedMember.access} dark />
+                <TeamMiniStat label="Last active" value={selectedMember.lastActive} dark />
+                <TeamMiniStat label="Permissions" value={String(selectedMember.permissions.length)} dark />
                 <TeamMiniStat
                   label="Coverage"
                   value={
@@ -3547,30 +3518,31 @@ function TeamsSurface() {
                       ? "Global"
                       : `${selectedMember.markets.length} markets`
                   }
+                  dark
                 />
               </div>
 
-              <div className="rounded-2xl border border-[color:var(--line)] bg-[#f8faf7] p-4">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--muted)]">Team info</p>
-                <p className="mt-3 text-sm leading-6 text-[color:var(--muted)]">{selectedMember.note}</p>
+              <div className="rounded-2xl border border-white/10 bg-white/6 p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/46">Team info</p>
+                <p className="mt-3 text-sm leading-6 text-white/70">{selectedMember.note}</p>
               </div>
 
-              <div className="rounded-2xl border border-[color:var(--line)] bg-[#f8faf7]">
+              <div className="rounded-2xl border border-white/10 bg-white/6">
                 <button
                   type="button"
                   onClick={() => setOpenPanel((current) => (current === "access" ? null : "access"))}
                   className="flex w-full items-center justify-between gap-3 px-4 py-4 text-left"
                 >
                   <div>
-                    <p className="text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)]">Role and access</p>
-                    <p className="mt-1 text-xs text-[color:var(--muted)]">
+                    <p className="text-sm font-semibold tracking-[-0.02em] text-white">Role and access</p>
+                    <p className="mt-1 text-xs text-white/60">
                       Review role defaults or override permission scope.
                     </p>
                   </div>
                   <svg
                     viewBox="0 0 20 20"
                     className={cn(
-                      "h-4 w-4 shrink-0 text-[color:var(--muted)] transition-transform duration-200",
+                      "h-4 w-4 shrink-0 text-white/46 transition-transform duration-200",
                       openPanel === "access" ? "rotate-180" : "",
                     )}
                     fill="none"
@@ -3582,13 +3554,13 @@ function TeamsSurface() {
                 </button>
 
                 {openPanel === "access" ? (
-                  <div className="border-t border-[color:var(--line)] px-4 py-4">
+                  <div className="border-t border-white/10 px-4 py-4">
                     <div className="flex items-center justify-between gap-3">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--muted)]">Role</p>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/46">Role</p>
                       <button
                         type="button"
                         onClick={resetSelectedPermissions}
-                        className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#0c4a27]"
+                        className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#d9f6bc]"
                       >
                         Reset to default
                       </button>
@@ -3596,7 +3568,7 @@ function TeamsSurface() {
                     <select
                       value={selectedMember.role}
                       onChange={(event) => updateSelectedRole(event.target.value as TeamRole)}
-                      className="mt-3 w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm font-semibold text-[color:var(--ink)] outline-none"
+                      className="mt-3 w-full rounded-2xl border border-white/10 bg-white/8 px-4 py-3 text-sm font-semibold text-white outline-none"
                     >
                       {(["Owner", "Admin", "Operations", "Finance", "Developer", "Support"] as const).map((role) => (
                         <option key={role} value={role}>
@@ -3617,7 +3589,7 @@ function TeamsSurface() {
                               "inline-flex items-center rounded-full px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] transition-all duration-200",
                               active
                                 ? "bg-[#0c4a27] text-[#d9f6bc]"
-                                : "border border-[color:var(--line)] bg-white text-[color:var(--muted)] hover:bg-[#edf7eb]",
+                                : "border border-white/10 bg-white/8 text-white/70 hover:bg-white/12",
                             )}
                           >
                             {permission}
@@ -3629,22 +3601,22 @@ function TeamsSurface() {
                 ) : null}
               </div>
 
-              <div className="rounded-2xl border border-[color:var(--line)] bg-[#f8faf7]">
+              <div className="rounded-2xl border border-white/10 bg-white/6">
                 <button
                   type="button"
                   onClick={() => setOpenPanel((current) => (current === "activity" ? null : "activity"))}
                   className="flex w-full items-center justify-between gap-3 px-4 py-4 text-left"
                 >
                   <div>
-                    <p className="text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)]">Recent activity</p>
-                    <p className="mt-1 text-xs text-[color:var(--muted)]">
+                    <p className="text-sm font-semibold tracking-[-0.02em] text-white">Recent activity</p>
+                    <p className="mt-1 text-xs text-white/60">
                       See recent access and billing actions from this member.
                     </p>
                   </div>
                   <svg
                     viewBox="0 0 20 20"
                     className={cn(
-                      "h-4 w-4 shrink-0 text-[color:var(--muted)] transition-transform duration-200",
+                      "h-4 w-4 shrink-0 text-white/46 transition-transform duration-200",
                       openPanel === "activity" ? "rotate-180" : "",
                     )}
                     fill="none"
@@ -3656,14 +3628,14 @@ function TeamsSurface() {
                 </button>
 
                 {openPanel === "activity" ? (
-                  <div className="space-y-3 border-t border-[color:var(--line)] px-4 py-4">
+                  <div className="space-y-3 border-t border-white/10 px-4 py-4">
                     {selectedMember.activity.map((entry) => (
                       <div
                         key={`${entry.label}-${entry.meta}`}
-                        className="flex items-start justify-between gap-3 rounded-2xl border border-[color:var(--line)] bg-white px-3 py-3"
+                        className="flex items-start justify-between gap-3 rounded-2xl border border-white/10 bg-white/8 px-3 py-3"
                       >
-                        <p className="text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)]">{entry.label}</p>
-                        <p className="text-right text-xs text-[color:var(--muted)]">{entry.meta}</p>
+                        <p className="text-sm font-semibold tracking-[-0.02em] text-white">{entry.label}</p>
+                        <p className="text-right text-xs text-white/60">{entry.meta}</p>
                       </div>
                     ))}
                   </div>
@@ -3683,7 +3655,7 @@ function TeamsSurface() {
                     <button
                       type="button"
                       onClick={() => revokeInvite(selectedMember.id)}
-                      className="inline-flex items-center justify-center rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)]"
+                      className="inline-flex items-center justify-center rounded-2xl border border-white/10 bg-white/8 px-4 py-3 text-sm font-semibold tracking-[-0.02em] text-white"
                     >
                       Cancel invite
                     </button>
@@ -3698,7 +3670,7 @@ function TeamsSurface() {
                     </button>
                     <a
                       href="/dashboard/settings"
-                      className="inline-flex items-center justify-center rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)]"
+                      className="inline-flex items-center justify-center rounded-2xl border border-white/10 bg-white/8 px-4 py-3 text-sm font-semibold tracking-[-0.02em] text-white"
                     >
                       View audit log
                     </a>
@@ -3707,11 +3679,11 @@ function TeamsSurface() {
               </div>
             </div>
           ) : (
-            <div className="rounded-2xl border border-dashed border-[color:var(--line)] bg-[#f8faf7] px-5 py-10 text-center text-sm text-[color:var(--muted)]">
+            <div className="rounded-2xl border border-dashed border-white/10 bg-white/6 px-5 py-10 text-center text-sm text-white/66">
               Select a team member to review access and permissions.
             </div>
           )}
-        </Card>
+        </SidePanel>
       </div>
 
       {isInviteOpen ? (
@@ -3841,22 +3813,45 @@ function TeamMemberRow({
   );
 }
 
-function TeamRoleBadge({ role }: { role: TeamRole }) {
+function TeamRoleBadge({
+  role,
+  dark = false,
+}: {
+  role: TeamRole;
+  dark?: boolean;
+}) {
   return (
-    <span className="inline-flex items-center rounded-full border border-[color:var(--line)] bg-white px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[color:var(--muted)]">
+    <span
+      className={cn(
+        "inline-flex items-center rounded-full px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em]",
+        dark
+          ? "border border-white/10 bg-white/8 text-white/72"
+          : "border border-[color:var(--line)] bg-white text-[color:var(--muted)]",
+      )}
+    >
       {role}
     </span>
   );
 }
 
-function TeamStatusBadge({ status }: { status: TeamMemberStatus }) {
+function TeamStatusBadge({
+  status,
+  dark = false,
+}: {
+  status: TeamMemberStatus;
+  dark?: boolean;
+}) {
   return (
     <span
       className={cn(
         "inline-flex items-center rounded-full px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em]",
         status === "Active"
-          ? "border border-[#bfe8cb] bg-[#dff7e6] text-[#0f8a47]"
-          : "border border-[#f0d0aa] bg-[#fff2e1] text-[#8a4b0f]",
+          ? dark
+            ? "border border-[#2f5a42] bg-[#d9f6bc]/10 text-[#d9f6bc]"
+            : "border border-[#bfe8cb] bg-[#dff7e6] text-[#0f8a47]"
+          : dark
+            ? "border border-[#684920] bg-[#f5c98f]/10 text-[#f5c98f]"
+            : "border border-[#f0d0aa] bg-[#fff2e1] text-[#8a4b0f]",
       )}
     >
       {status}
@@ -3864,17 +3859,67 @@ function TeamStatusBadge({ status }: { status: TeamMemberStatus }) {
   );
 }
 
+function CustomerLifecycleBadge({
+  lifecycle,
+  dark = false,
+}: {
+  lifecycle: CustomerRecord["lifecycle"];
+  dark?: boolean;
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded-full px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em]",
+        lifecycle === "At risk"
+          ? dark
+            ? "border border-[#684920] bg-[#f5c98f]/10 text-[#f5c98f]"
+            : "border border-[#f0d0aa] bg-[#fff2e1] text-[#8a4b0f]"
+          : lifecycle === "Paused"
+            ? dark
+              ? "border border-white/10 bg-white/8 text-white/72"
+              : "border border-[color:var(--line)] bg-white text-[color:var(--muted)]"
+            : dark
+              ? "border border-[#2f5a42] bg-[#d9f6bc]/10 text-[#d9f6bc]"
+              : "border border-[#bfe8cb] bg-[#dff7e6] text-[#0f8a47]",
+      )}
+    >
+      {lifecycle}
+    </span>
+  );
+}
+
 function TeamMiniStat({
   label,
   value,
+  dark = false,
 }: {
   label: string;
   value: string;
+  dark?: boolean;
 }) {
   return (
-    <div className="rounded-2xl border border-[color:var(--line)] bg-[#f8faf7] px-4 py-4">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--muted)]">{label}</p>
-      <p className="mt-3 text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)]">{value}</p>
+    <div
+      className={cn(
+        "rounded-2xl px-4 py-4",
+        dark ? "border border-white/10 bg-white/6" : "border border-[color:var(--line)] bg-[#f8faf7]",
+      )}
+    >
+      <p
+        className={cn(
+          "text-[11px] font-semibold uppercase tracking-[0.14em]",
+          dark ? "text-white/46" : "text-[color:var(--muted)]",
+        )}
+      >
+        {label}
+      </p>
+      <p
+        className={cn(
+          "mt-3 text-sm font-semibold tracking-[-0.02em]",
+          dark ? "text-white" : "text-[color:var(--ink)]",
+        )}
+      >
+        {value}
+      </p>
     </div>
   );
 }
@@ -3969,32 +4014,788 @@ function InviteMemberModal({
   );
 }
 
+type DeveloperKeyStatus = "Live" | "Test" | "Revoked";
+type WebhookEndpointStatus = "Healthy" | "Retrying" | "Paused";
+type DeliveryResult = "Delivered" | "Retried" | "Pending" | "Failed";
+
+type DeveloperKeyRecord = {
+  id: string;
+  name: string;
+  keyPreview: string;
+  status: DeveloperKeyStatus;
+  scope: string;
+  mode: "Live" | "Test";
+  lastUsed: string;
+  dailyEvents: number;
+  webhookCount: number;
+  createdBy: string;
+  note: string;
+};
+
+type WebhookEndpointRecord = {
+  id: string;
+  name: string;
+  url: string;
+  status: WebhookEndpointStatus;
+  events: string;
+  lastDelivery: string;
+  signingState: string;
+};
+
+type DeliveryEventRecord = {
+  id: string;
+  event: string;
+  object: string;
+  endpoint: string;
+  result: DeliveryResult;
+  createdAt: string;
+};
+
+type DeveloperKeyFilter = "All" | DeveloperKeyStatus;
+
+type NewDeveloperKeyDraft = {
+  name: string;
+  scope: string;
+  mode: "Live" | "Test";
+};
+
+const developerScopeOptions = [
+  "Billing + subscriptions",
+  "Payments + treasury",
+  "Webhooks only",
+  "Read-only analytics",
+] as const;
+
+const initialDeveloperKeys: DeveloperKeyRecord[] = [
+  {
+    id: "dev-key-1",
+    name: "Production API",
+    keyPreview: "rk_live_••••4E9A",
+    status: "Live",
+    scope: "Billing + subscriptions",
+    mode: "Live",
+    lastUsed: "4 min ago",
+    dailyEvents: 4820,
+    webhookCount: 3,
+    createdBy: "Ada Nwosu",
+    note: "Primary production credential for billing sessions and subscription orchestration.",
+  },
+  {
+    id: "dev-key-2",
+    name: "Ops reconciliation",
+    keyPreview: "rk_live_••••28D1",
+    status: "Live",
+    scope: "Payments + treasury",
+    mode: "Live",
+    lastUsed: "18 min ago",
+    dailyEvents: 2960,
+    webhookCount: 2,
+    createdBy: "Jules Amani",
+    note: "Treasury sync key used for settlement pulls and daily exports.",
+  },
+  {
+    id: "dev-key-3",
+    name: "Sandbox QA",
+    keyPreview: "rk_test_••••B31F",
+    status: "Test",
+    scope: "Billing + subscriptions",
+    mode: "Test",
+    lastUsed: "52 min ago",
+    dailyEvents: 840,
+    webhookCount: 1,
+    createdBy: "Mina Sule",
+    note: "Sandbox credential used for integration testing and webhook replay.",
+  },
+  {
+    id: "dev-key-4",
+    name: "Legacy partner",
+    keyPreview: "rk_live_••••9C77",
+    status: "Revoked",
+    scope: "Read-only analytics",
+    mode: "Live",
+    lastUsed: "Revoked",
+    dailyEvents: 0,
+    webhookCount: 0,
+    createdBy: "Kola Martins",
+    note: "Retired partner credential retained in the audit trail.",
+  },
+];
+
+const initialWebhookEndpoints: WebhookEndpointRecord[] = [
+  {
+    id: "endpoint-1",
+    name: "billing-prod",
+    url: "https://ops.renew.sh/webhooks/billing-prod",
+    status: "Healthy",
+    events: "8.4k / day",
+    lastDelivery: "2 min ago",
+    signingState: "Signing enabled",
+  },
+  {
+    id: "endpoint-2",
+    name: "ops-sync",
+    url: "https://ops.renew.sh/webhooks/ops-sync",
+    status: "Healthy",
+    events: "2.1k / day",
+    lastDelivery: "5 min ago",
+    signingState: "Signing enabled",
+  },
+  {
+    id: "endpoint-3",
+    name: "sandbox-hook",
+    url: "https://sandbox.renew.sh/hooks/replay",
+    status: "Retrying",
+    events: "220 / day",
+    lastDelivery: "Retrying now",
+    signingState: "Rotate soon",
+  },
+];
+
+const initialDeliveryEvents: DeliveryEventRecord[] = [
+  {
+    id: "delivery-1",
+    event: "payment.settled",
+    object: "INV-1042",
+    endpoint: "billing-prod",
+    result: "Delivered",
+    createdAt: "1 min ago",
+  },
+  {
+    id: "delivery-2",
+    event: "subscription.retry_scheduled",
+    object: "SUB-280",
+    endpoint: "ops-sync",
+    result: "Delivered",
+    createdAt: "4 min ago",
+  },
+  {
+    id: "delivery-3",
+    event: "payment.failed",
+    object: "INV-1040",
+    endpoint: "billing-prod",
+    result: "Retried",
+    createdAt: "12 min ago",
+  },
+  {
+    id: "delivery-4",
+    event: "subscription.updated",
+    object: "SUB-244",
+    endpoint: "sandbox-hook",
+    result: "Pending",
+    createdAt: "18 min ago",
+  },
+  {
+    id: "delivery-5",
+    event: "plan.updated",
+    object: "PLAN-031",
+    endpoint: "sandbox-hook",
+    result: "Failed",
+    createdAt: "26 min ago",
+  },
+];
+
 function DevelopersSurface() {
+  const [keys, setKeys] = useState<DeveloperKeyRecord[]>(initialDeveloperKeys);
+  const [endpoints, setEndpoints] = useState<WebhookEndpointRecord[]>(initialWebhookEndpoints);
+  const [deliveries] = useState<DeliveryEventRecord[]>(initialDeliveryEvents);
+  const [activeFilter, setActiveFilter] = useState<DeveloperKeyFilter>("All");
+  const [query, setQuery] = useState("");
+  const [selectedKeyId, setSelectedKeyId] = useState(initialDeveloperKeys[0].id);
+  const [isCreateKeyOpen, setIsCreateKeyOpen] = useState(false);
+  const [draft, setDraft] = useState<NewDeveloperKeyDraft>({
+    name: "",
+    scope: "Billing + subscriptions",
+    mode: "Live",
+  });
+
+  const filteredKeys = keys.filter((key) => {
+    const matchesFilter = activeFilter === "All" ? true : key.status === activeFilter;
+    const normalizedQuery = query.trim().toLowerCase();
+    const matchesQuery =
+      normalizedQuery.length === 0
+        ? true
+        : [key.name, key.keyPreview, key.scope, key.createdBy]
+            .join(" ")
+            .toLowerCase()
+            .includes(normalizedQuery);
+
+    return matchesFilter && matchesQuery;
+  });
+
+  useEffect(() => {
+    if (filteredKeys.length === 0) {
+      return;
+    }
+
+    const currentStillVisible = filteredKeys.some((key) => key.id === selectedKeyId);
+
+    if (!currentStillVisible) {
+      setSelectedKeyId(filteredKeys[0].id);
+    }
+  }, [activeFilter, filteredKeys, query, selectedKeyId]);
+
+  const selectedKey = filteredKeys.find((key) => key.id === selectedKeyId) ?? filteredKeys[0] ?? null;
+
+  const liveKeyCount = keys.filter((key) => key.status === "Live").length;
+  const activeEndpointCount = endpoints.filter((endpoint) => endpoint.status !== "Paused").length;
+  const successfulDeliveries = deliveries.filter(
+    (event) => event.result === "Delivered" || event.result === "Retried",
+  ).length;
+  const deliveryRate = deliveries.length
+    ? ((successfulDeliveries / deliveries.length) * 100).toFixed(1)
+    : "0.0";
+  const dailyEventVolume = keys.reduce((total, key) => total + key.dailyEvents, 0);
+
+  function updateSelectedKey(updater: (key: DeveloperKeyRecord) => DeveloperKeyRecord) {
+    if (!selectedKey) {
+      return;
+    }
+
+    setKeys((current) => current.map((key) => (key.id === selectedKey.id ? updater(key) : key)));
+  }
+
+  function handleDraftChange<K extends keyof NewDeveloperKeyDraft>(key: K, value: NewDeveloperKeyDraft[K]) {
+    setDraft((current) => ({
+      ...current,
+      [key]: value,
+    }));
+  }
+
+  function handleCreateKey(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const name = draft.name.trim();
+
+    if (!name) {
+      return;
+    }
+
+    const suffix = Date.now().toString(36).slice(-4).toUpperCase();
+    const nextKey: DeveloperKeyRecord = {
+      id: `dev-key-${Date.now()}`,
+      name,
+      keyPreview: `rk_${draft.mode.toLowerCase()}_••••${suffix}`,
+      status: draft.mode === "Live" ? "Live" : "Test",
+      scope: draft.scope,
+      mode: draft.mode,
+      lastUsed: "Never used",
+      dailyEvents: 0,
+      webhookCount: 0,
+      createdBy: "You",
+      note: "New credential is ready for integration and endpoint assignment.",
+    };
+
+    setKeys((current) => [nextKey, ...current]);
+    setSelectedKeyId(nextKey.id);
+    setActiveFilter("All");
+    setQuery("");
+    setDraft({
+      name: "",
+      scope: "Billing + subscriptions",
+      mode: "Live",
+    });
+    setIsCreateKeyOpen(false);
+  }
+
+  function rotateSelectedKey() {
+    if (!selectedKey) {
+      return;
+    }
+
+    const suffix = Date.now().toString(36).slice(-4).toUpperCase();
+    updateSelectedKey((key) => ({
+      ...key,
+      keyPreview: `rk_${key.mode.toLowerCase()}_••••${suffix}`,
+      lastUsed: "Just rotated",
+    }));
+  }
+
+  function toggleSelectedKeyStatus() {
+    if (!selectedKey) {
+      return;
+    }
+
+    updateSelectedKey((key) => ({
+      ...key,
+      status: key.status === "Revoked" ? (key.mode === "Live" ? "Live" : "Test") : "Revoked",
+      lastUsed: key.status === "Revoked" ? "Restored now" : "Revoked",
+    }));
+  }
+
+  function syncSelectedKeyField<K extends "mode" | "scope">(
+    key: K,
+    value: DeveloperKeyRecord[K],
+  ) {
+    updateSelectedKey((current) => {
+      if (key === "mode") {
+        return {
+          ...current,
+          mode: value as DeveloperKeyRecord["mode"],
+          status:
+            current.status === "Revoked"
+              ? "Revoked"
+              : (value as DeveloperKeyRecord["mode"]) === "Live"
+                ? "Live"
+                : "Test",
+        };
+      }
+
+      return {
+        ...current,
+        [key]: value,
+      };
+    });
+  }
+
+  function addWebhookEndpoint() {
+    const nextEndpoint: WebhookEndpointRecord = {
+      id: `endpoint-${Date.now()}`,
+      name: `custom-hook-${endpoints.length + 1}`,
+      url: "https://api.partner.com/renew/webhooks",
+      status: "Paused",
+      events: "0 / day",
+      lastDelivery: "Never",
+      signingState: "Set signing key",
+    };
+
+    setEndpoints((current) => [nextEndpoint, ...current]);
+  }
+
   return (
     <>
-      <div className="grid gap-4 xl:grid-cols-3">
-        <DarkCard title="Live key" description="rk_live_••••••4E9A">
-          <StatusLine label="Scope" value="Billing + payments" />
-          <StatusLine label="Last used" value="4 min ago" />
-        </DarkCard>
-        <Card title="Webhook health" description="3 active endpoints">
-          <StatusLine label="Successful deliveries" value="99.2%" tone="brand" />
-          <StatusLine label="Failed deliveries" value="14 today" tone="warning" />
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <PlanMetricCard label="Live keys" value={String(liveKeyCount)} note="Production credentials" tone="brand" />
+        <PlanMetricCard label="Webhooks" value={String(activeEndpointCount)} note="Active endpoints" />
+        <PlanMetricCard label="Delivery" value={`${deliveryRate}%`} note="Successful today" />
+        <PlanMetricCard
+          label="Daily events"
+          value={dailyEventVolume.toLocaleString()}
+          note="Across active credentials"
+        />
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-[1.18fr_0.82fr] xl:items-start">
+        <Card title="API keys">
+          <div className="flex flex-col gap-3 pb-4 lg:flex-row lg:items-center lg:justify-between">
+            <label className="flex min-w-0 flex-1 items-center gap-3 rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3">
+              <svg
+                aria-hidden="true"
+                viewBox="0 0 20 20"
+                className="h-4 w-4 shrink-0 text-[color:var(--muted)]"
+                fill="none"
+              >
+                <circle cx="9" cy="9" r="4.8" stroke="currentColor" strokeWidth="1.7" />
+                <path d="M12.8 12.8L16 16" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+              </svg>
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search keys, scopes, or owner"
+                className="w-full bg-transparent text-sm text-[color:var(--ink)] outline-none placeholder:text-[color:var(--muted)]"
+              />
+            </label>
+
+            <button
+              type="button"
+              onClick={() => setIsCreateKeyOpen(true)}
+              className="inline-flex items-center justify-center rounded-2xl bg-[#0c4a27] px-4 py-3 text-sm font-semibold tracking-[-0.02em] text-[#d9f6bc]"
+            >
+              Create key
+            </button>
+          </div>
+
+          <div className="flex flex-wrap gap-2 pb-3">
+            {(["All", "Live", "Test", "Revoked"] as const).map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => setActiveFilter(tab)}
+                className={cn(
+                  "rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition-all duration-200",
+                  activeFilter === tab
+                    ? "bg-[#0c4a27] text-[#d9f6bc]"
+                    : "border border-[color:var(--line)] bg-white text-[color:var(--muted)] hover:bg-[#f7fbf5]",
+                )}
+              >
+                {tab}
+              </button>
+            ))}
+          </div>
+
+          <div className="max-h-[44rem] space-y-3 overflow-y-auto pr-1">
+            {filteredKeys.length > 0 ? (
+              filteredKeys.map((key) => (
+                <DeveloperKeyRow
+                  key={key.id}
+                  item={key}
+                  isSelected={key.id === selectedKey?.id}
+                  onSelect={() => setSelectedKeyId(key.id)}
+                />
+              ))
+            ) : (
+              <div className="rounded-2xl border border-dashed border-[color:var(--line)] bg-[#f8faf7] px-5 py-10 text-center text-sm text-[color:var(--muted)]">
+                No API keys match this filter.
+              </div>
+            )}
+          </div>
         </Card>
-        <Card title="Sandbox" description="Ready for integration tests">
-          <StatusLine label="Mode" value="Test" />
-          <StatusLine label="Sample payloads" value="Available" tone="brand" />
+
+        <SidePanel title={selectedKey ? selectedKey.name : "Key details"} description={selectedKey?.keyPreview}>
+          {selectedKey ? (
+            <div className="space-y-5">
+              <DetailMetaRow>
+                <DeveloperKeyStatusBadge status={selectedKey.status} dark />
+                <DarkMetaPill>{selectedKey.mode} mode</DarkMetaPill>
+                <DarkMetaPill>{selectedKey.scope}</DarkMetaPill>
+              </DetailMetaRow>
+
+              <div className="grid gap-3 sm:grid-cols-3">
+                <ProfileMiniStat label="Last used" value={selectedKey.lastUsed} />
+                <ProfileMiniStat
+                  label="Daily events"
+                  value={selectedKey.dailyEvents.toLocaleString()}
+                />
+                <ProfileMiniStat
+                  label="Endpoints"
+                  value={String(selectedKey.webhookCount)}
+                />
+              </div>
+
+              <div className="rounded-2xl border border-white/10 bg-white/4 px-4 py-4">
+                <div className="space-y-4">
+                  <PlanField label="Key mode" dark>
+                    <select
+                      value={selectedKey.mode}
+                      onChange={(event) =>
+                        syncSelectedKeyField("mode", event.target.value as DeveloperKeyRecord["mode"])
+                      }
+                      className="w-full rounded-2xl border border-white/10 bg-white/6 px-4 py-3 text-sm text-white outline-none"
+                    >
+                      <option value="Live">Live</option>
+                      <option value="Test">Test</option>
+                    </select>
+                  </PlanField>
+
+                  <PlanField label="Scope" dark>
+                    <select
+                      value={selectedKey.scope}
+                      onChange={(event) => syncSelectedKeyField("scope", event.target.value)}
+                      className="w-full rounded-2xl border border-white/10 bg-white/6 px-4 py-3 text-sm text-white outline-none"
+                    >
+                      {developerScopeOptions.map((scope) => (
+                        <option key={scope} value={scope}>
+                          {scope}
+                        </option>
+                      ))}
+                    </select>
+                  </PlanField>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-white/10 bg-white/4 px-4 py-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/46">Key note</p>
+                <p className="mt-3 text-sm leading-7 text-white/72">{selectedKey.note}</p>
+                <div className="mt-4 flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/6 px-4 py-3">
+                  <span className="text-sm text-white/68">Created by</span>
+                  <span className="text-sm font-semibold text-white">{selectedKey.createdBy}</span>
+                </div>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <PlanActionButton label="Rotate key" onClick={rotateSelectedKey} dark />
+                <PlanActionButton
+                  label={selectedKey.status === "Revoked" ? "Restore key" : "Revoke key"}
+                  onClick={toggleSelectedKeyStatus}
+                  dark
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-dashed border-white/10 bg-white/6 px-5 py-10 text-center text-sm text-white/66">
+              Select a key to review access, usage, and endpoint coverage.
+            </div>
+          )}
+        </SidePanel>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-[1fr_1fr]">
+        <Card title="Webhook endpoints">
+          <div className="flex items-center justify-between gap-3 pb-4">
+            <p className="text-sm text-[color:var(--muted)]">Delivery destinations and signing status.</p>
+            <button
+              type="button"
+              onClick={addWebhookEndpoint}
+              className="inline-flex items-center justify-center rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)] transition-all duration-200 hover:bg-[#f7fbf5]"
+            >
+              Add endpoint
+            </button>
+          </div>
+
+          <div className="space-y-3">
+            {endpoints.map((endpoint) => (
+              <div
+                key={endpoint.id}
+                className="rounded-2xl border border-[color:var(--line)] bg-white px-4 py-4"
+              >
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)]">
+                        {endpoint.name}
+                      </p>
+                      <WebhookStatusBadge status={endpoint.status} />
+                    </div>
+                    <p className="mt-1 truncate text-sm text-[color:var(--muted)]">{endpoint.url}</p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+                    <CustomerMetaPill>{endpoint.events}</CustomerMetaPill>
+                    <CustomerMetaPill>{endpoint.lastDelivery}</CustomerMetaPill>
+                  </div>
+                </div>
+                <div className="mt-3 flex items-center justify-between gap-3 rounded-2xl border border-[color:var(--line)] bg-[#f8faf7] px-4 py-3">
+                  <span className="text-sm text-[color:var(--muted)]">Signature</span>
+                  <span className="text-sm font-semibold text-[color:var(--ink)]">{endpoint.signingState}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+
+        <Card title="Recent deliveries">
+          <div className="space-y-3">
+            {deliveries.map((delivery) => (
+              <EventDeliveryRow key={delivery.id} delivery={delivery} />
+            ))}
+          </div>
         </Card>
       </div>
 
-      <Card title="Recent event stream" description="Latest webhook activity">
-        <TableHeader columns={["Event", "Object", "Endpoint", "Result"]} />
-        <TableRow columns={["payment.settled", "INV-1042", "billing-prod", "Delivered"]} tone="brand" />
-        <TableRow columns={["subscription.retry_scheduled", "SUB-280", "ops-sync", "Delivered"]} tone="brand" />
-        <TableRow columns={["payment.failed", "INV-1040", "billing-prod", "Retried"]} />
-        <TableRow columns={["subscription.updated", "SUB-244", "sandbox-hook", "Pending"]} />
-      </Card>
+      {isCreateKeyOpen ? (
+        <CreateDeveloperKeyModal
+          draft={draft}
+          onChange={handleDraftChange}
+          onClose={() => setIsCreateKeyOpen(false)}
+          onSubmit={handleCreateKey}
+        />
+      ) : null}
     </>
+  );
+}
+
+function DeveloperKeyRow({
+  item,
+  isSelected,
+  onSelect,
+}: {
+  item: DeveloperKeyRecord;
+  isSelected: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={cn(
+        "w-full rounded-2xl border px-4 py-4 text-left transition-all duration-200",
+        isSelected
+          ? "border-[#0c4a27]/14 bg-[#edf7eb]"
+          : "border-[color:var(--line)] bg-white hover:border-[#0c4a27]/10 hover:bg-[#f7fbf5]",
+      )}
+    >
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)]">{item.name}</p>
+            <p className="mt-1 text-sm text-[color:var(--muted)]">{item.keyPreview}</p>
+          </div>
+          <DeveloperKeyStatusBadge status={item.status} />
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <CustomerMetaPill>{item.scope}</CustomerMetaPill>
+          <CustomerMetaPill>{item.webhookCount} endpoints</CustomerMetaPill>
+          <CustomerMetaPill>{item.lastUsed}</CustomerMetaPill>
+        </div>
+      </div>
+    </button>
+  );
+}
+
+function DeveloperKeyStatusBadge({
+  status,
+  dark = false,
+}: {
+  status: DeveloperKeyStatus;
+  dark?: boolean;
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded-full px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em]",
+        status === "Live"
+          ? dark
+            ? "border border-[#2f5a42] bg-[#d9f6bc]/10 text-[#d9f6bc]"
+            : "border border-[#bfe8cb] bg-[#dff7e6] text-[#0f8a47]"
+          : status === "Test"
+            ? dark
+              ? "border border-white/10 bg-white/8 text-white/72"
+              : "border border-[#d9e7d6] bg-[#edf7eb] text-[color:var(--brand)]"
+            : dark
+              ? "border border-[#684920] bg-[#f5c98f]/10 text-[#f5c98f]"
+              : "border border-[#f0d0aa] bg-[#fff2e1] text-[#8a4b0f]",
+      )}
+    >
+      {status}
+    </span>
+  );
+}
+
+function WebhookStatusBadge({ status }: { status: WebhookEndpointStatus }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded-full px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em]",
+        status === "Healthy"
+          ? "border border-[#bfe8cb] bg-[#dff7e6] text-[#0f8a47]"
+          : status === "Retrying"
+            ? "border border-[#f0d0aa] bg-[#fff2e1] text-[#8a4b0f]"
+            : "border border-[#e2e6e0] bg-[#f3f5f2] text-[color:var(--muted)]",
+      )}
+    >
+      {status}
+    </span>
+  );
+}
+
+function EventDeliveryRow({ delivery }: { delivery: DeliveryEventRecord }) {
+  return (
+    <div className="rounded-2xl border border-[color:var(--line)] bg-white px-4 py-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)]">{delivery.event}</p>
+          <p className="mt-1 text-sm text-[color:var(--muted)]">
+            {delivery.object} • {delivery.endpoint}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+          <CustomerMetaPill>{delivery.createdAt}</CustomerMetaPill>
+          <DeliveryResultBadge result={delivery.result} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DeliveryResultBadge({ result }: { result: DeliveryResult }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded-full px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em]",
+        result === "Delivered"
+          ? "border border-[#bfe8cb] bg-[#dff7e6] text-[#0f8a47]"
+          : result === "Retried"
+            ? "border border-[#d9e7d6] bg-[#edf7eb] text-[color:var(--brand)]"
+            : result === "Pending"
+              ? "border border-[#e2e6e0] bg-[#f3f5f2] text-[color:var(--muted)]"
+              : "border border-[#f0d0aa] bg-[#fff2e1] text-[#8a4b0f]",
+      )}
+    >
+      {result}
+    </span>
+  );
+}
+
+function CreateDeveloperKeyModal({
+  draft,
+  onChange,
+  onClose,
+  onSubmit,
+}: {
+  draft: NewDeveloperKeyDraft;
+  onChange: <K extends keyof NewDeveloperKeyDraft>(key: K, value: NewDeveloperKeyDraft[K]) => void;
+  onClose: () => void;
+  onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#121312]/45 px-4 backdrop-blur-sm">
+      <div className="w-full max-w-xl rounded-[2rem] border border-[color:var(--line)] bg-white p-5 shadow-[0_24px_90px_rgba(16,32,20,0.16)] sm:p-6">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="font-display text-2xl font-semibold tracking-[-0.05em] text-[color:var(--ink)]">
+              Create API key
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">
+              Issue a new credential and assign the initial scope before it reaches production.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--line)] bg-[#f8faf7] text-[color:var(--muted)] transition-colors duration-200 hover:text-[color:var(--ink)]"
+            aria-label="Close create API key modal"
+          >
+            <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+              <path d="M5 5l10 10" strokeLinecap="round" />
+              <path d="M15 5L5 15" strokeLinecap="round" />
+            </svg>
+          </button>
+        </div>
+
+        <form className="mt-5 space-y-4" onSubmit={onSubmit}>
+          <PlanField label="Key name">
+            <input
+              value={draft.name}
+              onChange={(event) => onChange("name", event.target.value)}
+              placeholder="Partner production"
+              className="w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm text-[color:var(--ink)] outline-none placeholder:text-[color:var(--muted)]"
+            />
+          </PlanField>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <PlanField label="Scope">
+              <select
+                value={draft.scope}
+                onChange={(event) => onChange("scope", event.target.value)}
+                className="w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm text-[color:var(--ink)] outline-none"
+              >
+                {developerScopeOptions.map((scope) => (
+                  <option key={scope} value={scope}>
+                    {scope}
+                  </option>
+                ))}
+              </select>
+            </PlanField>
+
+            <PlanField label="Mode">
+              <select
+                value={draft.mode}
+                onChange={(event) => onChange("mode", event.target.value as NewDeveloperKeyDraft["mode"])}
+                className="w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm text-[color:var(--ink)] outline-none"
+              >
+                <option value="Live">Live</option>
+                <option value="Test">Test</option>
+              </select>
+            </PlanField>
+          </div>
+
+          <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex items-center justify-center rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm font-semibold tracking-[-0.02em] text-[color:var(--muted)]"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="inline-flex items-center justify-center rounded-2xl bg-[#0c4a27] px-4 py-3 text-sm font-semibold tracking-[-0.02em] text-[#d9f6bc]"
+            >
+              Save key
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
   );
 }
 
@@ -4047,6 +4848,41 @@ function DarkCard({ title, description, children }: CardProps) {
       {description ? <p className="mt-2 text-sm leading-7 text-white/70">{description}</p> : null}
       <div className={cn(description ? "mt-5" : "mt-4")}>{children}</div>
     </div>
+  );
+}
+
+function SidePanel({ title, description, children }: CardProps) {
+  return (
+    <div className="rounded-[2rem] border border-white/10 bg-[#121312] p-5 text-white shadow-[0_18px_70px_rgba(16,32,20,0.14)] sm:p-6">
+      <h2 className="font-display text-2xl font-semibold tracking-[-0.05em]">{title}</h2>
+      {description ? <p className="mt-2 text-sm leading-7 text-white/70">{description}</p> : null}
+      <div className={cn(description ? "mt-5" : "mt-4")}>{children}</div>
+    </div>
+  );
+}
+
+function DetailMetaRow({ children }: { children: React.ReactNode }) {
+  return <div className="flex flex-wrap items-center gap-2">{children}</div>;
+}
+
+function DarkMetaPill({
+  children,
+  tone = "neutral",
+}: {
+  children: React.ReactNode;
+  tone?: "neutral" | "brand";
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded-full px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em]",
+        tone === "brand"
+          ? "border border-[#2f5a42] bg-[#d9f6bc]/10 text-[#d9f6bc]"
+          : "border border-white/10 bg-white/8 text-white/72",
+      )}
+    >
+      {children}
+    </span>
   );
 }
 
@@ -4280,19 +5116,27 @@ function PlanCatalogRow({
 function PlanStatusBadge({
   status,
   compact = false,
+  dark = false,
 }: {
   status: PlanStatus;
   compact?: boolean;
+  dark?: boolean;
 }) {
   return (
     <span
       className={cn(
         "inline-flex items-center rounded-full px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em]",
         status === "Live"
-          ? "border border-[#bfe8cb] bg-[#dff7e6] text-[#0f8a47]"
+          ? dark
+            ? "border border-[#2f5a42] bg-[#d9f6bc]/10 text-[#d9f6bc]"
+            : "border border-[#bfe8cb] bg-[#dff7e6] text-[#0f8a47]"
           : status === "Draft"
-            ? "border border-[#d9e7d6] bg-[#edf7eb] text-[color:var(--brand)]"
-            : "border border-[#e2e6e0] bg-[#f3f5f2] text-[color:var(--muted)]",
+            ? dark
+              ? "border border-white/10 bg-white/8 text-white/72"
+              : "border border-[#d9e7d6] bg-[#edf7eb] text-[color:var(--brand)]"
+            : dark
+              ? "border border-[#684920] bg-[#f5c98f]/10 text-[#f5c98f]"
+              : "border border-[#e2e6e0] bg-[#f3f5f2] text-[color:var(--muted)]",
         compact ? "px-2.5 py-1.5" : "",
       )}
     >
@@ -4312,13 +5156,20 @@ function PlanMetaPill({ children }: { children: React.ReactNode }) {
 function PlanField({
   label,
   children,
+  dark = false,
 }: {
   label: string;
   children: React.ReactNode;
+  dark?: boolean;
 }) {
   return (
     <label className="space-y-2">
-      <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--muted)]">
+      <span
+        className={cn(
+          "text-[11px] font-semibold uppercase tracking-[0.14em]",
+          dark ? "text-white/46" : "text-[color:var(--muted)]",
+        )}
+      >
         {label}
       </span>
       {children}
@@ -4329,15 +5180,22 @@ function PlanField({
 function PlanActionButton({
   label,
   onClick,
+  dark = false,
 }: {
   label: string;
   onClick: () => void;
+  dark?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="inline-flex items-center justify-center rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)] transition-all duration-200 hover:bg-[#f7fbf5]"
+      className={cn(
+        "inline-flex items-center justify-center rounded-2xl px-4 py-3 text-sm font-semibold tracking-[-0.02em] transition-all duration-200",
+        dark
+          ? "border border-white/10 bg-white/6 text-white hover:bg-white/10"
+          : "border border-[color:var(--line)] bg-white text-[color:var(--ink)] hover:bg-[#f7fbf5]",
+      )}
     >
       {label}
     </button>
