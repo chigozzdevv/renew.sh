@@ -1,0 +1,146 @@
+import type { Abi } from "../types/abi";
+
+export const renewProtocolAbi = [
+  {
+    type: "function",
+    name: "registerMerchant",
+    inputs: [
+      { name: "payoutWallet", type: "address" },
+      { name: "metadataHash", type: "bytes32" },
+    ],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "createPlan",
+    inputs: [
+      { name: "planCode", type: "bytes32" },
+      { name: "usdPrice", type: "uint128" },
+      { name: "billingInterval", type: "uint64" },
+      { name: "trialPeriod", type: "uint32" },
+      { name: "retryWindow", type: "uint32" },
+      { name: "billingMode", type: "uint8" },
+      { name: "usageRate", type: "uint128" },
+    ],
+    outputs: [{ name: "planId", type: "uint256" }],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "createSubscription",
+    inputs: [
+      { name: "planId", type: "uint256" },
+      { name: "customerRef", type: "bytes32" },
+      { name: "billingCurrency", type: "bytes32" },
+      { name: "firstChargeAt", type: "uint64" },
+      { name: "localAmountSnapshot", type: "uint128" },
+    ],
+    outputs: [{ name: "subscriptionId", type: "uint256" }],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "executeCharge",
+    inputs: [
+      { name: "subscriptionId", type: "uint256" },
+      { name: "externalChargeId", type: "bytes32" },
+      { name: "settlementSource", type: "address" },
+      { name: "localAmount", type: "uint128" },
+      { name: "fxRate", type: "uint128" },
+      { name: "usdcAmount", type: "uint128" },
+    ],
+    outputs: [{ name: "chargeId", type: "uint256" }],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "recordFailedCharge",
+    inputs: [
+      { name: "subscriptionId", type: "uint256" },
+      { name: "externalChargeId", type: "bytes32" },
+      { name: "failureCode", type: "bytes32" },
+    ],
+    outputs: [{ name: "chargeId", type: "uint256" }],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "pauseSubscription",
+    inputs: [{ name: "subscriptionId", type: "uint256" }],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "resumeSubscription",
+    inputs: [
+      { name: "subscriptionId", type: "uint256" },
+      { name: "nextChargeAt", type: "uint64" },
+    ],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "cancelSubscription",
+    inputs: [{ name: "subscriptionId", type: "uint256" }],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "event",
+    name: "MerchantRegistered",
+    inputs: [
+      { name: "merchant", type: "address", indexed: true },
+      { name: "payoutWallet", type: "address", indexed: true },
+      { name: "metadataHash", type: "bytes32" },
+    ],
+  },
+  {
+    type: "event",
+    name: "PlanCreated",
+    inputs: [
+      { name: "planId", type: "uint256", indexed: true },
+      { name: "merchant", type: "address", indexed: true },
+      { name: "planCode", type: "bytes32", indexed: true },
+      { name: "usdPrice", type: "uint128" },
+      { name: "billingInterval", type: "uint64" },
+      { name: "billingMode", type: "uint8" },
+    ],
+  },
+  {
+    type: "event",
+    name: "SubscriptionCreated",
+    inputs: [
+      { name: "subscriptionId", type: "uint256", indexed: true },
+      { name: "merchant", type: "address", indexed: true },
+      { name: "planId", type: "uint256", indexed: true },
+      { name: "customerRef", type: "bytes32" },
+      { name: "nextChargeAt", type: "uint64" },
+    ],
+  },
+  {
+    type: "event",
+    name: "ChargeExecuted",
+    inputs: [
+      { name: "chargeId", type: "uint256", indexed: true },
+      { name: "subscriptionId", type: "uint256", indexed: true },
+      { name: "merchant", type: "address", indexed: true },
+      { name: "usdcAmount", type: "uint128" },
+      { name: "feeAmount", type: "uint128" },
+      { name: "nextChargeAt", type: "uint64" },
+    ],
+  },
+  {
+    type: "event",
+    name: "ChargeFailed",
+    inputs: [
+      { name: "chargeId", type: "uint256", indexed: true },
+      { name: "subscriptionId", type: "uint256", indexed: true },
+      { name: "merchant", type: "address", indexed: true },
+      { name: "failureCode", type: "bytes32" },
+      { name: "retryAvailableAt", type: "uint64" },
+    ],
+  },
+] as const satisfies Abi;

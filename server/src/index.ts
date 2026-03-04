@@ -1,9 +1,13 @@
 import { createApp } from "@/app";
 import { connectToDatabase, disconnectFromDatabase } from "@/config/db.config";
 import { env } from "@/config/env.config";
+import { registerWorkerProcessors } from "@/shared/workers/register-processors";
+import { startWorkerRuntime, stopWorkerRuntime } from "@/shared/workers/queue-runtime";
 
 async function bootstrap() {
   await connectToDatabase();
+  registerWorkerProcessors();
+  await startWorkerRuntime();
 
   const app = createApp();
   const server = app.listen(env.PORT, () => {
@@ -14,6 +18,7 @@ async function bootstrap() {
     console.log(`${signal} received, shutting down Renew server.`);
 
     server.close(async () => {
+      await stopWorkerRuntime();
       await disconnectFromDatabase();
       process.exit(0);
     });
@@ -25,6 +30,7 @@ async function bootstrap() {
 
 bootstrap().catch(async (error: unknown) => {
   console.error("Failed to start Renew server.", error);
+  await stopWorkerRuntime();
   await disconnectFromDatabase();
   process.exit(1);
 });

@@ -1,0 +1,82 @@
+import { InferSchemaType, Model, Schema, Types, model, models } from "mongoose";
+
+const planSchema = new Schema(
+  {
+    merchantId: {
+      type: Schema.Types.ObjectId,
+      required: true,
+      ref: "Merchant",
+    },
+    planCode: {
+      type: String,
+      required: true,
+      trim: true,
+      uppercase: true,
+    },
+    name: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    usdAmount: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+    usageRate: {
+      type: Number,
+      min: 0,
+      default: null,
+    },
+    billingIntervalDays: {
+      type: Number,
+      required: true,
+      min: 1,
+    },
+    trialDays: {
+      type: Number,
+      required: true,
+      min: 0,
+      default: 0,
+    },
+    retryWindowHours: {
+      type: Number,
+      required: true,
+      min: 0,
+      default: 24,
+    },
+    billingMode: {
+      type: String,
+      required: true,
+      trim: true,
+      default: "fixed",
+    },
+    supportedMarkets: {
+      type: [String],
+      required: true,
+      default: [],
+    },
+    status: {
+      type: String,
+      required: true,
+      trim: true,
+      default: "draft",
+    },
+  },
+  {
+    timestamps: true,
+    versionKey: false,
+  }
+);
+
+type PlanEntry = InferSchemaType<typeof planSchema> & {
+  _id: Types.ObjectId;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type PlanDocument = PlanEntry;
+
+export const PlanModel =
+  (models.Plan as Model<PlanDocument> | undefined) ??
+  model<PlanDocument>("Plan", planSchema);
