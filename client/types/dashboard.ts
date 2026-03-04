@@ -7,6 +7,7 @@ export type DashboardRouteKey =
   | "treasury"
   | "teams"
   | "developers"
+  | "audit"
   | "settings";
 
 export type DashboardNavItem = {
@@ -22,6 +23,7 @@ export type DashboardNavItem = {
     | "vault"
     | "team"
     | "code"
+    | "shield"
     | "gear";
 };
 

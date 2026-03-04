@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 
 import type { DashboardPageContent } from "@/types/dashboard";
 
+import { Logo } from "@/components/shared/logo";
 import { cn } from "@/lib/utils";
 
 type DashboardPageViewProps = {
@@ -19,7 +20,9 @@ export function DashboardPageView({ page }: DashboardPageViewProps) {
     page.key === "payments" ||
     page.key === "treasury" ||
     page.key === "developers" ||
-    page.key === "teams"
+    page.key === "teams" ||
+    page.key === "settings" ||
+    page.key === "audit"
   ) {
     return (
       <section className="space-y-6">
@@ -35,8 +38,12 @@ export function DashboardPageView({ page }: DashboardPageViewProps) {
           <TreasurySurface />
         ) : page.key === "developers" ? (
           <DevelopersSurface />
-        ) : (
+        ) : page.key === "teams" ? (
           <TeamsSurface />
+        ) : page.key === "settings" ? (
+          <SettingsSurface />
+        ) : (
+          <AuditSurface />
         )}
       </section>
     );
@@ -92,8 +99,6 @@ function renderMockSurface(page: DashboardPageContent) {
   switch (page.key) {
     case "overview":
       return <OverviewSurface />;
-    case "settings":
-      return <SettingsSurface />;
     default:
       return null;
   }
@@ -3668,12 +3673,12 @@ function TeamsSurface() {
                     >
                       Sync role access
                     </button>
-                    <a
-                      href="/dashboard/settings"
+                    <Link
+                      href="/dashboard/audit"
                       className="inline-flex items-center justify-center rounded-2xl border border-white/10 bg-white/8 px-4 py-3 text-sm font-semibold tracking-[-0.02em] text-white"
                     >
                       View audit log
-                    </a>
+                    </Link>
                   </>
                 )}
               </div>
@@ -4799,24 +4804,849 @@ function CreateDeveloperKeyModal({
   );
 }
 
+type WorkspaceSettingsState = {
+  businessName: string;
+  supportEmail: string;
+  defaultMarket: string;
+  invoicePrefix: string;
+  billingTimezone: string;
+  billingDisplay: string;
+  fallbackCurrency: string;
+  primaryWallet: string;
+  reserveWallet: string;
+  retryPolicy: string;
+  invoiceGraceDays: string;
+  statementDescriptor: string;
+  customerDomain: string;
+  invoiceFooter: string;
+  brandAccent: string;
+  sessionTimeout: string;
+  inviteDomainPolicy: string;
+  autoRetries: boolean;
+  meterApproval: boolean;
+  financeDigest: boolean;
+  developerAlerts: boolean;
+  walletAlerts: boolean;
+  loginAlerts: boolean;
+  enforceTwoFactor: boolean;
+  restrictInviteDomains: boolean;
+};
+
+type SettingsTabKey = "workspace" | "billing" | "wallets" | "notifications" | "access";
+
+type AuditLogFilter = "All" | "Billing" | "Access" | "Treasury" | "Developers";
+
+type AuditLogEvent = {
+  id: string;
+  category: Exclude<AuditLogFilter, "All">;
+  action: string;
+  actor: string;
+  time: string;
+  detail: string;
+  status: "review" | "ok" | "alert";
+  target: string;
+};
+
+const initialWorkspaceSettings: WorkspaceSettingsState = {
+  businessName: "Renew Labs",
+  supportEmail: "hello@renew.sh",
+  defaultMarket: "NGN",
+  invoicePrefix: "RNL",
+  billingTimezone: "UTC",
+  billingDisplay: "Customer local fiat",
+  fallbackCurrency: "USD",
+  primaryWallet: "0x8a12...61f4",
+  reserveWallet: "0x5c88...a104",
+  retryPolicy: "3 retries over 5 days",
+  invoiceGraceDays: "3 days",
+  statementDescriptor: "RENEW*BILLING",
+  customerDomain: "billing.renew.sh",
+  invoiceFooter: "Questions? Contact hello@renew.sh",
+  brandAccent: "Forest green",
+  sessionTimeout: "30 minutes",
+  inviteDomainPolicy: "renew.sh, partner.co",
+  autoRetries: true,
+  meterApproval: true,
+  financeDigest: true,
+  developerAlerts: true,
+  walletAlerts: true,
+  loginAlerts: true,
+  enforceTwoFactor: true,
+  restrictInviteDomains: false,
+};
+
+const auditLogEvents: AuditLogEvent[] = [
+  {
+    id: "audit-1",
+    category: "Treasury",
+    action: "Approved treasury sweep",
+    actor: "Ada Nwosu",
+    time: "12 min ago",
+    detail: "Batch 248 · 18,420 USDC",
+    status: "review",
+    target: "Treasury batch 248",
+  },
+  {
+    id: "audit-2",
+    category: "Access",
+    action: "Updated team permissions",
+    actor: "Ada Nwosu",
+    time: "1 hour ago",
+    detail: "Kola Martins moved to Operations",
+    status: "ok",
+    target: "Kola Martins",
+  },
+  {
+    id: "audit-3",
+    category: "Billing",
+    action: "Changed retry policy",
+    actor: "Jules Amani",
+    time: "Yesterday",
+    detail: "Core Plan now retries 3 times over 5 days",
+    status: "review",
+    target: "Core Plan",
+  },
+  {
+    id: "audit-4",
+    category: "Developers",
+    action: "Rotated live API key",
+    actor: "Mina Sule",
+    time: "Yesterday",
+    detail: "rk_live_prod_03 rotated and previous token revoked",
+    status: "alert",
+    target: "Live API key",
+  },
+  {
+    id: "audit-5",
+    category: "Access",
+    action: "Accepted workspace invite",
+    actor: "Farah Mensah",
+    time: "2 days ago",
+    detail: "Joined as Admin with finance access",
+    status: "ok",
+    target: "Farah Mensah",
+  },
+];
+
 function SettingsSurface() {
+  const [settings, setSettings] = useState<WorkspaceSettingsState>(initialWorkspaceSettings);
+  const [activeTab, setActiveTab] = useState<SettingsTabKey>("workspace");
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [showWalletTools, setShowWalletTools] = useState(false);
+  const [walletDraft, setWalletDraft] = useState(() => ({
+    primary: initialWorkspaceSettings.primaryWallet,
+    reserve: initialWorkspaceSettings.reserveWallet,
+  }));
+
+  function updateSetting<K extends keyof WorkspaceSettingsState>(
+    key: K,
+    value: WorkspaceSettingsState[K],
+  ) {
+    setSettings((current) => ({
+      ...current,
+      [key]: value,
+    }));
+  }
+
+  function pushActionMessage(message: string) {
+    setActionMessage(message);
+  }
+
+  function handleSaveChanges() {
+    pushActionMessage("Settings updated. Changes will apply to new billing activity.");
+  }
+
+  function handleManageWallets() {
+    setActiveTab("wallets");
+    setShowWalletTools((current) => {
+      const next = !current;
+      if (next) {
+        setWalletDraft({
+          primary: settings.primaryWallet,
+          reserve: settings.reserveWallet,
+        });
+      }
+      setActionMessage(next ? "Wallet manager opened." : "Wallet manager closed.");
+      return next;
+    });
+  }
+
+  function handleWalletDraftChange(field: "primary" | "reserve", value: string) {
+    setWalletDraft((current) => ({
+      ...current,
+      [field]: value,
+    }));
+  }
+
+  function handleSaveWalletEdits() {
+    const nextPrimary = walletDraft.primary.trim();
+    const nextReserve = walletDraft.reserve.trim();
+
+    if (!nextPrimary) {
+      pushActionMessage("Primary wallet is required.");
+      return;
+    }
+
+    updateSetting("primaryWallet", nextPrimary);
+    updateSetting("reserveWallet", nextReserve || "Not configured");
+    pushActionMessage("Wallet settings updated.");
+  }
+
+  function handleRemoveReserveWallet() {
+    setWalletDraft((current) => ({
+      ...current,
+      reserve: "Not configured",
+    }));
+    updateSetting("reserveWallet", "Not configured");
+    pushActionMessage("Reserve wallet removed.");
+  }
+
+  function handlePromoteReserveWallet() {
+    const currentPrimary = walletDraft.primary.trim();
+    const currentReserve = walletDraft.reserve.trim();
+
+    if (!currentReserve || currentReserve === "Not configured") {
+      pushActionMessage("Add a reserve wallet before promoting it.");
+      return;
+    }
+
+    setWalletDraft({
+      primary: currentReserve,
+      reserve: currentPrimary,
+    });
+    updateSetting("primaryWallet", currentReserve);
+    updateSetting("reserveWallet", currentPrimary || "Not configured");
+    pushActionMessage("Reserve wallet promoted to primary.");
+  }
+
+  const tabs: Array<{ key: SettingsTabKey; label: string; note: string }> = [
+    { key: "workspace", label: "Workspace", note: "Identity and branding" },
+    { key: "billing", label: "Billing", note: "Defaults and retry rules" },
+    { key: "wallets", label: "Wallets", note: "Settlement endpoints" },
+    { key: "notifications", label: "Notifications", note: "Operator alerts" },
+    { key: "access", label: "Access", note: "Security and roles" },
+  ];
+
+  useEffect(() => {
+    if (!actionMessage) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      setActionMessage(null);
+    }, 3200);
+
+    return () => window.clearTimeout(timeout);
+  }, [actionMessage]);
+
   return (
-    <div className="grid gap-4 xl:grid-cols-[1fr_1fr]">
-      <Card title="Business profile" description="Customer-facing workspace identity.">
-        <div className="grid gap-3 md:grid-cols-2">
-          <FieldMock label="Business name" value="Renew Labs" />
-          <FieldMock label="Support email" value="hello@renew.sh" />
-          <FieldMock label="Default market" value="NGN" />
-          <FieldMock label="Settlement chain" value="Avalanche" />
+    <div className="space-y-4">
+      <Card title="Settings">
+        <div className="flex flex-wrap gap-2">
+          {tabs.map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => setActiveTab(tab.key)}
+              className={cn(
+                "rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition-all duration-200",
+                activeTab === tab.key
+                  ? "bg-[#0c4a27] text-[#d9f6bc]"
+                  : "border border-[color:var(--line)] bg-white text-[color:var(--muted)] hover:bg-[#f7fbf5]",
+              )}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
+
+        {actionMessage ? (
+          <div className="mt-4 rounded-2xl border border-[#0c4a27]/10 bg-[#edf7eb] px-4 py-3 text-sm text-[color:var(--brand)]">
+            {actionMessage}
+          </div>
+        ) : null}
       </Card>
 
-      <Card title="Controls" description="High-signal workspace settings.">
-        <ToggleRow label="Auto retries" enabled />
-        <ToggleRow label="Meter approval required" enabled />
-        <ToggleRow label="Export daily settlement" enabled={false} />
-        <ToggleRow label="Developer alerts" enabled />
-      </Card>
+      {activeTab === "workspace" ? (
+        <Card title="Workspace profile">
+          <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr] xl:items-start">
+            <div className="space-y-6">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--muted)]">
+                  Workspace details
+                </p>
+                <div className="mt-4 grid gap-4 md:grid-cols-2">
+                  <SettingsField label="Business name">
+                    <input
+                      value={settings.businessName}
+                      onChange={(event) => updateSetting("businessName", event.target.value)}
+                      className="w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm text-[color:var(--ink)] outline-none"
+                    />
+                  </SettingsField>
+
+                  <SettingsField label="Support email">
+                    <input
+                      type="email"
+                      value={settings.supportEmail}
+                      onChange={(event) => updateSetting("supportEmail", event.target.value)}
+                      className="w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm text-[color:var(--ink)] outline-none"
+                    />
+                  </SettingsField>
+
+                  <SettingsField label="Primary market">
+                    <select
+                      value={settings.defaultMarket}
+                      onChange={(event) => updateSetting("defaultMarket", event.target.value)}
+                      className="w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm text-[color:var(--ink)] outline-none"
+                    >
+                      {["NGN", "GHS", "KES", "ZMW"].map((market) => (
+                        <option key={market} value={market}>
+                          {market}
+                        </option>
+                      ))}
+                    </select>
+                  </SettingsField>
+
+                  <SettingsField label="Invoice prefix">
+                    <input
+                      value={settings.invoicePrefix}
+                      onChange={(event) => updateSetting("invoicePrefix", event.target.value.toUpperCase())}
+                      className="w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm uppercase tracking-[0.08em] text-[color:var(--ink)] outline-none"
+                    />
+                  </SettingsField>
+
+                  <SettingsField label="Billing timezone">
+                    <select
+                      value={settings.billingTimezone}
+                      onChange={(event) => updateSetting("billingTimezone", event.target.value)}
+                      className="w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm text-[color:var(--ink)] outline-none"
+                    >
+                      <option value="UTC">UTC</option>
+                      <option value="Africa/Lagos">Africa/Lagos</option>
+                      <option value="Africa/Nairobi">Africa/Nairobi</option>
+                    </select>
+                  </SettingsField>
+                </div>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-3">
+                <SettingsMiniStat label="Billing display" value={settings.billingDisplay} />
+                <SettingsMiniStat label="Fallback currency" value={settings.fallbackCurrency} />
+                <SettingsMiniStat label="Timezone" value={settings.billingTimezone} />
+              </div>
+            </div>
+
+            <div className="space-y-6 rounded-[1.5rem] border border-[color:var(--line)] bg-[#f7fbf5] p-5">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--muted)]">
+                  Brand and invoices
+                </p>
+                <div className="mt-4 flex h-20 items-center justify-center rounded-2xl border border-[color:var(--line)] bg-white px-4">
+                  <Logo />
+                </div>
+              </div>
+
+              <div className="grid gap-4">
+                <SettingsField label="Statement descriptor">
+                  <input
+                    value={settings.statementDescriptor}
+                    onChange={(event) =>
+                      updateSetting("statementDescriptor", event.target.value.toUpperCase())
+                    }
+                    className="w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm uppercase tracking-[0.04em] text-[color:var(--ink)] outline-none"
+                  />
+                </SettingsField>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <SettingsField label="Brand accent">
+                    <select
+                      value={settings.brandAccent}
+                      onChange={(event) => updateSetting("brandAccent", event.target.value)}
+                      className="w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm text-[color:var(--ink)] outline-none"
+                    >
+                      <option value="Forest green">Forest green</option>
+                      <option value="Dark green">Dark green</option>
+                      <option value="Neutral">Neutral</option>
+                    </select>
+                  </SettingsField>
+
+                  <SettingsField label="Customer billing domain">
+                    <input
+                      value={settings.customerDomain}
+                      onChange={(event) => updateSetting("customerDomain", event.target.value)}
+                      className="w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm text-[color:var(--ink)] outline-none"
+                    />
+                  </SettingsField>
+                </div>
+
+                <SettingsField label="Invoice footer note">
+                  <textarea
+                    value={settings.invoiceFooter}
+                    onChange={(event) => updateSetting("invoiceFooter", event.target.value)}
+                    rows={3}
+                    className="w-full resize-none rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm text-[color:var(--ink)] outline-none"
+                  />
+                </SettingsField>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-6 flex justify-end">
+            <button
+              type="button"
+              onClick={handleSaveChanges}
+              className="inline-flex items-center justify-center rounded-2xl bg-[#0c4a27] px-4 py-3 text-sm font-semibold tracking-[-0.02em] text-[#d9f6bc]"
+            >
+              Save workspace
+            </button>
+          </div>
+        </Card>
+      ) : null}
+
+      {activeTab === "billing" ? (
+        <Card title="Billing defaults">
+          <div className="grid gap-6 xl:grid-cols-[1.08fr_0.92fr] xl:items-start">
+            <div className="space-y-6">
+              <div className="grid gap-4 md:grid-cols-2">
+                <SettingsField label="Billing display">
+                  <select
+                    value={settings.billingDisplay}
+                    onChange={(event) => updateSetting("billingDisplay", event.target.value)}
+                    className="w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm text-[color:var(--ink)] outline-none"
+                  >
+                    <option value="Customer local fiat">Customer local fiat</option>
+                    <option value="USD reference">USD reference</option>
+                  </select>
+                </SettingsField>
+
+                <SettingsField label="Fallback currency">
+                  <select
+                    value={settings.fallbackCurrency}
+                    onChange={(event) => updateSetting("fallbackCurrency", event.target.value)}
+                    className="w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm text-[color:var(--ink)] outline-none"
+                  >
+                    <option value="USD">USD</option>
+                    <option value="USDC">USDC</option>
+                  </select>
+                </SettingsField>
+
+                <SettingsField label="Retry policy">
+                  <select
+                    value={settings.retryPolicy}
+                    onChange={(event) => updateSetting("retryPolicy", event.target.value)}
+                    className="w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm text-[color:var(--ink)] outline-none"
+                  >
+                    <option value="3 retries over 5 days">3 retries over 5 days</option>
+                    <option value="2 retries over 3 days">2 retries over 3 days</option>
+                    <option value="No automatic retries">No automatic retries</option>
+                  </select>
+                </SettingsField>
+
+                <SettingsField label="Invoice grace window">
+                  <input
+                    value={settings.invoiceGraceDays}
+                    onChange={(event) => updateSetting("invoiceGraceDays", event.target.value)}
+                    className="w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm text-[color:var(--ink)] outline-none"
+                  />
+                </SettingsField>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-4">
+                <SettingsMiniStat label="Display" value={settings.billingDisplay} />
+                <SettingsMiniStat label="Fallback" value={settings.fallbackCurrency} />
+                <SettingsMiniStat label="Retry" value={settings.retryPolicy} />
+                <SettingsMiniStat label="Grace" value={settings.invoiceGraceDays} />
+              </div>
+            </div>
+
+            <div className="space-y-3 rounded-[1.5rem] border border-[color:var(--line)] bg-[#f7fbf5] p-5">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--muted)]">
+                Automation rules
+              </p>
+              <SettingsToggle
+                label="Auto retries"
+                description="Retry failed renewals using the workspace retry policy."
+                enabled={settings.autoRetries}
+                onToggle={() => updateSetting("autoRetries", !settings.autoRetries)}
+              />
+              <SettingsToggle
+                label="Meter approval required"
+                description="Require usage sign-off before metered billing runs."
+                enabled={settings.meterApproval}
+                onToggle={() => updateSetting("meterApproval", !settings.meterApproval)}
+              />
+            </div>
+          </div>
+
+          <div className="mt-6 flex justify-end">
+            <button
+              type="button"
+              onClick={handleSaveChanges}
+              className="inline-flex items-center justify-center rounded-2xl bg-[#0c4a27] px-4 py-3 text-sm font-semibold tracking-[-0.02em] text-[#d9f6bc]"
+            >
+              Save billing defaults
+            </button>
+          </div>
+        </Card>
+      ) : null}
+
+      {activeTab === "wallets" ? (
+        <Card title="Wallet management">
+          <div className="grid gap-6 xl:grid-cols-[1.02fr_0.98fr] xl:items-start">
+            <div className="space-y-4">
+              <WalletSummaryRow
+                label="Primary wallet"
+                address={settings.primaryWallet}
+                badge="Primary"
+                tone="brand"
+              />
+              <WalletSummaryRow
+                label="Reserve wallet"
+                address={settings.reserveWallet}
+                badge="Standby"
+              />
+            </div>
+
+            <div className="space-y-4 rounded-[1.5rem] border border-[color:var(--line)] bg-[#f7fbf5] p-5">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <SettingsMiniStat label="Primary status" value="Connected" />
+                <SettingsMiniStat label="Reserve status" value="Standby" />
+                <SettingsMiniStat label="Settlement asset" value="USDC" />
+                <SettingsMiniStat label="Network" value="Avalanche" />
+              </div>
+
+              <SettingsToggle
+                label="Wallet alerts"
+                description="Notify ops when a payout wallet needs attention."
+                enabled={settings.walletAlerts}
+                onToggle={() => updateSetting("walletAlerts", !settings.walletAlerts)}
+              />
+
+              {showWalletTools ? (
+                <div className="space-y-4">
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <SettingsField label="Primary wallet">
+                      <input
+                        value={walletDraft.primary}
+                        onChange={(event) => handleWalletDraftChange("primary", event.target.value)}
+                        className="w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm text-[color:var(--ink)] outline-none"
+                      />
+                    </SettingsField>
+
+                    <SettingsField label="Reserve wallet">
+                      <input
+                        value={walletDraft.reserve}
+                        onChange={(event) => handleWalletDraftChange("reserve", event.target.value)}
+                        className="w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm text-[color:var(--ink)] outline-none"
+                      />
+                    </SettingsField>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <button
+                      type="button"
+                      onClick={handleSaveWalletEdits}
+                      className="inline-flex items-center justify-center rounded-2xl bg-[#0c4a27] px-4 py-3 text-sm font-semibold tracking-[-0.02em] text-[#d9f6bc]"
+                    >
+                      Save wallet edits
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handlePromoteReserveWallet}
+                      className="inline-flex items-center justify-center rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)]"
+                    >
+                      Promote reserve
+                    </button>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <button
+                      type="button"
+                      onClick={handleRemoveReserveWallet}
+                      className="inline-flex items-center justify-center rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm font-semibold tracking-[-0.02em] text-[color:var(--muted)]"
+                    >
+                      Remove reserve
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowWalletTools(false);
+                        pushActionMessage("Wallet manager closed.");
+                      }}
+                      className="inline-flex items-center justify-center rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm font-semibold tracking-[-0.02em] text-[color:var(--muted)]"
+                    >
+                      Close manager
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              onClick={() => {
+                setWalletDraft({
+                  primary: "0x4f26...91c2",
+                  reserve: settings.reserveWallet,
+                });
+                updateSetting("primaryWallet", "0x4f26...91c2");
+                pushActionMessage("Primary wallet rotated.");
+              }}
+              className="inline-flex items-center justify-center rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm font-semibold tracking-[-0.02em] text-[color:var(--muted)]"
+            >
+              Rotate primary
+            </button>
+            <button
+              type="button"
+              onClick={handleManageWallets}
+              className="inline-flex items-center justify-center rounded-2xl bg-[#0c4a27] px-4 py-3 text-sm font-semibold tracking-[-0.02em] text-[#d9f6bc]"
+            >
+              {showWalletTools ? "Hide wallet tools" : "Manage wallets"}
+            </button>
+          </div>
+        </Card>
+      ) : null}
+
+      {activeTab === "notifications" ? (
+        <Card title="Notifications">
+          <div className="grid gap-3 lg:grid-cols-3">
+            <SettingsToggle
+              label="Finance digest"
+              description="Send a daily billing summary to finance and ops."
+              enabled={settings.financeDigest}
+              onToggle={() => updateSetting("financeDigest", !settings.financeDigest)}
+            />
+            <SettingsToggle
+              label="Developer alerts"
+              description="Notify engineering when keys or webhook health changes."
+              enabled={settings.developerAlerts}
+              onToggle={() => updateSetting("developerAlerts", !settings.developerAlerts)}
+            />
+            <SettingsToggle
+              label="Login alerts"
+              description="Alert admins when new devices sign in to the workspace."
+              enabled={settings.loginAlerts}
+              onToggle={() => updateSetting("loginAlerts", !settings.loginAlerts)}
+            />
+          </div>
+
+          <div className="mt-6 flex justify-end">
+            <button
+              type="button"
+              onClick={handleSaveChanges}
+              className="inline-flex items-center justify-center rounded-2xl bg-[#0c4a27] px-4 py-3 text-sm font-semibold tracking-[-0.02em] text-[#d9f6bc]"
+            >
+              Save notifications
+            </button>
+          </div>
+        </Card>
+      ) : null}
+
+      {activeTab === "access" ? (
+        <Card title="Access policy">
+          <div className="grid gap-6 xl:grid-cols-[0.92fr_1.08fr] xl:items-start">
+            <div className="space-y-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--muted)]">
+                Session and invite rules
+              </p>
+              <SettingsField label="Session timeout">
+                <select
+                  value={settings.sessionTimeout}
+                  onChange={(event) => updateSetting("sessionTimeout", event.target.value)}
+                  className="w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm text-[color:var(--ink)] outline-none"
+                >
+                  <option value="30 minutes">30 minutes</option>
+                  <option value="1 hour">1 hour</option>
+                  <option value="4 hours">4 hours</option>
+                </select>
+              </SettingsField>
+
+              <SettingsField label="Invite domain policy">
+                <input
+                  value={settings.inviteDomainPolicy}
+                  onChange={(event) => updateSetting("inviteDomainPolicy", event.target.value)}
+                  className="w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm text-[color:var(--ink)] outline-none"
+                />
+              </SettingsField>
+            </div>
+
+            <div className="space-y-4 rounded-[1.5rem] border border-[color:var(--line)] bg-[#f7fbf5] p-5">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--muted)]">
+                Security controls
+              </p>
+              <SettingsToggle
+                label="Enforce two-factor auth"
+                description="Require 2FA for admin and finance roles."
+                enabled={settings.enforceTwoFactor}
+                onToggle={() => updateSetting("enforceTwoFactor", !settings.enforceTwoFactor)}
+              />
+              <SettingsToggle
+                label="Restrict invite domains"
+                description="Only allow invites from approved company domains."
+                enabled={settings.restrictInviteDomains}
+                onToggle={() => updateSetting("restrictInviteDomains", !settings.restrictInviteDomains)}
+              />
+            </div>
+          </div>
+
+          <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+            <Link
+              href="/dashboard/teams"
+              className="inline-flex items-center justify-center rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm font-semibold tracking-[-0.02em] text-[color:var(--muted)]"
+            >
+              Review roles
+            </Link>
+            <button
+              type="button"
+              onClick={handleSaveChanges}
+              className="inline-flex items-center justify-center rounded-2xl bg-[#0c4a27] px-4 py-3 text-sm font-semibold tracking-[-0.02em] text-[#d9f6bc]"
+            >
+              Save changes
+            </button>
+          </div>
+        </Card>
+      ) : null}
+    </div>
+  );
+}
+
+function AuditSurface() {
+  const [filter, setFilter] = useState<AuditLogFilter>("All");
+  const [selectedEventId, setSelectedEventId] = useState(auditLogEvents[0]?.id ?? "");
+
+  const filteredEvents = auditLogEvents.filter((event) =>
+    filter === "All" ? true : event.category === filter,
+  );
+  const selectedEvent =
+    filteredEvents.find((event) => event.id === selectedEventId) ??
+    filteredEvents[0] ??
+    auditLogEvents[0];
+
+  useEffect(() => {
+    if (!selectedEvent) {
+      return;
+    }
+
+    setSelectedEventId(selectedEvent.id);
+  }, [selectedEvent?.id]);
+
+  const metrics = [
+    { label: "Critical reviews", value: "3", note: "Need approval", tone: "brand" as const },
+    { label: "Access changes", value: "12", note: "Last 7 days", tone: "neutral" as const },
+    { label: "Billing updates", value: "9", note: "Policy edits", tone: "neutral" as const },
+    { label: "Treasury approvals", value: "8", note: "Awaiting archive", tone: "neutral" as const },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <MetricRow stats={metrics} />
+
+      <div className="grid gap-4 xl:grid-cols-[1.08fr_0.92fr] xl:items-start">
+        <Card title="Audit log" description="Access, billing, treasury, and developer changes.">
+          <div className="flex flex-wrap gap-2 pb-4">
+            {(["All", "Billing", "Access", "Treasury", "Developers"] as const).map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => setFilter(tab)}
+                className={cn(
+                  "rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition-all duration-200",
+                  filter === tab
+                    ? "bg-[#0c4a27] text-[#d9f6bc]"
+                    : "border border-[color:var(--line)] bg-white text-[color:var(--muted)] hover:bg-[#f7fbf5]",
+                )}
+              >
+                {tab}
+              </button>
+            ))}
+          </div>
+
+          <div className="max-h-[42rem] space-y-3 overflow-y-auto pr-1">
+            {filteredEvents.map((event) => (
+              <button
+                key={event.id}
+                type="button"
+                onClick={() => setSelectedEventId(event.id)}
+                className={cn(
+                  "w-full rounded-2xl border px-4 py-4 text-left transition-all duration-200",
+                  selectedEvent?.id === event.id
+                    ? "border-[#0c4a27]/18 bg-[#f5fbf2]"
+                    : "border-[color:var(--line)] bg-white hover:bg-[#f7fbf5]",
+                )}
+              >
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)]">
+                        {event.action}
+                      </p>
+                      <AuditCategoryPill category={event.category} />
+                    </div>
+                    <p className="mt-1 text-sm text-[color:var(--muted)]">
+                      {event.actor} • {event.detail}
+                    </p>
+                  </div>
+                  <span className="inline-flex items-center rounded-full border border-[color:var(--line)] bg-white/86 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[color:var(--muted)]">
+                    {event.time}
+                  </span>
+                </div>
+              </button>
+            ))}
+          </div>
+        </Card>
+
+        <SidePanel title={selectedEvent?.action ?? "Audit detail"} description={selectedEvent?.detail}>
+          {selectedEvent ? (
+            <div className="space-y-4">
+              <DetailMetaRow>
+                <DarkMetaPill tone="brand">{selectedEvent.category}</DarkMetaPill>
+                <DarkMetaPill>{selectedEvent.time}</DarkMetaPill>
+                <AuditStatusPill status={selectedEvent.status} />
+              </DetailMetaRow>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <ProfileMiniStat label="Actor" value={selectedEvent.actor} />
+                <ProfileMiniStat label="Target" value={selectedEvent.target} />
+                <ProfileMiniStat label="Area" value={selectedEvent.category} />
+                <ProfileMiniStat
+                  label="Review"
+                  value={selectedEvent.status === "ok" ? "Complete" : "Needed"}
+                />
+              </div>
+
+              <div className="rounded-2xl border border-white/10 bg-white/4 px-4 py-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/56">
+                  Event summary
+                </p>
+                <p className="mt-3 text-sm leading-7 text-white/72">
+                  {selectedEvent.detail}. Logged by {selectedEvent.actor} and retained in the workspace audit trail for review.
+                </p>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <button
+                  type="button"
+                  className="inline-flex items-center justify-center rounded-2xl bg-[#0c4a27] px-4 py-3 text-sm font-semibold tracking-[-0.02em] text-[#d9f6bc]"
+                >
+                  Mark reviewed
+                </button>
+                <button
+                  type="button"
+                  className="inline-flex items-center justify-center rounded-2xl border border-white/10 bg-white/8 px-4 py-3 text-sm font-semibold tracking-[-0.02em] text-white"
+                >
+                  Export event
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-dashed border-white/10 bg-white/6 px-5 py-10 text-center text-sm text-white/66">
+              No audit events match the current filter.
+            </div>
+          )}
+        </SidePanel>
+      </div>
     </div>
   );
 }
@@ -5326,9 +6156,20 @@ function CreatePlanModal({
   );
 }
 
-function FieldMock({ label, value }: { label: string; value: string }) {
+function SettingsField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-2xl border border-[color:var(--line)] bg-white px-4 py-4">
+    <label className="space-y-2">
+      <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--muted)]">
+        {label}
+      </span>
+      {children}
+    </label>
+  );
+}
+
+function SettingsMiniStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-[color:var(--line)] bg-[#f7fbf5] px-4 py-3">
       <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--muted)]">
         {label}
       </p>
@@ -5339,41 +6180,78 @@ function FieldMock({ label, value }: { label: string; value: string }) {
   );
 }
 
-function WalletRow({
-  name,
+function WalletSummaryRow({
+  label,
   address,
-  active = false,
+  badge,
+  tone = "neutral",
 }: {
-  name: string;
+  label: string;
   address: string;
-  active?: boolean;
+  badge: string;
+  tone?: "neutral" | "brand";
 }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/4 px-4 py-4">
+    <div className="rounded-2xl border border-[color:var(--line)] bg-[#f7fbf5] px-4 py-4">
       <div className="flex items-center justify-between gap-3">
-        <p className="text-sm font-semibold">{name}</p>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)]">{label}</p>
+          <p className="mt-1 truncate text-sm text-[color:var(--muted)]">{address}</p>
+        </div>
         <span
           className={cn(
-            "rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]",
-            active ? "bg-[#d9f6bc]/10 text-[#d9f6bc]" : "bg-white/8 text-white/68",
+            "inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]",
+            tone === "brand"
+              ? "border border-[#0c4a27]/12 bg-[#0c4a27] text-[#d9f6bc]"
+              : "border border-[color:var(--line)] bg-white text-[color:var(--muted)]",
           )}
         >
-          {active ? "Primary" : "Standby"}
+          {badge}
         </span>
       </div>
-      <p className="mt-2 text-sm text-white/68">{address}</p>
     </div>
   );
 }
 
-function ToggleRow({ label, enabled }: { label: string; enabled: boolean }) {
+function SettingsToggle({
+  label,
+  description,
+  enabled,
+  onToggle,
+  dark = false,
+}: {
+  label: string;
+  description: string;
+  enabled: boolean;
+  onToggle: () => void;
+  dark?: boolean;
+}) {
   return (
-    <div className="flex items-center justify-between gap-4 rounded-2xl border border-[color:var(--line)] bg-white px-4 py-4">
-      <span className="text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)]">{label}</span>
+    <button
+      type="button"
+      onClick={onToggle}
+      className={cn(
+        "flex w-full items-center justify-between gap-4 rounded-2xl border px-4 py-4 text-left",
+        dark ? "border-white/10 bg-white/4" : "border-[color:var(--line)] bg-white",
+      )}
+    >
+      <div className="min-w-0">
+        <p
+          className={cn(
+            "text-sm font-semibold tracking-[-0.02em]",
+            dark ? "text-white" : "text-[color:var(--ink)]",
+          )}
+        >
+          {label}
+        </p>
+        <p className={cn("mt-1 text-sm", dark ? "text-white/62" : "text-[color:var(--muted)]")}>
+          {description}
+        </p>
+      </div>
       <span
         className={cn(
           "inline-flex h-7 w-12 items-center rounded-full p-1 transition-colors",
-          enabled ? "bg-[#0c4a27]" : "bg-black/10",
+          enabled ? "bg-[#0c4a27]" : dark ? "bg-white/10" : "bg-black/10",
         )}
       >
         <span
@@ -5383,6 +6261,30 @@ function ToggleRow({ label, enabled }: { label: string; enabled: boolean }) {
           )}
         />
       </span>
-    </div>
+    </button>
+  );
+}
+
+function AuditCategoryPill({
+  category,
+}: {
+  category: Exclude<AuditLogFilter, "All">;
+}) {
+  return (
+    <span className="inline-flex items-center rounded-full border border-[color:var(--line)] bg-[#edf7eb] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[color:var(--brand)]">
+      {category}
+    </span>
+  );
+}
+
+function AuditStatusPill({
+  status,
+}: {
+  status: AuditLogEvent["status"];
+}) {
+  return (
+    <DarkMetaPill tone={status === "ok" ? "neutral" : "brand"}>
+      {status === "ok" ? "Reviewed" : status === "review" ? "Needs review" : "Alert"}
+    </DarkMetaPill>
   );
 }

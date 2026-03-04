@@ -14,6 +14,7 @@ export const dashboardNav: DashboardNavItem[] = [
   { key: "treasury", label: "Treasury", href: "/dashboard/treasury", icon: "vault" },
   { key: "teams", label: "Teams", href: "/dashboard/teams", icon: "team" },
   { key: "developers", label: "Developers", href: "/dashboard/developers", icon: "code" },
+  { key: "audit", label: "Audit", href: "/dashboard/audit", icon: "shield" },
   { key: "settings", label: "Settings", href: "/dashboard/settings", icon: "gear" },
 ];
 
@@ -220,27 +221,51 @@ export const dashboardPages: Record<DashboardRouteKey, DashboardPageContent> = {
       },
     ],
   },
-  settings: {
-    key: "settings",
-    title: "Settings",
-    description: "Configure workspace identity, settlement defaults, and access-sensitive controls.",
-    actions: ["Update profile", "Review security"],
+  audit: {
+    key: "audit",
+    title: "Audit",
+    description: "Track access, billing, and treasury actions from one review trail.",
+    actions: ["Filter activity", "Review approvals"],
     stats: [
       {
-        label: "Payout wallets",
-        value: "2",
-        note: "Ready for payout",
+        label: "Critical events",
+        value: "3",
+        note: "Need review",
         tone: "brand",
       },
       {
-        label: "Enabled markets",
-        value: "20",
-        note: "Billing supported",
+        label: "Access changes",
+        value: "12",
+        note: "Last 7 days",
       },
       {
-        label: "Branding",
-        value: "1",
-        note: "Active theme",
+        label: "Treasury approvals",
+        value: "8",
+        note: "This week",
+      },
+    ],
+  },
+  settings: {
+    key: "settings",
+    title: "Settings",
+    description: "Manage workspace defaults, alerts, and security rules.",
+    actions: ["Update workspace", "Review security"],
+    stats: [
+      {
+        label: "Workspace profile",
+        value: "Ready",
+        note: "Identity configured",
+        tone: "brand",
+      },
+      {
+        label: "Security rules",
+        value: "4",
+        note: "Active controls",
+      },
+      {
+        label: "Alerts",
+        value: "3",
+        note: "Delivery enabled",
       },
     ],
   },

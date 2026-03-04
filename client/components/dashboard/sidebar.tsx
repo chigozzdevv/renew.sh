@@ -165,6 +165,18 @@ function SidebarIcon({ icon, className }: SidebarIconProps) {
           <path d="M11.2 4.8L8.8 15.2" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
         </svg>
       );
+    case "shield":
+      return (
+        <svg aria-hidden="true" viewBox="0 0 20 20" className={className} fill="none">
+          <path
+            d="M10 3.5L15.2 5.6V9.2C15.2 12.4 13.1 15.3 10 16.5C6.9 15.3 4.8 12.4 4.8 9.2V5.6L10 3.5Z"
+            stroke="currentColor"
+            strokeWidth="1.7"
+            strokeLinejoin="round"
+          />
+          <path d="M8.1 10.1L9.4 11.4L12.4 8.4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      );
     case "gear":
       return (
         <svg aria-hidden="true" viewBox="0 0 20 20" className={className} fill="none">
