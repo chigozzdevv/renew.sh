@@ -4966,7 +4966,7 @@ function SettingsSurface() {
           reserve: settings.reserveWallet,
         });
       }
-      setActionMessage(next ? "Wallet manager opened." : "Wallet manager closed.");
+      setActionMessage(next ? "Wallet editor opened." : "Wallet editor hidden.");
       return next;
     });
   }
@@ -4999,24 +4999,6 @@ function SettingsSurface() {
     }));
     updateSetting("reserveWallet", "Not configured");
     pushActionMessage("Reserve wallet removed.");
-  }
-
-  function handlePromoteReserveWallet() {
-    const currentPrimary = walletDraft.primary.trim();
-    const currentReserve = walletDraft.reserve.trim();
-
-    if (!currentReserve || currentReserve === "Not configured") {
-      pushActionMessage("Add a reserve wallet before promoting it.");
-      return;
-    }
-
-    setWalletDraft({
-      primary: currentReserve,
-      reserve: currentPrimary,
-    });
-    updateSetting("primaryWallet", currentReserve);
-    updateSetting("reserveWallet", currentPrimary || "Not configured");
-    pushActionMessage("Reserve wallet promoted to primary.");
   }
 
   const tabs: Array<{ key: SettingsTabKey; label: string; note: string }> = [
@@ -5348,18 +5330,8 @@ function SettingsSurface() {
                       onClick={handleSaveWalletEdits}
                       className="inline-flex items-center justify-center rounded-2xl bg-[#0c4a27] px-4 py-3 text-sm font-semibold tracking-[-0.02em] text-[#d9f6bc]"
                     >
-                      Save wallet edits
+                      Save changes
                     </button>
-                    <button
-                      type="button"
-                      onClick={handlePromoteReserveWallet}
-                      className="inline-flex items-center justify-center rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)]"
-                    >
-                      Promote reserve
-                    </button>
-                  </div>
-
-                  <div className="grid gap-3 sm:grid-cols-2">
                     <button
                       type="button"
                       onClick={handleRemoveReserveWallet}
@@ -5367,43 +5339,19 @@ function SettingsSurface() {
                     >
                       Remove reserve
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowWalletTools(false);
-                        pushActionMessage("Wallet manager closed.");
-                      }}
-                      className="inline-flex items-center justify-center rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm font-semibold tracking-[-0.02em] text-[color:var(--muted)]"
-                    >
-                      Close manager
-                    </button>
                   </div>
                 </div>
               ) : null}
             </div>
           </div>
 
-          <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-            <button
-              type="button"
-              onClick={() => {
-                setWalletDraft({
-                  primary: "0x4f26...91c2",
-                  reserve: settings.reserveWallet,
-                });
-                updateSetting("primaryWallet", "0x4f26...91c2");
-                pushActionMessage("Primary wallet rotated.");
-              }}
-              className="inline-flex items-center justify-center rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm font-semibold tracking-[-0.02em] text-[color:var(--muted)]"
-            >
-              Rotate primary
-            </button>
+          <div className="mt-6 flex justify-end">
             <button
               type="button"
               onClick={handleManageWallets}
               className="inline-flex items-center justify-center rounded-2xl bg-[#0c4a27] px-4 py-3 text-sm font-semibold tracking-[-0.02em] text-[#d9f6bc]"
             >
-              {showWalletTools ? "Hide wallet tools" : "Manage wallets"}
+              {showWalletTools ? "Hide editor" : "Edit wallets"}
             </button>
           </div>
         </Card>
