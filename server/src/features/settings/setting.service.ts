@@ -37,6 +37,7 @@ function toSettingResponse(document: {
   inviteDomainPolicy: string;
   enforceTwoFactor: boolean;
   restrictInviteDomains: boolean;
+  sweepApprovalThreshold: number;
   createdAt: Date;
   updatedAt: Date;
 }) {
@@ -77,6 +78,7 @@ function toSettingResponse(document: {
       inviteDomainPolicy: document.inviteDomainPolicy,
       enforceTwoFactor: document.enforceTwoFactor,
       restrictInviteDomains: document.restrictInviteDomains,
+      sweepApprovalThreshold: document.sweepApprovalThreshold,
     },
     createdAt: document.createdAt,
     updatedAt: document.updatedAt,
@@ -125,6 +127,7 @@ async function getOrCreateSetting(merchantId: string) {
       inviteDomainPolicy: "Allow all domains",
       enforceTwoFactor: false,
       restrictInviteDomains: false,
+      sweepApprovalThreshold: 1,
     });
   }
 
@@ -255,6 +258,10 @@ export async function updateSettingsByMerchantId(
 
     if (input.security.restrictInviteDomains !== undefined) {
       setting.restrictInviteDomains = input.security.restrictInviteDomains;
+    }
+
+    if (input.security.sweepApprovalThreshold !== undefined) {
+      setting.sweepApprovalThreshold = input.security.sweepApprovalThreshold;
     }
   }
 

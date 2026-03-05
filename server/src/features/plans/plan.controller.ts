@@ -13,9 +13,16 @@ import {
 } from "@/features/plans/plan.validation";
 import { asyncHandler } from "@/shared/utils/async-handler";
 
+function resolveMerchantScope(request: Request, fallback?: string) {
+  return request.platformAuthUser?.merchantId ?? fallback;
+}
+
 export const createPlanController = asyncHandler(
   async (request: Request, response: Response) => {
-    const input = createPlanSchema.parse(request.body);
+    const input = createPlanSchema.parse({
+      ...request.body,
+      merchantId: resolveMerchantScope(request, request.body?.merchantId),
+    });
     const plan = await createPlan(input);
 
     response.status(201).json({
@@ -28,7 +35,15 @@ export const createPlanController = asyncHandler(
 
 export const listPlansController = asyncHandler(
   async (request: Request, response: Response) => {
-    const query = listPlansQuerySchema.parse(request.query);
+    const query = listPlansQuerySchema.parse({
+      ...request.query,
+      merchantId: resolveMerchantScope(
+        request,
+        typeof request.query.merchantId === "string"
+          ? request.query.merchantId
+          : undefined
+      ),
+    });
     const plans = await listPlans(query);
 
     response.status(200).json({
@@ -40,7 +55,10 @@ export const listPlansController = asyncHandler(
 
 export const getPlanController = asyncHandler(
   async (request: Request, response: Response) => {
-    const plan = await getPlanById(String(request.params.planId));
+    const plan = await getPlanById(
+      String(request.params.planId),
+      resolveMerchantScope(request)
+    );
 
     response.status(200).json({
       success: true,
@@ -52,7 +70,11 @@ export const getPlanController = asyncHandler(
 export const updatePlanController = asyncHandler(
   async (request: Request, response: Response) => {
     const input = updatePlanSchema.parse(request.body);
-    const plan = await updatePlan(String(request.params.planId), input);
+    const plan = await updatePlan(
+      String(request.params.planId),
+      input,
+      resolveMerchantScope(request)
+    );
 
     response.status(200).json({
       success: true,

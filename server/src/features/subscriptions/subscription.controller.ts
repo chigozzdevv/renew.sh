@@ -14,9 +14,16 @@ import {
 } from "@/features/subscriptions/subscription.validation";
 import { asyncHandler } from "@/shared/utils/async-handler";
 
+function resolveMerchantScope(request: Request, fallback?: string) {
+  return request.platformAuthUser?.merchantId ?? fallback;
+}
+
 export const createSubscriptionController = asyncHandler(
   async (request: Request, response: Response) => {
-    const input = createSubscriptionSchema.parse(request.body);
+    const input = createSubscriptionSchema.parse({
+      ...request.body,
+      merchantId: resolveMerchantScope(request, request.body?.merchantId),
+    });
     const subscription = await createSubscription(input);
 
     response.status(201).json({
@@ -29,7 +36,15 @@ export const createSubscriptionController = asyncHandler(
 
 export const listSubscriptionsController = asyncHandler(
   async (request: Request, response: Response) => {
-    const query = listSubscriptionsQuerySchema.parse(request.query);
+    const query = listSubscriptionsQuerySchema.parse({
+      ...request.query,
+      merchantId: resolveMerchantScope(
+        request,
+        typeof request.query.merchantId === "string"
+          ? request.query.merchantId
+          : undefined
+      ),
+    });
     const subscriptions = await listSubscriptions(query);
 
     response.status(200).json({
@@ -42,7 +57,8 @@ export const listSubscriptionsController = asyncHandler(
 export const getSubscriptionController = asyncHandler(
   async (request: Request, response: Response) => {
     const subscription = await getSubscriptionById(
-      String(request.params.subscriptionId)
+      String(request.params.subscriptionId),
+      resolveMerchantScope(request)
     );
 
     response.status(200).json({
@@ -57,7 +73,8 @@ export const updateSubscriptionController = asyncHandler(
     const input = updateSubscriptionSchema.parse(request.body);
     const subscription = await updateSubscription(
       String(request.params.subscriptionId),
-      input
+      input,
+      resolveMerchantScope(request)
     );
 
     response.status(200).json({
@@ -71,7 +88,8 @@ export const updateSubscriptionController = asyncHandler(
 export const queueSubscriptionChargeController = asyncHandler(
   async (request: Request, response: Response) => {
     const result = await queueSubscriptionCharge(
-      String(request.params.subscriptionId)
+      String(request.params.subscriptionId),
+      resolveMerchantScope(request)
     );
 
     response.status(202).json({

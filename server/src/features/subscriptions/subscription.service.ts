@@ -50,6 +50,20 @@ function toSubscriptionResponse(document: {
   };
 }
 
+async function ensureSubscriptionScope(subscriptionId: string, merchantId?: string) {
+  const subscription = await SubscriptionModel.findById(subscriptionId).exec();
+
+  if (!subscription) {
+    throw new HttpError(404, "Subscription was not found.");
+  }
+
+  if (merchantId && subscription.merchantId.toString() !== merchantId) {
+    throw new HttpError(403, "Subscription does not belong to this merchant.");
+  }
+
+  return subscription;
+}
+
 export async function createSubscription(input: CreateSubscriptionInput) {
   const [merchantExists, planExists] = await Promise.all([
     MerchantModel.exists({ _id: input.merchantId }),
@@ -108,25 +122,21 @@ export async function listSubscriptions(query: ListSubscriptionsQuery) {
   return subscriptions.map(toSubscriptionResponse);
 }
 
-export async function getSubscriptionById(subscriptionId: string) {
-  const subscription = await SubscriptionModel.findById(subscriptionId).exec();
-
-  if (!subscription) {
-    throw new HttpError(404, "Subscription was not found.");
-  }
+export async function getSubscriptionById(
+  subscriptionId: string,
+  merchantId?: string
+) {
+  const subscription = await ensureSubscriptionScope(subscriptionId, merchantId);
 
   return toSubscriptionResponse(subscription);
 }
 
 export async function updateSubscription(
   subscriptionId: string,
-  input: UpdateSubscriptionInput
+  input: UpdateSubscriptionInput,
+  merchantId?: string
 ) {
-  const subscription = await SubscriptionModel.findById(subscriptionId).exec();
-
-  if (!subscription) {
-    throw new HttpError(404, "Subscription was not found.");
-  }
+  const subscription = await ensureSubscriptionScope(subscriptionId, merchantId);
 
   if (input.status !== undefined) {
     subscription.status = input.status;
@@ -165,12 +175,11 @@ export async function updateSubscription(
   return toSubscriptionResponse(subscription);
 }
 
-export async function queueSubscriptionCharge(subscriptionId: string) {
-  const subscription = await SubscriptionModel.findById(subscriptionId).exec();
-
-  if (!subscription) {
-    throw new HttpError(404, "Subscription was not found.");
-  }
+export async function queueSubscriptionCharge(
+  subscriptionId: string,
+  merchantId?: string
+) {
+  const subscription = await ensureSubscriptionScope(subscriptionId, merchantId);
 
   const queuedJob = await enqueueQueueJob(
     queueNames.subscriptionCharge,

@@ -4,6 +4,9 @@ import express from "express";
 import { getAllowedCorsOrigins } from "@/config/env.config";
 import { authRouter } from "@/features/auth/auth.routes";
 import { chargeRouter } from "@/features/charges/charge.routes";
+import { customerRouter } from "@/features/customers/customer.routes";
+import { dashboardRouter } from "@/features/dashboard/dashboard.routes";
+import { developerRouter } from "@/features/developers/developer.routes";
 import { merchantRouter } from "@/features/merchants/merchant.routes";
 import { paymentRailRouter } from "@/features/payment-rails/payment-rails.routes";
 import { planRouter } from "@/features/plans/plan.routes";
@@ -65,11 +68,62 @@ export function createApp() {
   app.use("/v1/protocol", protocolRouter);
   app.use("/v1/auth", authRouter);
   app.use("/v1/payment-rails", paymentRailRouter);
-  app.use("/v1/merchants", merchantRouter);
-  app.use("/v1/plans", planRouter);
-  app.use("/v1/subscriptions", subscriptionRouter);
-  app.use("/v1/charges", chargeRouter);
-  app.use("/v1/settlements", settlementRouter);
+  app.use(
+    "/v1/merchants",
+    requirePlatformAuth,
+    requirePlatformPermissions(["team_admin"]),
+    merchantRouter
+  );
+  app.use(
+    "/v1/dashboard",
+    requirePlatformAuth,
+    requirePlatformPermissions([
+      "customers",
+      "plans",
+      "subscriptions",
+      "payments",
+      "treasury",
+      "developers",
+      "team_admin",
+    ]),
+    dashboardRouter
+  );
+  app.use(
+    "/v1/customers",
+    requirePlatformAuth,
+    requirePlatformPermissions(["customers", "team_admin"]),
+    customerRouter
+  );
+  app.use(
+    "/v1/plans",
+    requirePlatformAuth,
+    requirePlatformPermissions(["plans", "team_admin"]),
+    planRouter
+  );
+  app.use(
+    "/v1/subscriptions",
+    requirePlatformAuth,
+    requirePlatformPermissions(["subscriptions", "team_admin"]),
+    subscriptionRouter
+  );
+  app.use(
+    "/v1/charges",
+    requirePlatformAuth,
+    requirePlatformPermissions(["payments", "team_admin"]),
+    chargeRouter
+  );
+  app.use(
+    "/v1/settlements",
+    requirePlatformAuth,
+    requirePlatformPermissions(["treasury", "team_admin"]),
+    settlementRouter
+  );
+  app.use(
+    "/v1/developers",
+    requirePlatformAuth,
+    requirePlatformPermissions(["developers", "team_admin"]),
+    developerRouter
+  );
   app.use(
     "/v1/teams",
     requirePlatformAuth,

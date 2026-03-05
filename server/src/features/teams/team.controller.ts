@@ -18,12 +18,17 @@ import {
 } from "@/features/teams/team.validation";
 import { asyncHandler } from "@/shared/utils/async-handler";
 
+function resolveMerchantScope(request: Request, fallback?: string) {
+  return request.platformAuthUser?.merchantId ?? fallback;
+}
+
 export const createTeamMemberController = asyncHandler(
   async (request: Request, response: Response) => {
     const actor =
       request.platformAuthUser?.name ?? request.platformAuthUser?.email ?? "system";
     const input = createTeamMemberSchema.parse({
       ...request.body,
+      merchantId: resolveMerchantScope(request, request.body?.merchantId),
       actor,
     });
     const member = await createTeamMember(input);
@@ -38,7 +43,15 @@ export const createTeamMemberController = asyncHandler(
 
 export const listTeamMembersController = asyncHandler(
   async (request: Request, response: Response) => {
-    const query = listTeamMembersQuerySchema.parse(request.query);
+    const query = listTeamMembersQuerySchema.parse({
+      ...request.query,
+      merchantId: resolveMerchantScope(
+        request,
+        typeof request.query.merchantId === "string"
+          ? request.query.merchantId
+          : undefined
+      ),
+    });
     const members = await listTeamMembers(query);
 
     response.status(200).json({
@@ -50,7 +63,15 @@ export const listTeamMembersController = asyncHandler(
 
 export const getTeamMemberController = asyncHandler(
   async (request: Request, response: Response) => {
-    const actionInput = teamMemberActionSchema.parse(request.query);
+    const actionInput = teamMemberActionSchema.parse({
+      ...request.query,
+      merchantId: resolveMerchantScope(
+        request,
+        typeof request.query.merchantId === "string"
+          ? request.query.merchantId
+          : undefined
+      ),
+    });
     const member = await getTeamMemberById(
       String(request.params.teamMemberId),
       actionInput.merchantId
@@ -69,6 +90,12 @@ export const updateTeamMemberController = asyncHandler(
       request.platformAuthUser?.name ?? request.platformAuthUser?.email ?? "system";
     const actionInput = teamMemberActionSchema.parse({
       ...request.query,
+      merchantId: resolveMerchantScope(
+        request,
+        typeof request.query.merchantId === "string"
+          ? request.query.merchantId
+          : undefined
+      ),
       actor,
     });
     const input = updateTeamMemberSchema.parse({
@@ -95,6 +122,7 @@ export const syncTeamMemberRoleController = asyncHandler(
       request.platformAuthUser?.name ?? request.platformAuthUser?.email ?? "system";
     const input = teamMemberActionSchema.parse({
       ...request.body,
+      merchantId: resolveMerchantScope(request, request.body?.merchantId),
       actor,
     });
     const member = await syncTeamMemberRoleDefaults(
@@ -116,6 +144,7 @@ export const resendTeamInviteController = asyncHandler(
       request.platformAuthUser?.name ?? request.platformAuthUser?.email ?? "system";
     const input = teamMemberActionSchema.parse({
       ...request.body,
+      merchantId: resolveMerchantScope(request, request.body?.merchantId),
       actor,
     });
     const member = await resendTeamInvite(
@@ -137,6 +166,7 @@ export const revokeTeamInviteController = asyncHandler(
       request.platformAuthUser?.name ?? request.platformAuthUser?.email ?? "system";
     const input = teamMemberActionSchema.parse({
       ...request.body,
+      merchantId: resolveMerchantScope(request, request.body?.merchantId),
       actor,
     });
     const member = await revokeTeamInvite(
@@ -158,6 +188,7 @@ export const deleteTeamMemberController = asyncHandler(
       request.platformAuthUser?.name ?? request.platformAuthUser?.email ?? "system";
     const input = teamMemberActionSchema.parse({
       ...request.body,
+      merchantId: resolveMerchantScope(request, request.body?.merchantId),
       actor,
     });
     const result = await deleteTeamMember(

@@ -30,7 +30,12 @@ export const getSettingsController = asyncHandler(
 export const updateSettingsController = asyncHandler(
   async (request: Request, response: Response) => {
     const params = merchantParamSchema.parse(request.params);
-    const input = updateSettingsSchema.parse(request.body);
+    const actor =
+      request.platformAuthUser?.name ?? request.platformAuthUser?.email ?? "system";
+    const input = updateSettingsSchema.parse({
+      ...request.body,
+      actor,
+    });
     const settings = await updateSettingsByMerchantId(params.merchantId, input);
 
     response.status(200).json({
@@ -44,7 +49,12 @@ export const updateSettingsController = asyncHandler(
 export const saveWalletsController = asyncHandler(
   async (request: Request, response: Response) => {
     const params = merchantParamSchema.parse(request.params);
-    const input = saveWalletSchema.parse(request.body);
+    const actor =
+      request.platformAuthUser?.name ?? request.platformAuthUser?.email ?? "system";
+    const input = saveWalletSchema.parse({
+      ...request.body,
+      actor,
+    });
     const settings = await saveWalletSettings(params.merchantId, input);
 
     response.status(200).json({
@@ -58,7 +68,12 @@ export const saveWalletsController = asyncHandler(
 export const promoteReserveWalletController = asyncHandler(
   async (request: Request, response: Response) => {
     const params = merchantParamSchema.parse(request.params);
-    const input = walletActionSchema.parse(request.body);
+    const actor =
+      request.platformAuthUser?.name ?? request.platformAuthUser?.email ?? "system";
+    const input = walletActionSchema.parse({
+      ...request.body,
+      actor,
+    });
     const settings = await promoteReserveWallet(params.merchantId, input);
 
     response.status(200).json({
@@ -72,7 +87,12 @@ export const promoteReserveWalletController = asyncHandler(
 export const removeReserveWalletController = asyncHandler(
   async (request: Request, response: Response) => {
     const params = merchantParamSchema.parse(request.params);
-    const input = walletActionSchema.parse(request.body);
+    const actor =
+      request.platformAuthUser?.name ?? request.platformAuthUser?.email ?? "system";
+    const input = walletActionSchema.parse({
+      ...request.body,
+      actor,
+    });
     const settings = await removeReserveWallet(params.merchantId, input);
 
     response.status(200).json({

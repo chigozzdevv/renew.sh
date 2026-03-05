@@ -42,6 +42,20 @@ function toPlanResponse(document: {
   };
 }
 
+async function ensurePlanScope(planId: string, merchantId?: string) {
+  const plan = await PlanModel.findById(planId).exec();
+
+  if (!plan) {
+    throw new HttpError(404, "Plan was not found.");
+  }
+
+  if (merchantId && plan.merchantId.toString() !== merchantId) {
+    throw new HttpError(403, "Plan does not belong to this merchant.");
+  }
+
+  return plan;
+}
+
 export async function createPlan(input: CreatePlanInput) {
   const merchantExists = await MerchantModel.exists({ _id: input.merchantId });
 
@@ -87,22 +101,18 @@ export async function listPlans(query: ListPlansQuery) {
   return plans.map(toPlanResponse);
 }
 
-export async function getPlanById(planId: string) {
-  const plan = await PlanModel.findById(planId).exec();
-
-  if (!plan) {
-    throw new HttpError(404, "Plan was not found.");
-  }
+export async function getPlanById(planId: string, merchantId?: string) {
+  const plan = await ensurePlanScope(planId, merchantId);
 
   return toPlanResponse(plan);
 }
 
-export async function updatePlan(planId: string, input: UpdatePlanInput) {
-  const plan = await PlanModel.findById(planId).exec();
-
-  if (!plan) {
-    throw new HttpError(404, "Plan was not found.");
-  }
+export async function updatePlan(
+  planId: string,
+  input: UpdatePlanInput,
+  merchantId?: string
+) {
+  const plan = await ensurePlanScope(planId, merchantId);
 
   if (input.planCode !== undefined) {
     plan.planCode = input.planCode;

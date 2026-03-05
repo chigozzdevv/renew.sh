@@ -52,6 +52,7 @@ const securitySettingsSchema = z.object({
   inviteDomainPolicy: z.string().trim().min(2).max(120).optional(),
   enforceTwoFactor: z.boolean().optional(),
   restrictInviteDomains: z.boolean().optional(),
+  sweepApprovalThreshold: z.coerce.number().int().min(1).max(5).optional(),
 });
 
 export const updateSettingsSchema = z

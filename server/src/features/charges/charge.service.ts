@@ -79,6 +79,20 @@ function addDays(date: Date, days: number) {
   return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
 }
 
+async function ensureChargeScope(chargeId: string, merchantId?: string) {
+  const charge = await ChargeModel.findById(chargeId).exec();
+
+  if (!charge) {
+    throw new HttpError(404, "Charge was not found.");
+  }
+
+  if (merchantId && charge.merchantId.toString() !== merchantId) {
+    throw new HttpError(403, "Charge does not belong to this merchant.");
+  }
+
+  return charge;
+}
+
 export async function createCharge(input: CreateChargeInput) {
   const [merchantExists, subscriptionExists] = await Promise.all([
     MerchantModel.exists({ _id: input.merchantId }),
@@ -137,22 +151,18 @@ export async function listCharges(query: ListChargesQuery) {
   return charges.map(toChargeResponse);
 }
 
-export async function getChargeById(chargeId: string) {
-  const charge = await ChargeModel.findById(chargeId).exec();
-
-  if (!charge) {
-    throw new HttpError(404, "Charge was not found.");
-  }
+export async function getChargeById(chargeId: string, merchantId?: string) {
+  const charge = await ensureChargeScope(chargeId, merchantId);
 
   return toChargeResponse(charge);
 }
 
-export async function updateCharge(chargeId: string, input: UpdateChargeInput) {
-  const charge = await ChargeModel.findById(chargeId).exec();
-
-  if (!charge) {
-    throw new HttpError(404, "Charge was not found.");
-  }
+export async function updateCharge(
+  chargeId: string,
+  input: UpdateChargeInput,
+  merchantId?: string
+) {
+  const charge = await ensureChargeScope(chargeId, merchantId);
 
   if (input.status !== undefined) {
     charge.status = input.status;
@@ -171,12 +181,8 @@ export async function updateCharge(chargeId: string, input: UpdateChargeInput) {
   return toChargeResponse(charge);
 }
 
-export async function queueChargeRetry(chargeId: string) {
-  const charge = await ChargeModel.findById(chargeId).exec();
-
-  if (!charge) {
-    throw new HttpError(404, "Charge was not found.");
-  }
+export async function queueChargeRetry(chargeId: string, merchantId?: string) {
+  const charge = await ensureChargeScope(chargeId, merchantId);
 
   if (charge.status === "settled") {
     throw new HttpError(409, "Settled charges cannot be retried.");
