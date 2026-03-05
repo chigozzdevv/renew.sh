@@ -314,6 +314,7 @@ export async function runSubscriptionChargeJob(input: { subscriptionId: string }
     customerName: subscription.customerName,
     localAmount,
     usdAmount: usdcAmount,
+    currency: subscription.billingCurrency,
     country: channel.country,
     networkId:
       subscription.paymentNetworkId ?? network?.externalId ?? null,

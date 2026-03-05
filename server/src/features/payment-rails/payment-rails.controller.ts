@@ -1,16 +1,21 @@
 import type { Request, Response } from "express";
+import { createHmac, timingSafeEqual } from "crypto";
 
 import {
+  acceptCollectionRequest,
   createWidgetQuote,
   enqueuePaymentRailSync,
+  getCollectionRequest,
   listChannels,
   listNetworks,
+  denyCollectionRequest,
   processYellowCardWebhook,
   resolveBankAccount,
   syncChannels,
   syncNetworks,
 } from "@/features/payment-rails/payment-rails.service";
 import {
+  collectionParamSchema,
   createWidgetQuoteSchema,
   listChannelsQuerySchema,
   listNetworksQuerySchema,
@@ -18,7 +23,44 @@ import {
   syncPaymentRailSchema,
   yellowCardWebhookSchema,
 } from "@/features/payment-rails/payment-rails.validation";
+import { getYellowCardConfig } from "@/config/yellow-card.config";
+import { HttpError } from "@/shared/errors/http-error";
 import { asyncHandler } from "@/shared/utils/async-handler";
+
+function normalizeSignature(value: string) {
+  const cleaned = value.trim();
+
+  if (!cleaned) {
+    return "";
+  }
+
+  const parts = cleaned.split("=");
+  const signature = parts.length === 2 ? parts[1] : parts[0];
+  return signature.trim();
+}
+
+function verifyWebhookSignature(rawBody: string, headerValue: string, secret: string) {
+  const receivedSignature = normalizeSignature(headerValue);
+
+  if (!receivedSignature) {
+    return false;
+  }
+
+  const expectedHashBuffer = createHmac("sha256", secret).update(rawBody).digest();
+  const expectedBase64Buffer = Buffer.from(expectedHashBuffer.toString("base64"), "utf8");
+  const expectedHexBuffer = Buffer.from(expectedHashBuffer.toString("hex"), "utf8");
+  const receivedBuffer = Buffer.from(receivedSignature, "utf8");
+
+  if (receivedBuffer.length === expectedBase64Buffer.length) {
+    return timingSafeEqual(expectedBase64Buffer, receivedBuffer);
+  }
+
+  if (receivedBuffer.length === expectedHexBuffer.length) {
+    return timingSafeEqual(expectedHexBuffer, receivedBuffer);
+  }
+
+  return false;
+}
 
 export const listChannelsController = asyncHandler(
   async (request: Request, response: Response) => {
@@ -107,8 +149,60 @@ export const resolveBankAccountController = asyncHandler(
   }
 );
 
+export const getCollectionRequestController = asyncHandler(
+  async (request: Request, response: Response) => {
+    const params = collectionParamSchema.parse(request.params);
+    const result = await getCollectionRequest(params.collectionId);
+
+    response.status(200).json({
+      success: true,
+      data: result,
+    });
+  }
+);
+
+export const acceptCollectionRequestController = asyncHandler(
+  async (request: Request, response: Response) => {
+    const params = collectionParamSchema.parse(request.params);
+    const result = await acceptCollectionRequest(params.collectionId);
+
+    response.status(200).json({
+      success: true,
+      message: "Collection request accepted.",
+      data: result,
+    });
+  }
+);
+
+export const denyCollectionRequestController = asyncHandler(
+  async (request: Request, response: Response) => {
+    const params = collectionParamSchema.parse(request.params);
+    const result = await denyCollectionRequest(params.collectionId);
+
+    response.status(200).json({
+      success: true,
+      message: "Collection request denied.",
+      data: result,
+    });
+  }
+);
+
 export const processYellowCardWebhookController = asyncHandler(
   async (request: Request, response: Response) => {
+    const config = getYellowCardConfig();
+
+    if (config.webhookSecret) {
+      const signatureHeader =
+        request.header("x-yc-signature") ?? request.header("x-signature") ?? "";
+
+      if (
+        !request.rawBody ||
+        !verifyWebhookSignature(request.rawBody, signatureHeader, config.webhookSecret)
+      ) {
+        throw new HttpError(401, "Invalid Yellow Card webhook signature.");
+      }
+    }
+
     const input = yellowCardWebhookSchema.parse(request.body);
     const result = await processYellowCardWebhook(input);
 

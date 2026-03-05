@@ -1,8 +1,11 @@
 import { Router } from "express";
 
 import {
+  acceptCollectionRequestController,
   createWidgetQuoteController,
+  denyCollectionRequestController,
   enqueuePaymentRailSyncController,
+  getCollectionRequestController,
   listChannelsController,
   listNetworksController,
   processYellowCardWebhookController,
@@ -20,6 +23,9 @@ paymentRailRouter.post("/networks/sync", syncNetworksController);
 paymentRailRouter.post("/sync", enqueuePaymentRailSyncController);
 paymentRailRouter.post("/quotes", createWidgetQuoteController);
 paymentRailRouter.post("/banks/resolve", resolveBankAccountController);
+paymentRailRouter.get("/collections/:collectionId", getCollectionRequestController);
+paymentRailRouter.post("/collections/:collectionId/accept", acceptCollectionRequestController);
+paymentRailRouter.post("/collections/:collectionId/deny", denyCollectionRequestController);
 paymentRailRouter.post("/webhooks/yellow-card", processYellowCardWebhookController);
 
 export { paymentRailRouter };

@@ -1,12 +1,23 @@
 import { env } from "@/config/env.config";
 
 export function getYellowCardConfig() {
+  const mode = env.PAYMENT_ENV;
+  const isLive = mode === "live";
+  const apiKey = (isLive ? env.YELLOW_CARD_API_KEY_LIVE : env.YELLOW_CARD_API_KEY_TEST).trim();
+  const baseUrl = isLive ? env.YELLOW_CARD_BASE_URL_LIVE : env.YELLOW_CARD_BASE_URL_TEST;
+  const webhookSecret = (
+    isLive
+      ? env.YELLOW_CARD_WEBHOOK_SECRET_LIVE
+      : env.YELLOW_CARD_WEBHOOK_SECRET_TEST
+  ).trim();
+
   return {
-    baseUrl: env.YELLOW_CARD_BASE_URL,
-    apiKey: env.YELLOW_CARD_API_KEY,
+    mode,
+    baseUrl,
+    apiKey,
     timestampHeader: env.YELLOW_CARD_TIMESTAMP_HEADER,
+    webhookSecret,
     timeoutMs: env.YELLOW_CARD_TIMEOUT_MS,
-    mockMode: env.YELLOW_CARD_MOCK_MODE || env.YELLOW_CARD_API_KEY.length === 0,
   };
 }
 

@@ -3,6 +3,7 @@ import { enqueueQueueJob } from "@/shared/workers/queue-runtime";
 import { queueNames } from "@/shared/workers/queue-names";
 
 import { ChargeModel } from "@/features/charges/charge.model";
+import { PaymentRailEventModel } from "@/features/payment-rails/payment-rail-event.model";
 import { ChannelModel } from "@/features/payment-rails/channel.model";
 import { NetworkModel } from "@/features/payment-rails/network.model";
 import { SettlementModel } from "@/features/settlements/settlement.model";
@@ -15,9 +16,9 @@ import type {
   SyncPaymentRailInput,
   YellowCardWebhookInput,
 } from "@/features/payment-rails/payment-rails.validation";
-import { YellowCardClient } from "@/features/payment-rails/yellow-card.client";
+import { getYellowCardProvider } from "@/features/payment-rails/providers/yellow-card/yellow-card.factory";
 
-const yellowCardClient = new YellowCardClient();
+const yellowCardProvider = getYellowCardProvider();
 
 function toChannelResponse(document: {
   _id: { toString(): string };
@@ -152,7 +153,7 @@ export async function listNetworks(query: ListNetworksQuery) {
 }
 
 export async function syncChannels(input: SyncPaymentRailInput) {
-  const channels = await yellowCardClient.getChannels(input.country);
+  const channels = await yellowCardProvider.getChannels(input.country);
 
   const operations = channels.map((channel) =>
     ChannelModel.findOneAndUpdate(
@@ -192,7 +193,7 @@ export async function syncChannels(input: SyncPaymentRailInput) {
 }
 
 export async function syncNetworks(input: SyncPaymentRailInput) {
-  const networks = await yellowCardClient.getNetworks(input.country);
+  const networks = await yellowCardProvider.getNetworks(input.country);
 
   const operations = networks.map((network) =>
     NetworkModel.findOneAndUpdate(
@@ -237,7 +238,7 @@ export async function createWidgetQuote(input: CreateWidgetQuoteInput) {
     );
   }
 
-  const quote = await yellowCardClient.getWidgetQuote(input);
+  const quote = await yellowCardProvider.getWidgetQuote(input);
 
   return {
     ...quote,
@@ -256,7 +257,7 @@ export async function resolveBankAccount(input: ResolveBankAccountInput) {
     throw new HttpError(404, "Network was not found or is inactive.");
   }
 
-  const result = await yellowCardClient.resolveBankAccount(input);
+  const result = await yellowCardProvider.resolveBankAccount(input);
 
   return {
     ...result,
@@ -350,6 +351,7 @@ export async function createCollectionRequest(input: {
   customerName: string;
   localAmount: number;
   usdAmount: number;
+  currency: string;
   country?: string;
   networkId?: string | null;
   accountType: "bank" | "momo";
@@ -357,11 +359,13 @@ export async function createCollectionRequest(input: {
 }) {
   const sequenceId = `renew-${input.customerRef}-${Date.now()}`;
 
-  return yellowCardClient.submitCollectionRequest({
+  return yellowCardProvider.submitCollectionRequest({
     channelId: input.channelId,
     sequenceId,
     amount: Number(input.usdAmount.toFixed(2)),
     localAmount: Math.round(input.localAmount),
+    currency: input.currency,
+    country: input.country,
     customerUID: input.customerRef,
     customerType: "institution",
     recipient: {
@@ -375,6 +379,18 @@ export async function createCollectionRequest(input: {
     },
     forceAccept: true,
   });
+}
+
+export async function getCollectionRequest(collectionId: string) {
+  return yellowCardProvider.getCollectionById(collectionId);
+}
+
+export async function acceptCollectionRequest(collectionId: string) {
+  return yellowCardProvider.acceptCollectionRequest(collectionId);
+}
+
+export async function denyCollectionRequest(collectionId: string) {
+  return yellowCardProvider.denyCollectionRequest(collectionId);
 }
 
 function readWebhookValue<T = unknown>(
@@ -417,8 +433,75 @@ function normalizeWebhookState(payload: YellowCardWebhookInput) {
   return value?.trim().toLowerCase() ?? "unknown";
 }
 
+function buildWebhookEventKey(payload: YellowCardWebhookInput, state: string) {
+  const sequenceId = readWebhookValue<string>(payload, "sequenceId") ?? "none";
+  const externalId = readWebhookValue<string>(payload, "id") ?? "none";
+  const event = readWebhookValue<string>(payload, "event") ?? "none";
+  const status = readWebhookValue<string>(payload, "status") ?? "none";
+  const timestamp =
+    readWebhookValue<string>(payload, "updatedAt") ??
+    readWebhookValue<string>(payload, "createdAt") ??
+    "none";
+
+  return `yellow-card:${sequenceId}:${externalId}:${state}:${event}:${status}:${timestamp}`;
+}
+
 export async function processYellowCardWebhook(input: YellowCardWebhookInput) {
   const state = normalizeWebhookState(input);
+  const eventKey = buildWebhookEventKey(input, state);
+  const existingEvent = await PaymentRailEventModel.findOne({ eventKey }).exec();
+
+  if (existingEvent && existingEvent.processedAt) {
+    return {
+      processed: true,
+      idempotent: true,
+      matched: Boolean(existingEvent.result),
+      state,
+      externalChargeId:
+        readWebhookValue<string>(input, "sequenceId") ??
+        readWebhookValue<string>(input, "id") ??
+        null,
+    };
+  }
+
+  let webhookEvent = existingEvent;
+
+  if (!webhookEvent) {
+    try {
+      webhookEvent = await PaymentRailEventModel.create({
+        provider: "yellow-card",
+        eventKey,
+        state,
+        externalId: readWebhookValue<string>(input, "id") ?? null,
+        sequenceId: readWebhookValue<string>(input, "sequenceId") ?? null,
+        payload: input,
+      });
+    } catch (error) {
+      const duplicateKeyError =
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        Number((error as { code?: number }).code) === 11000;
+
+      if (!duplicateKeyError) {
+        throw error;
+      }
+
+      const duplicateEvent = await PaymentRailEventModel.findOne({ eventKey }).exec();
+
+      return {
+        processed: true,
+        idempotent: true,
+        matched: Boolean(duplicateEvent?.result),
+        state,
+        externalChargeId:
+          readWebhookValue<string>(input, "sequenceId") ??
+          readWebhookValue<string>(input, "id") ??
+          null,
+      };
+    }
+  }
+
   const sequenceId = readWebhookValue<string>(input, "sequenceId");
   const externalId = readWebhookValue<string>(input, "id");
   const charge =
@@ -430,8 +513,20 @@ export async function processYellowCardWebhook(input: YellowCardWebhookInput) {
       : null);
 
   if (!charge) {
+    if (webhookEvent) {
+      webhookEvent.result = {
+        processed: false,
+        matched: false,
+        state,
+        externalChargeId: sequenceId ?? externalId ?? null,
+      };
+      webhookEvent.processedAt = new Date();
+      await webhookEvent.save();
+    }
+
     return {
       processed: false,
+      idempotent: false,
       matched: false,
       state,
       externalChargeId: sequenceId ?? externalId ?? null,
@@ -489,8 +584,9 @@ export async function processYellowCardWebhook(input: YellowCardWebhookInput) {
   charge.processedAt = now;
   await charge.save();
 
-  return {
+  const result = {
     processed: true,
+    idempotent: false,
     matched: true,
     state,
     chargeId: charge._id.toString(),
@@ -498,4 +594,12 @@ export async function processYellowCardWebhook(input: YellowCardWebhookInput) {
     settlementId: linkedSettlement?._id.toString() ?? null,
     settlementStatus: linkedSettlement?.status ?? null,
   };
+
+  if (webhookEvent) {
+    webhookEvent.result = result;
+    webhookEvent.processedAt = new Date();
+    await webhookEvent.save();
+  }
+
+  return result;
 }

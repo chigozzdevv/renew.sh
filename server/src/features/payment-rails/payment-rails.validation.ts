@@ -64,9 +64,14 @@ export const yellowCardWebhookSchema = z.object({
   collection: z.record(z.string(), z.unknown()).optional(),
 });
 
+export const collectionParamSchema = z.object({
+  collectionId: z.string().trim().min(3).max(140),
+});
+
 export type ListChannelsQuery = z.infer<typeof listChannelsQuerySchema>;
 export type ListNetworksQuery = z.infer<typeof listNetworksQuerySchema>;
 export type SyncPaymentRailInput = z.infer<typeof syncPaymentRailSchema>;
 export type CreateWidgetQuoteInput = z.infer<typeof createWidgetQuoteSchema>;
 export type ResolveBankAccountInput = z.infer<typeof resolveBankAccountSchema>;
 export type YellowCardWebhookInput = z.infer<typeof yellowCardWebhookSchema>;
+export type CollectionParamInput = z.infer<typeof collectionParamSchema>;
