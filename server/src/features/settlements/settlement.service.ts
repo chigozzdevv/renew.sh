@@ -44,8 +44,11 @@ function toSettlementResponse(document: {
   destinationWallet: string;
   status: string;
   txHash?: string | null;
+  submittedAt?: Date | null;
   scheduledFor: Date;
   settledAt?: Date | null;
+  reversedAt?: Date | null;
+  reversalReason?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }) {
@@ -60,8 +63,11 @@ function toSettlementResponse(document: {
     destinationWallet: document.destinationWallet,
     status: document.status,
     txHash: document.txHash ?? null,
+    submittedAt: document.submittedAt ?? null,
     scheduledFor: document.scheduledFor,
     settledAt: document.settledAt ?? null,
+    reversedAt: document.reversedAt ?? null,
+    reversalReason: document.reversalReason ?? null,
     createdAt: document.createdAt,
     updatedAt: document.updatedAt,
   };
@@ -112,16 +118,42 @@ function toSweepApprovalResponse(document: {
   };
 }
 
-async function markLinkedChargeSettled(settlement: {
+function resolveChargeStatusFromSettlement(
+  settlementStatus: string
+): "awaiting_settlement" | "confirming" | "settled" | "failed" | "reversed" {
+  switch (settlementStatus) {
+    case "queued":
+      return "awaiting_settlement";
+    case "confirming":
+      return "confirming";
+    case "settled":
+      return "settled";
+    case "reversed":
+      return "reversed";
+    default:
+      return "failed";
+  }
+}
+
+async function syncLinkedChargeFromSettlement(settlement: {
   sourceChargeId?: { toString(): string } | null;
+  status: string;
 }) {
   if (!settlement.sourceChargeId) {
     return;
   }
 
+  const nextStatus = resolveChargeStatusFromSettlement(settlement.status);
+  const failureCode =
+    nextStatus === "failed"
+      ? "settlement_failed"
+      : nextStatus === "reversed"
+        ? "settlement_reversed"
+        : null;
+
   await ChargeModel.findByIdAndUpdate(settlement.sourceChargeId, {
-    status: "settled",
-    failureCode: null,
+    status: nextStatus,
+    failureCode,
     processedAt: new Date(),
   }).exec();
 }
@@ -257,9 +289,14 @@ export async function createSettlement(input: CreateSettlementInput) {
     destinationWallet: input.destinationWallet.toLowerCase(),
     status: input.status,
     txHash: input.txHash ?? null,
+    submittedAt: input.submittedAt ?? null,
     scheduledFor: input.scheduledFor,
     settledAt: input.settledAt ?? null,
+    reversedAt: input.reversedAt ?? null,
+    reversalReason: input.reversalReason ?? null,
   });
+
+  await syncLinkedChargeFromSettlement(settlement);
 
   return toSettlementResponse(settlement);
 }
@@ -313,6 +350,10 @@ export async function updateSettlement(
     settlement.txHash = input.txHash ?? null;
   }
 
+  if (input.submittedAt !== undefined) {
+    settlement.submittedAt = input.submittedAt ?? null;
+  }
+
   if (input.sourceChargeId !== undefined) {
     settlement.sourceChargeId = input.sourceChargeId
       ? new Types.ObjectId(input.sourceChargeId)
@@ -327,10 +368,31 @@ export async function updateSettlement(
     settlement.settledAt = input.settledAt ?? null;
   }
 
+  if (input.reversedAt !== undefined) {
+    settlement.reversedAt = input.reversedAt ?? null;
+  }
+
+  if (input.reversalReason !== undefined) {
+    settlement.reversalReason = input.reversalReason ?? null;
+  }
+
+  if (settlement.status === "confirming" && !settlement.submittedAt) {
+    settlement.submittedAt = new Date();
+  }
+
+  if (settlement.status === "settled" && !settlement.settledAt) {
+    settlement.settledAt = new Date();
+  }
+
+  if (settlement.status === "reversed" && !settlement.reversedAt) {
+    settlement.reversedAt = new Date();
+  }
+
   await settlement.save();
 
+  await syncLinkedChargeFromSettlement(settlement);
+
   if (settlement.status === "settled") {
-    await markLinkedChargeSettled(settlement);
     await markSweepApprovalExecutedIfNeeded(settlement._id.toString());
   }
 
@@ -659,7 +721,9 @@ export async function runSettlementSweepJob(input: { settlementId: string }) {
   if (settlement.status === "queued") {
     settlement.status = "confirming";
     settlement.txHash = settlement.txHash ?? buildMockTxHash(settlement._id.toString());
+    settlement.submittedAt = settlement.submittedAt ?? new Date();
     await settlement.save();
+    await syncLinkedChargeFromSettlement(settlement);
 
     const queuedFollowUp = await enqueueQueueJob(
       queueNames.settlementSweep,
@@ -683,9 +747,10 @@ export async function runSettlementSweepJob(input: { settlementId: string }) {
 
   settlement.status = "settled";
   settlement.txHash = settlement.txHash ?? buildMockTxHash(settlement._id.toString());
+  settlement.submittedAt = settlement.submittedAt ?? new Date();
   settlement.settledAt = new Date();
   await settlement.save();
-  await markLinkedChargeSettled(settlement);
+  await syncLinkedChargeFromSettlement(settlement);
   await markSweepApprovalExecutedIfNeeded(settlement._id.toString());
 
   return {

@@ -50,12 +50,25 @@ const settlementSchema = new Schema(
       trim: true,
       default: null,
     },
+    submittedAt: {
+      type: Date,
+      default: null,
+    },
     scheduledFor: {
       type: Date,
       required: true,
     },
     settledAt: {
       type: Date,
+      default: null,
+    },
+    reversedAt: {
+      type: Date,
+      default: null,
+    },
+    reversalReason: {
+      type: String,
+      trim: true,
       default: null,
     },
   },

@@ -608,7 +608,7 @@ export async function processYellowCardWebhook(input: YellowCardWebhookInput) {
     state.includes("accept") ||
     state.includes("success")
   ) {
-    nextChargeStatus = linkedSettlement ? "processing" : "settled";
+    nextChargeStatus = linkedSettlement ? "awaiting_settlement" : "settled";
     nextFailureCode = null;
 
     if (linkedSettlement) {

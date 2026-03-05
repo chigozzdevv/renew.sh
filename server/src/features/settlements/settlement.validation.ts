@@ -15,6 +15,7 @@ const settlementStatusSchema = z.enum([
   "confirming",
   "settled",
   "failed",
+  "reversed",
 ]);
 
 const sweepApprovalStatusSchema = z.enum([
@@ -34,8 +35,11 @@ export const createSettlementSchema = z.object({
   destinationWallet: addressSchema,
   status: settlementStatusSchema.default("queued"),
   txHash: z.string().trim().min(1).nullable().optional(),
+  submittedAt: z.coerce.date().nullable().optional(),
   scheduledFor: z.coerce.date(),
   settledAt: z.coerce.date().nullable().optional(),
+  reversedAt: z.coerce.date().nullable().optional(),
+  reversalReason: z.string().trim().min(2).max(240).nullable().optional(),
 });
 
 export const listSettlementsQuerySchema = z.object({
@@ -47,8 +51,11 @@ export const listSettlementsQuerySchema = z.object({
 export const updateSettlementSchema = z.object({
   status: settlementStatusSchema.optional(),
   txHash: z.string().trim().min(1).nullable().optional(),
+  submittedAt: z.coerce.date().nullable().optional(),
   sourceChargeId: objectIdSchema.nullable().optional(),
   settledAt: z.coerce.date().nullable().optional(),
+  reversedAt: z.coerce.date().nullable().optional(),
+  reversalReason: z.string().trim().min(2).max(240).nullable().optional(),
   scheduledFor: z.coerce.date().optional(),
 });
 

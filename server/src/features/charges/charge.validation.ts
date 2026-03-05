@@ -14,7 +14,16 @@ export const createChargeSchema = z.object({
   fxRate: z.coerce.number().positive(),
   usdcAmount: z.coerce.number().positive(),
   feeAmount: z.coerce.number().nonnegative().default(0),
-  status: z.enum(["pending", "settled", "failed"]).default("pending"),
+  status: z
+    .enum([
+      "pending",
+      "awaiting_settlement",
+      "confirming",
+      "settled",
+      "failed",
+      "reversed",
+    ])
+    .default("pending"),
   failureCode: z.string().trim().min(1).nullable().optional(),
   processedAt: z.coerce.date().optional(),
 });
@@ -22,12 +31,30 @@ export const createChargeSchema = z.object({
 export const listChargesQuerySchema = z.object({
   merchantId: z.string().trim().min(1).optional(),
   subscriptionId: z.string().trim().min(1).optional(),
-  status: z.enum(["pending", "settled", "failed"]).optional(),
+  status: z
+    .enum([
+      "pending",
+      "awaiting_settlement",
+      "confirming",
+      "settled",
+      "failed",
+      "reversed",
+    ])
+    .optional(),
   search: z.string().trim().min(1).optional(),
 });
 
 export const updateChargeSchema = z.object({
-  status: z.enum(["pending", "settled", "failed"]).optional(),
+  status: z
+    .enum([
+      "pending",
+      "awaiting_settlement",
+      "confirming",
+      "settled",
+      "failed",
+      "reversed",
+    ])
+    .optional(),
   failureCode: z.string().trim().min(1).nullable().optional(),
   processedAt: z.coerce.date().optional(),
 });
