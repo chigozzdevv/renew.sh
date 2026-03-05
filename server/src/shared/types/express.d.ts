@@ -7,6 +7,7 @@ declare namespace Express {
     role: string;
     permissions: string[];
     status: string;
+    workspaceMode: "test" | "live";
   }
 
   interface Request {

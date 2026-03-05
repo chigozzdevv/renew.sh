@@ -9,9 +9,14 @@ import type {
   YellowCardChannel,
   YellowCardNetwork,
 } from "@/features/payment-rails/providers/yellow-card/yellow-card.types";
+import type { RuntimeMode } from "@/shared/constants/runtime-mode";
 
 export class YellowCardLiveProvider implements YellowCardProvider {
-  private readonly config = getYellowCardConfig();
+  private readonly config: ReturnType<typeof getYellowCardConfig>;
+
+  constructor(mode: RuntimeMode = "live") {
+    this.config = getYellowCardConfig(mode);
+  }
 
   async getChannels(country?: string) {
     const searchParams = new URLSearchParams();

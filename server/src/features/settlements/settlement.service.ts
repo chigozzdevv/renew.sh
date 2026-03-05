@@ -6,6 +6,7 @@ import { queueNames } from "@/shared/workers/queue-names";
 
 import { appendAuditLog } from "@/features/audit/audit.service";
 import { ChargeModel } from "@/features/charges/charge.model";
+import { assertMerchantKybApprovedForLive } from "@/features/kyc/kyc.service";
 import { MerchantModel } from "@/features/merchants/merchant.model";
 import { SettingModel } from "@/features/settings/setting.model";
 import { SettlementApprovalModel } from "@/features/settlements/settlement-approval.model";
@@ -241,6 +242,11 @@ export async function createSettlement(input: CreateSettlementInput) {
     throw new HttpError(404, "Merchant was not found.");
   }
 
+  await assertMerchantKybApprovedForLive(
+    input.merchantId,
+    "creating settlements"
+  );
+
   const settlement = await SettlementModel.create({
     merchantId: input.merchantId,
     sourceChargeId: input.sourceChargeId ?? null,
@@ -294,6 +300,11 @@ export async function updateSettlement(
 ) {
   const settlement = await ensureSettlementScope(settlementId, merchantId);
 
+  await assertMerchantKybApprovedForLive(
+    settlement.merchantId.toString(),
+    "updating settlements"
+  );
+
   if (input.status !== undefined) {
     settlement.status = input.status;
   }
@@ -331,6 +342,10 @@ export async function requestSweepApproval(
   input: RequestSweepApprovalInput
 ) {
   const settlement = await ensureSettlementScope(settlementId, input.merchantId);
+  await assertMerchantKybApprovedForLive(
+    input.merchantId,
+    "requesting settlement sweep approvals"
+  );
   const threshold = input.threshold ?? (await getSweepApprovalThreshold(input.merchantId));
 
   const approval = await getOrCreateSweepApproval({
@@ -373,6 +388,10 @@ export async function approveSweep(
   settlementId: string,
   input: SettlementActionInput & { approver: SweepApprover }
 ) {
+  await assertMerchantKybApprovedForLive(
+    input.merchantId,
+    "approving settlement sweeps"
+  );
   await ensureSettlementScope(settlementId, input.merchantId);
   const threshold = await getSweepApprovalThreshold(input.merchantId);
   const approval = await getOrCreateSweepApproval({
@@ -437,6 +456,10 @@ export async function rejectSweep(
   settlementId: string,
   input: RejectSweepApprovalInput
 ) {
+  await assertMerchantKybApprovedForLive(
+    input.merchantId,
+    "rejecting settlement sweeps"
+  );
   await ensureSettlementScope(settlementId, input.merchantId);
   const threshold = await getSweepApprovalThreshold(input.merchantId);
   const approval = await getOrCreateSweepApproval({
@@ -501,6 +524,11 @@ export async function queueSettlementSweep(
   }
 ) {
   const settlement = await ensureSettlementScope(settlementId, options?.merchantId);
+
+  await assertMerchantKybApprovedForLive(
+    settlement.merchantId.toString(),
+    "queueing settlement sweeps"
+  );
 
   if (settlement.status === "settled") {
     return {
@@ -614,6 +642,11 @@ export async function runSettlementSweepJob(input: { settlementId: string }) {
   if (!settlement) {
     throw new HttpError(404, "Settlement was not found.");
   }
+
+  await assertMerchantKybApprovedForLive(
+    settlement.merchantId.toString(),
+    "executing settlement sweeps"
+  );
 
   if (settlement.status === "settled") {
     return {

@@ -1,7 +1,7 @@
 import { env } from "@/config/env.config";
+import type { RuntimeMode } from "@/shared/constants/runtime-mode";
 
-export function getYellowCardConfig() {
-  const mode = env.PAYMENT_ENV;
+export function getYellowCardConfig(mode: RuntimeMode = env.PAYMENT_ENV) {
   const isLive = mode === "live";
   const apiKey = (isLive ? env.YELLOW_CARD_API_KEY_LIVE : env.YELLOW_CARD_API_KEY_TEST).trim();
   const baseUrl = isLive ? env.YELLOW_CARD_BASE_URL_LIVE : env.YELLOW_CARD_BASE_URL_TEST;

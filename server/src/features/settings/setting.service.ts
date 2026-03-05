@@ -1,6 +1,7 @@
 import { HttpError } from "@/shared/errors/http-error";
 
 import { appendAuditLog } from "@/features/audit/audit.service";
+import { assertMerchantKybApprovedForLive } from "@/features/kyc/kyc.service";
 import { MerchantModel } from "@/features/merchants/merchant.model";
 import { SettingModel } from "@/features/settings/setting.model";
 import type {
@@ -145,6 +146,18 @@ export async function updateSettingsByMerchantId(
   input: UpdateSettingsInput
 ) {
   const { merchant, setting } = await getOrCreateSetting(merchantId);
+
+  const mutatesWallets =
+    input.wallets !== undefined &&
+    (input.wallets.primaryWallet !== undefined ||
+      input.wallets.reserveWallet !== undefined);
+
+  if (mutatesWallets) {
+    await assertMerchantKybApprovedForLive(
+      merchantId,
+      "changing treasury wallets"
+    );
+  }
 
   if (input.profile) {
     if (input.profile.businessName !== undefined) {
@@ -293,6 +306,11 @@ export async function saveWalletSettings(
   merchantId: string,
   input: SaveWalletInput
 ) {
+  await assertMerchantKybApprovedForLive(
+    merchantId,
+    "changing treasury wallets"
+  );
+
   const { merchant, setting } = await getOrCreateSetting(merchantId);
 
   setting.primaryWallet = input.primaryWallet.toLowerCase();
@@ -330,6 +348,11 @@ export async function promoteReserveWallet(
   merchantId: string,
   input: WalletActionInput
 ) {
+  await assertMerchantKybApprovedForLive(
+    merchantId,
+    "promoting treasury reserve wallets"
+  );
+
   const { merchant, setting } = await getOrCreateSetting(merchantId);
 
   if (!setting.reserveWallet) {
@@ -369,6 +392,11 @@ export async function removeReserveWallet(
   merchantId: string,
   input: WalletActionInput
 ) {
+  await assertMerchantKybApprovedForLive(
+    merchantId,
+    "removing treasury reserve wallets"
+  );
+
   const { merchant, setting } = await getOrCreateSetting(merchantId);
 
   if (!setting.reserveWallet) {

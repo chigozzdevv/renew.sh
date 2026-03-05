@@ -3,6 +3,7 @@ import { enqueueQueueJob } from "@/shared/workers/queue-runtime";
 import { queueNames } from "@/shared/workers/queue-names";
 
 import { ChargeModel } from "@/features/charges/charge.model";
+import { assertMerchantKybApprovedForLive } from "@/features/kyc/kyc.service";
 import { createSettlement, queueSettlementSweep } from "@/features/settlements/settlement.service";
 import type {
   CreateChargeInput,
@@ -107,6 +108,11 @@ export async function createCharge(input: CreateChargeInput) {
     throw new HttpError(404, "Subscription was not found.");
   }
 
+  await assertMerchantKybApprovedForLive(
+    input.merchantId,
+    "creating charges"
+  );
+
   const charge = await ChargeModel.create({
     merchantId: input.merchantId,
     subscriptionId: input.subscriptionId,
@@ -184,6 +190,11 @@ export async function updateCharge(
 export async function queueChargeRetry(chargeId: string, merchantId?: string) {
   const charge = await ensureChargeScope(chargeId, merchantId);
 
+  await assertMerchantKybApprovedForLive(
+    charge.merchantId.toString(),
+    "retrying charges"
+  );
+
   if (charge.status === "settled") {
     throw new HttpError(409, "Settled charges cannot be retried.");
   }
@@ -232,6 +243,11 @@ export async function runSubscriptionChargeJob(input: { subscriptionId: string }
   if (!merchant) {
     throw new HttpError(404, "Merchant was not found.");
   }
+
+  await assertMerchantKybApprovedForLive(
+    merchant._id.toString(),
+    "running subscription charges"
+  );
 
   if (!plan) {
     throw new HttpError(404, "Plan was not found.");
@@ -289,7 +305,7 @@ export async function runSubscriptionChargeJob(input: { subscriptionId: string }
     coin: "USDC",
     network: "AVALANCHE",
     transactionType: "Buy",
-  })) as Record<string, unknown>;
+  }, merchant._id.toString())) as Record<string, unknown>;
 
   const localAmount = toSafeNumber(
     quote.convertedAmount,
@@ -315,6 +331,7 @@ export async function runSubscriptionChargeJob(input: { subscriptionId: string }
   const netUsdc = Number(Math.max(0.01, usdcAmount - feeAmount).toFixed(2));
 
   const collection = (await createCollectionRequest({
+    merchantId: merchant._id.toString(),
     channelId: channel.externalId,
     customerRef: subscription.customerRef,
     customerName: subscription.customerName,

@@ -3,6 +3,7 @@ import { enqueueQueueJob } from "@/shared/workers/queue-runtime";
 import { queueNames } from "@/shared/workers/queue-names";
 
 import { ChargeModel } from "@/features/charges/charge.model";
+import { getMerchantEnvironmentModeById } from "@/features/merchants/merchant.service";
 import { PaymentRailEventModel } from "@/features/payment-rails/payment-rail-event.model";
 import { ChannelModel } from "@/features/payment-rails/channel.model";
 import { NetworkModel } from "@/features/payment-rails/network.model";
@@ -17,8 +18,15 @@ import type {
   YellowCardWebhookInput,
 } from "@/features/payment-rails/payment-rails.validation";
 import { getYellowCardProvider } from "@/features/payment-rails/providers/yellow-card/yellow-card.factory";
+import type { RuntimeMode } from "@/shared/constants/runtime-mode";
 
-const yellowCardProvider = getYellowCardProvider();
+async function resolvePaymentRailMode(merchantId?: string): Promise<RuntimeMode> {
+  if (!merchantId) {
+    return "test";
+  }
+
+  return getMerchantEnvironmentModeById(merchantId);
+}
 
 function toChannelResponse(document: {
   _id: { toString(): string };
@@ -152,7 +160,12 @@ export async function listNetworks(query: ListNetworksQuery) {
   return networks.map(toNetworkResponse);
 }
 
-export async function syncChannels(input: SyncPaymentRailInput) {
+export async function syncChannels(
+  input: SyncPaymentRailInput,
+  merchantId?: string
+) {
+  const mode = await resolvePaymentRailMode(merchantId);
+  const yellowCardProvider = getYellowCardProvider(mode);
   const channels = await yellowCardProvider.getChannels(input.country);
 
   const operations = channels.map((channel) =>
@@ -192,7 +205,12 @@ export async function syncChannels(input: SyncPaymentRailInput) {
   return synced.map(toChannelResponse);
 }
 
-export async function syncNetworks(input: SyncPaymentRailInput) {
+export async function syncNetworks(
+  input: SyncPaymentRailInput,
+  merchantId?: string
+) {
+  const mode = await resolvePaymentRailMode(merchantId);
+  const yellowCardProvider = getYellowCardProvider(mode);
   const networks = await yellowCardProvider.getNetworks(input.country);
 
   const operations = networks.map((network) =>
@@ -223,7 +241,12 @@ export async function syncNetworks(input: SyncPaymentRailInput) {
   return synced.map(toNetworkResponse);
 }
 
-export async function createWidgetQuote(input: CreateWidgetQuoteInput) {
+export async function createWidgetQuote(
+  input: CreateWidgetQuoteInput,
+  merchantId?: string
+) {
+  const mode = await resolvePaymentRailMode(merchantId);
+  const yellowCardProvider = getYellowCardProvider(mode);
   const activeChannel = await ChannelModel.findOne({
     externalId: input.channelId,
     status: "active",
@@ -247,7 +270,12 @@ export async function createWidgetQuote(input: CreateWidgetQuoteInput) {
   };
 }
 
-export async function resolveBankAccount(input: ResolveBankAccountInput) {
+export async function resolveBankAccount(
+  input: ResolveBankAccountInput,
+  merchantId?: string
+) {
+  const mode = await resolvePaymentRailMode(merchantId);
+  const yellowCardProvider = getYellowCardProvider(mode);
   const network = await NetworkModel.findOne({
     externalId: input.networkId,
     status: "active",
@@ -346,6 +374,7 @@ export async function getPreferredCollectionNetwork(
 }
 
 export async function createCollectionRequest(input: {
+  merchantId: string;
   channelId: string;
   customerRef: string;
   customerName: string;
@@ -357,6 +386,8 @@ export async function createCollectionRequest(input: {
   accountType: "bank" | "momo";
   accountNumber?: string | null;
 }) {
+  const mode = await resolvePaymentRailMode(input.merchantId);
+  const yellowCardProvider = getYellowCardProvider(mode);
   const sequenceId = `renew-${input.customerRef}-${Date.now()}`;
 
   return yellowCardProvider.submitCollectionRequest({
@@ -381,15 +412,30 @@ export async function createCollectionRequest(input: {
   });
 }
 
-export async function getCollectionRequest(collectionId: string) {
+export async function getCollectionRequest(
+  collectionId: string,
+  merchantId?: string
+) {
+  const mode = await resolvePaymentRailMode(merchantId);
+  const yellowCardProvider = getYellowCardProvider(mode);
   return yellowCardProvider.getCollectionById(collectionId);
 }
 
-export async function acceptCollectionRequest(collectionId: string) {
+export async function acceptCollectionRequest(
+  collectionId: string,
+  merchantId?: string
+) {
+  const mode = await resolvePaymentRailMode(merchantId);
+  const yellowCardProvider = getYellowCardProvider(mode);
   return yellowCardProvider.acceptCollectionRequest(collectionId);
 }
 
-export async function denyCollectionRequest(collectionId: string) {
+export async function denyCollectionRequest(
+  collectionId: string,
+  merchantId?: string
+) {
+  const mode = await resolvePaymentRailMode(merchantId);
+  const yellowCardProvider = getYellowCardProvider(mode);
   return yellowCardProvider.denyCollectionRequest(collectionId);
 }
 

@@ -77,7 +77,10 @@ export const listChannelsController = asyncHandler(
 export const syncChannelsController = asyncHandler(
   async (request: Request, response: Response) => {
     const input = syncPaymentRailSchema.parse(request.body);
-    const channels = await syncChannels(input);
+    const channels = await syncChannels(
+      input,
+      request.platformAuthUser?.merchantId
+    );
 
     response.status(200).json({
       success: true,
@@ -102,7 +105,10 @@ export const listNetworksController = asyncHandler(
 export const syncNetworksController = asyncHandler(
   async (request: Request, response: Response) => {
     const input = syncPaymentRailSchema.parse(request.body);
-    const networks = await syncNetworks(input);
+    const networks = await syncNetworks(
+      input,
+      request.platformAuthUser?.merchantId
+    );
 
     response.status(200).json({
       success: true,
@@ -128,7 +134,10 @@ export const enqueuePaymentRailSyncController = asyncHandler(
 export const createWidgetQuoteController = asyncHandler(
   async (request: Request, response: Response) => {
     const input = createWidgetQuoteSchema.parse(request.body);
-    const quote = await createWidgetQuote(input);
+    const quote = await createWidgetQuote(
+      input,
+      request.platformAuthUser?.merchantId
+    );
 
     response.status(200).json({
       success: true,
@@ -140,7 +149,10 @@ export const createWidgetQuoteController = asyncHandler(
 export const resolveBankAccountController = asyncHandler(
   async (request: Request, response: Response) => {
     const input = resolveBankAccountSchema.parse(request.body);
-    const result = await resolveBankAccount(input);
+    const result = await resolveBankAccount(
+      input,
+      request.platformAuthUser?.merchantId
+    );
 
     response.status(200).json({
       success: true,
@@ -152,7 +164,10 @@ export const resolveBankAccountController = asyncHandler(
 export const getCollectionRequestController = asyncHandler(
   async (request: Request, response: Response) => {
     const params = collectionParamSchema.parse(request.params);
-    const result = await getCollectionRequest(params.collectionId);
+    const result = await getCollectionRequest(
+      params.collectionId,
+      request.platformAuthUser?.merchantId
+    );
 
     response.status(200).json({
       success: true,
@@ -164,7 +179,10 @@ export const getCollectionRequestController = asyncHandler(
 export const acceptCollectionRequestController = asyncHandler(
   async (request: Request, response: Response) => {
     const params = collectionParamSchema.parse(request.params);
-    const result = await acceptCollectionRequest(params.collectionId);
+    const result = await acceptCollectionRequest(
+      params.collectionId,
+      request.platformAuthUser?.merchantId
+    );
 
     response.status(200).json({
       success: true,
@@ -177,7 +195,10 @@ export const acceptCollectionRequestController = asyncHandler(
 export const denyCollectionRequestController = asyncHandler(
   async (request: Request, response: Response) => {
     const params = collectionParamSchema.parse(request.params);
-    const result = await denyCollectionRequest(params.collectionId);
+    const result = await denyCollectionRequest(
+      params.collectionId,
+      request.platformAuthUser?.merchantId
+    );
 
     response.status(200).json({
       success: true,
@@ -189,15 +210,21 @@ export const denyCollectionRequestController = asyncHandler(
 
 export const processYellowCardWebhookController = asyncHandler(
   async (request: Request, response: Response) => {
-    const config = getYellowCardConfig();
+    const testConfig = getYellowCardConfig("test");
+    const liveConfig = getYellowCardConfig("live");
+    const configuredSecrets = [testConfig.webhookSecret, liveConfig.webhookSecret].filter(
+      (secret) => secret.length > 0
+    );
 
-    if (config.webhookSecret) {
+    if (configuredSecrets.length > 0) {
       const signatureHeader =
         request.header("x-yc-signature") ?? request.header("x-signature") ?? "";
 
       if (
         !request.rawBody ||
-        !verifyWebhookSignature(request.rawBody, signatureHeader, config.webhookSecret)
+        !configuredSecrets.some((secret) =>
+          verifyWebhookSignature(request.rawBody!, signatureHeader, secret)
+        )
       ) {
         throw new HttpError(401, "Invalid Yellow Card webhook signature.");
       }

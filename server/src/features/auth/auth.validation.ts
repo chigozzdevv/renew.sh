@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { runtimeModes } from "@/shared/constants/runtime-mode";
+
 const objectIdSchema = z
   .string()
   .trim()
@@ -27,6 +29,11 @@ export const authTokenPayloadSchema = z.object({
   merchantId: objectIdSchema,
 });
 
+export const updateWorkspaceModeSchema = z.object({
+  mode: z.enum(runtimeModes),
+});
+
 export type LoginInput = z.infer<typeof loginSchema>;
 export type ActivateInviteInput = z.infer<typeof activateInviteSchema>;
 export type AuthTokenPayload = z.infer<typeof authTokenPayloadSchema>;
+export type UpdateWorkspaceModeInput = z.infer<typeof updateWorkspaceModeSchema>;

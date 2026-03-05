@@ -1,19 +1,22 @@
-import { env } from "@/config/env.config";
 import { YellowCardLiveProvider } from "@/features/payment-rails/providers/yellow-card/yellow-card.live";
 import { YellowCardTestProvider } from "@/features/payment-rails/providers/yellow-card/yellow-card.test";
 import type { YellowCardProvider } from "@/features/payment-rails/providers/yellow-card/yellow-card.types";
+import type { RuntimeMode } from "@/shared/constants/runtime-mode";
 
-let providerInstance: YellowCardProvider | null = null;
+const providerInstances = new Map<RuntimeMode, YellowCardProvider>();
 
-export function getYellowCardProvider(): YellowCardProvider {
-  if (providerInstance) {
-    return providerInstance;
+export function getYellowCardProvider(mode: RuntimeMode): YellowCardProvider {
+  const existingProvider = providerInstances.get(mode);
+
+  if (existingProvider) {
+    return existingProvider;
   }
 
-  providerInstance =
-    env.PAYMENT_ENV === "live"
-      ? new YellowCardLiveProvider()
-      : new YellowCardTestProvider();
+  const provider =
+    mode === "live"
+      ? new YellowCardLiveProvider(mode)
+      : new YellowCardTestProvider(mode);
+  providerInstances.set(mode, provider);
 
-  return providerInstance;
+  return provider;
 }

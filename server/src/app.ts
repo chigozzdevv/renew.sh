@@ -7,6 +7,7 @@ import { chargeRouter } from "@/features/charges/charge.routes";
 import { customerRouter } from "@/features/customers/customer.routes";
 import { dashboardRouter } from "@/features/dashboard/dashboard.routes";
 import { developerRouter } from "@/features/developers/developer.routes";
+import { kycRouter } from "@/features/kyc/kyc.routes";
 import { merchantRouter } from "@/features/merchants/merchant.routes";
 import { paymentRailRouter } from "@/features/payment-rails/payment-rails.routes";
 import { planRouter } from "@/features/plans/plan.routes";
@@ -67,6 +68,7 @@ export function createApp() {
 
   app.use("/v1/protocol", protocolRouter);
   app.use("/v1/auth", authRouter);
+  app.use("/v1/kyc", kycRouter);
   app.use("/v1/payment-rails", paymentRailRouter);
   app.use(
     "/v1/merchants",

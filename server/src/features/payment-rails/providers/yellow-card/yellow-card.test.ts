@@ -9,6 +9,7 @@ import type {
   CreateWidgetQuoteInput,
   ResolveBankAccountInput,
 } from "@/features/payment-rails/payment-rails.validation";
+import type { RuntimeMode } from "@/shared/constants/runtime-mode";
 
 type MockCollectionRecord = {
   id: string;
@@ -219,7 +220,11 @@ function buildMockNetworks(country?: string): YellowCardNetwork[] {
 const mockCollections = new Map<string, MockCollectionRecord>();
 
 export class YellowCardTestProvider implements YellowCardProvider {
-  private readonly config = getYellowCardConfig();
+  private readonly config: ReturnType<typeof getYellowCardConfig>;
+
+  constructor(mode: RuntimeMode = "test") {
+    this.config = getYellowCardConfig(mode);
+  }
 
   async getChannels(country?: string) {
     return buildMockChannels(country);

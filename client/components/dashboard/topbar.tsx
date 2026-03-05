@@ -1,8 +1,13 @@
+import { useWorkspaceMode } from "@/components/dashboard/mode-provider";
+import { cn } from "@/lib/utils";
+
 type DashboardTopbarProps = {
   onOpenSidebar: () => void;
 };
 
 export function DashboardTopbar({ onOpenSidebar }: DashboardTopbarProps) {
+  const { mode, isUpdating, setMode } = useWorkspaceMode();
+
   return (
     <header className="sticky top-0 z-30 border-b border-[color:var(--line)] bg-[#f4f7f1]/88 backdrop-blur-xl">
       <div className="flex flex-wrap items-center gap-3 px-4 py-4 sm:px-6 lg:px-8">
@@ -63,16 +68,32 @@ export function DashboardTopbar({ onOpenSidebar }: DashboardTopbarProps) {
         </label>
 
         <div className="ml-auto flex items-center gap-2 sm:gap-3">
-          <div className="hidden items-center rounded-2xl border border-[color:var(--line)] bg-white/82 p-1 sm:flex">
+          <div className="flex items-center rounded-2xl border border-[color:var(--line)] bg-white/82 p-1">
             <button
               type="button"
-              className="rounded-xl bg-[#0c4a27] px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#d9f6bc]"
+              onClick={() => void setMode("test")}
+              disabled={isUpdating}
+              aria-pressed={mode === "test"}
+              className={cn(
+                "rounded-xl px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] transition-colors disabled:cursor-not-allowed disabled:opacity-70",
+                mode === "test"
+                  ? "bg-[#0c4a27] text-[#d9f6bc]"
+                  : "text-[color:var(--muted)]"
+              )}
             >
               Test
             </button>
             <button
               type="button"
-              className="rounded-xl px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--muted)]"
+              onClick={() => void setMode("live")}
+              disabled={isUpdating}
+              aria-pressed={mode === "live"}
+              className={cn(
+                "rounded-xl px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] transition-colors disabled:cursor-not-allowed disabled:opacity-70",
+                mode === "live"
+                  ? "bg-[#0c4a27] text-[#d9f6bc]"
+                  : "text-[color:var(--muted)]"
+              )}
             >
               Live
             </button>

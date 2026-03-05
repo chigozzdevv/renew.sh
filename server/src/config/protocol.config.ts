@@ -1,7 +1,7 @@
 import { env } from "@/config/env.config";
+import type { RuntimeMode } from "@/shared/constants/runtime-mode";
 
-export function getProtocolRuntimeConfig() {
-  const mode = env.AVALANCHE_ENV;
+export function getProtocolRuntimeConfig(mode: RuntimeMode = env.AVALANCHE_ENV) {
   const isLive = mode === "live";
 
   return {
