@@ -226,6 +226,13 @@ export class SafeLiveProvider implements SafeProvider {
     });
     const pendingTransaction = await this.apiKit.getTransaction(input.safeTxHash);
     const execution = await protocolKit.executeTransaction(pendingTransaction);
+    const publicClient = createPublicClient({
+      transport: http(this.config.rpcUrl),
+    });
+
+    await publicClient.waitForTransactionReceipt({
+      hash: execution.hash as Hex,
+    });
 
     return {
       safeAddress: normalizeAddress(input.safeAddress),

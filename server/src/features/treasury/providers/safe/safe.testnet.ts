@@ -232,6 +232,13 @@ export class SafeTestnetProvider implements SafeProvider {
     }
 
     const execution = await protocolKit.executeTransaction(safeTransaction);
+    const publicClient = createPublicClient({
+      transport: http(this.config.rpcUrl),
+    });
+
+    await publicClient.waitForTransactionReceipt({
+      hash: execution.hash as Hex,
+    });
 
     return {
       safeAddress: normalizeAddress(input.safeAddress),

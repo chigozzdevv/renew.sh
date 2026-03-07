@@ -241,6 +241,64 @@ async function waitForHash(publicClient: ReturnType<typeof createPublicClient>, 
   await publicClient.waitForTransactionReceipt({ hash });
 }
 
+async function waitForSettledState(input: {
+  token: string;
+  settlementId: string;
+  chargeId: string;
+  treasuryTxHash: Hex;
+}) {
+  const publicClient = createPublicClient({
+    transport: http(getTestRpcUrl()),
+  });
+
+  await publicClient.waitForTransactionReceipt({
+    hash: input.treasuryTxHash,
+  });
+
+  await apiRequest(`/v1/settlements/${input.settlementId}`, {
+    method: "PATCH",
+    token: input.token,
+    body: {
+      status: "settled",
+      txHash: input.treasuryTxHash,
+      settledAt: new Date().toISOString(),
+    },
+  });
+
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const [settlement, charge] = await Promise.all([
+      apiRequest<{ id: string; status: string; txHash: string | null }>(
+        `/v1/settlements/${input.settlementId}`,
+        {
+          method: "GET",
+          token: input.token,
+        }
+      ),
+      apiRequest<{ id: string; status: string; failureCode: string | null }>(
+        `/v1/charges/${input.chargeId}`,
+        {
+          method: "GET",
+          token: input.token,
+        }
+      ),
+    ]);
+
+    if (
+      settlement.data.status === "settled" &&
+      charge.data.status === "settled"
+    ) {
+      return {
+        settlement: settlement.data,
+        charge: charge.data,
+      };
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+
+  throw new Error("Timed out waiting for the final settled state.");
+}
+
 async function executeSafeCall(input: {
   safeAddress: string;
   ownerPrivateKey: Hex;
@@ -750,19 +808,26 @@ async function main() {
     throw new Error("Treasury operation did not execute successfully.");
   }
 
-  if (finalCharge.data.status !== "confirming") {
+  const settledState = await waitForSettledState({
+    token,
+    settlementId: settlement.data.id,
+    chargeId: charge.data.id,
+    treasuryTxHash: executedOperation.data.txHash as Hex,
+  });
+
+  if (settledState.charge.status !== "settled") {
     throw new Error(
-      `Charge should be confirming after sweep execution, received ${finalCharge.data.status}.`
+      `Charge should be settled after confirmation, received ${settledState.charge.status}.`
     );
   }
 
-  if (finalSettlement.data.status !== "confirming") {
+  if (settledState.settlement.status !== "settled") {
     throw new Error(
-      `Settlement should be confirming after sweep execution, received ${finalSettlement.data.status}.`
+      `Settlement should be settled after confirmation, received ${settledState.settlement.status}.`
     );
   }
 
-  if (!finalSettlement.data.txHash) {
+  if (!settledState.settlement.txHash) {
     throw new Error("Settlement did not receive the treasury execution tx hash.");
   }
 
@@ -783,8 +848,8 @@ async function main() {
         settlementId: settlement.data.id,
         treasuryOperationId: requestedSweep.data.id,
         treasuryExecutionTxHash: executedOperation.data.txHash,
-        chargeStatus: finalCharge.data.status,
-        settlementStatus: finalSettlement.data.status,
+        chargeStatus: settledState.charge.status,
+        settlementStatus: settledState.settlement.status,
       },
       null,
       2
