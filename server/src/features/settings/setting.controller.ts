@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 
 import {
+  confirmPendingPrimaryWalletChange,
   getSettingsByMerchantId,
   promoteReserveWallet,
   removeReserveWallet,
@@ -55,12 +56,12 @@ export const saveWalletsController = asyncHandler(
       ...request.body,
       actor,
     });
-    const settings = await saveWalletSettings(params.merchantId, input);
+    const result = await saveWalletSettings(params.merchantId, input);
 
     response.status(200).json({
       success: true,
-      message: "Wallet settings updated.",
-      data: settings,
+      message: "Treasury wallet change request created.",
+      data: result,
     });
   }
 );
@@ -74,12 +75,12 @@ export const promoteReserveWalletController = asyncHandler(
       ...request.body,
       actor,
     });
-    const settings = await promoteReserveWallet(params.merchantId, input);
+    const result = await promoteReserveWallet(params.merchantId, input);
 
     response.status(200).json({
       success: true,
-      message: "Reserve wallet promoted.",
-      data: settings,
+      message: "Reserve wallet promotion queued.",
+      data: result,
     });
   }
 );
@@ -93,12 +94,31 @@ export const removeReserveWalletController = asyncHandler(
       ...request.body,
       actor,
     });
-    const settings = await removeReserveWallet(params.merchantId, input);
+    const result = await removeReserveWallet(params.merchantId, input);
 
     response.status(200).json({
       success: true,
-      message: "Reserve wallet removed.",
-      data: settings,
+      message: "Reserve wallet removal queued.",
+      data: result,
+    });
+  }
+);
+
+export const confirmPendingPrimaryWalletChangeController = asyncHandler(
+  async (request: Request, response: Response) => {
+    const params = merchantParamSchema.parse(request.params);
+    const actor =
+      request.platformAuthUser?.name ?? request.platformAuthUser?.email ?? "system";
+    const input = walletActionSchema.parse({
+      ...request.body,
+      actor,
+    });
+    const result = await confirmPendingPrimaryWalletChange(params.merchantId, input);
+
+    response.status(200).json({
+      success: true,
+      message: "Payout wallet confirmation queued.",
+      data: result,
     });
   }
 );

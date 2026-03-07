@@ -72,6 +72,10 @@ export const requestSweepApprovalSchema = settlementActionSchema.extend({
   threshold: z.coerce.number().int().min(1).max(5).optional(),
 });
 
+export const approveSweepApprovalSchema = settlementActionSchema.extend({
+  signature: z.string().trim().min(10).max(2048),
+});
+
 export const rejectSweepApprovalSchema = settlementActionSchema.extend({
   reason: z.string().trim().min(2).max(240),
 });
@@ -87,5 +91,6 @@ export type ListSettlementsQuery = z.infer<typeof listSettlementsQuerySchema>;
 export type UpdateSettlementInput = z.infer<typeof updateSettlementSchema>;
 export type SettlementActionInput = z.infer<typeof settlementActionSchema>;
 export type RequestSweepApprovalInput = z.infer<typeof requestSweepApprovalSchema>;
+export type ApproveSweepApprovalInput = z.infer<typeof approveSweepApprovalSchema>;
 export type RejectSweepApprovalInput = z.infer<typeof rejectSweepApprovalSchema>;
 export type ListSweepApprovalsQuery = z.infer<typeof listSweepApprovalsQuerySchema>;

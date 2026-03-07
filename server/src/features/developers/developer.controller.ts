@@ -4,6 +4,7 @@ import {
   createDeveloperKey,
   createTestDelivery,
   createWebhook,
+  getDeveloperIntegrationStatus,
   listDeliveries,
   listDeveloperKeys,
   listWebhooks,
@@ -50,6 +51,32 @@ export const listDeveloperKeysController = asyncHandler(
     response.status(200).json({
       success: true,
       data: keys,
+    });
+  }
+);
+
+export const getDeveloperIntegrationStatusController = asyncHandler(
+  async (request: Request, response: Response) => {
+    const merchantId = resolveMerchantScope(
+      request,
+      typeof request.query.merchantId === "string"
+        ? request.query.merchantId
+        : undefined
+    );
+
+    if (!merchantId) {
+      response.status(400).json({
+        success: false,
+        message: "merchantId is required.",
+      });
+      return;
+    }
+
+    const status = await getDeveloperIntegrationStatus(merchantId);
+
+    response.status(200).json({
+      success: true,
+      data: status,
     });
   }
 );

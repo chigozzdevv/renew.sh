@@ -13,6 +13,7 @@ import {
   updateSettlement,
 } from "@/features/settlements/settlement.service";
 import {
+  approveSweepApprovalSchema,
   createSettlementSchema,
   listSettlementsQuerySchema,
   listSweepApprovalsQuerySchema,
@@ -167,7 +168,7 @@ export const requestSweepApprovalController = asyncHandler(
 export const approveSweepController = asyncHandler(
   async (request: Request, response: Response) => {
     const params = settlementParamSchema.parse(request.params);
-    const action = settlementActionSchema.parse({
+    const action = approveSweepApprovalSchema.parse({
       ...request.body,
       merchantId: resolveMerchantScope(request, request.body?.merchantId),
       actor: resolveActor(request),

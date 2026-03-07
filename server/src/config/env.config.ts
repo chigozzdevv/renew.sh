@@ -30,6 +30,16 @@ const envSchema = z
       .trim()
       .min(1)
       .default("https://api.avax.network/ext/bc/C/rpc"),
+    SAFE_TX_SERVICE_URL_TEST: z
+      .string()
+      .trim()
+      .default("https://safe-transaction-avalanche-testnet.safe.global"),
+    SAFE_TX_SERVICE_URL_LIVE: z
+      .string()
+      .trim()
+      .default("https://safe-transaction-avalanche.safe.global"),
+    SAFE_EXECUTOR_PRIVATE_KEY_TEST: z.string().trim().default(""),
+    SAFE_EXECUTOR_PRIVATE_KEY_LIVE: z.string().trim().default(""),
     RENEW_PROTOCOL_ADDRESS_TEST: z
       .string()
       .trim()

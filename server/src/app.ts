@@ -17,6 +17,7 @@ import { settlementRouter } from "@/features/settlements/settlement.routes";
 import { settingRouter } from "@/features/settings/setting.routes";
 import { subscriptionRouter } from "@/features/subscriptions/subscription.routes";
 import { teamRouter } from "@/features/teams/team.routes";
+import { treasuryRouter } from "@/features/treasury/treasury.routes";
 import { waitlistRouter } from "@/features/waitlist/waitlist.routes";
 import { errorHandler, notFoundHandler } from "@/shared/middleware/error-handler";
 import {
@@ -127,6 +128,12 @@ export function createApp() {
     developerRouter
   );
   app.use(
+    "/v1/treasury",
+    requirePlatformAuth,
+    requirePlatformPermissions(["treasury", "team_admin"]),
+    treasuryRouter
+  );
+  app.use(
     "/v1/teams",
     requirePlatformAuth,
     requirePlatformPermissions(["team_admin"]),
@@ -135,7 +142,7 @@ export function createApp() {
   app.use(
     "/v1/settings",
     requirePlatformAuth,
-    requirePlatformPermissions(["team_admin"]),
+    requirePlatformPermissions(["team_admin", "treasury"]),
     settingRouter
   );
   app.use(

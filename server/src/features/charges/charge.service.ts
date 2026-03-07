@@ -5,6 +5,7 @@ import { queueNames } from "@/shared/workers/queue-names";
 import { ChargeModel } from "@/features/charges/charge.model";
 import { assertMerchantKybApprovedForLive } from "@/features/kyc/kyc.service";
 import { createSettlement, queueSettlementSweep } from "@/features/settlements/settlement.service";
+import { getTreasuryByMerchantId } from "@/features/treasury/treasury.service";
 import type {
   CreateChargeInput,
   ListChargesQuery,
@@ -398,6 +399,10 @@ export async function runSubscriptionChargeJob(input: { subscriptionId: string }
     processedAt: now,
   });
 
+  const treasury = await getTreasuryByMerchantId(merchant._id.toString()).catch(() => ({
+    account: null,
+  }));
+
   const settlement = await createSettlement({
     merchantId: merchant._id.toString(),
     sourceChargeId: charge._id.toString(),
@@ -405,7 +410,7 @@ export async function runSubscriptionChargeJob(input: { subscriptionId: string }
     grossUsdc: Number(usdcAmount.toFixed(2)),
     feeUsdc: feeAmount,
     netUsdc,
-    destinationWallet: merchant.payoutWallet,
+    destinationWallet: treasury.account?.payoutWallet ?? merchant.payoutWallet,
     status: "queued",
     scheduledFor: new Date(now.getTime() + 5 * 60 * 1000),
   });

@@ -1,17 +1,23 @@
 import { Types } from "mongoose";
 
 import { HttpError } from "@/shared/errors/http-error";
-import { enqueueQueueJob } from "@/shared/workers/queue-runtime";
-import { queueNames } from "@/shared/workers/queue-names";
 
 import { appendAuditLog } from "@/features/audit/audit.service";
 import { ChargeModel } from "@/features/charges/charge.model";
 import { assertMerchantKybApprovedForLive } from "@/features/kyc/kyc.service";
 import { MerchantModel } from "@/features/merchants/merchant.model";
 import { SettingModel } from "@/features/settings/setting.model";
-import { SettlementApprovalModel } from "@/features/settlements/settlement-approval.model";
 import { SettlementModel } from "@/features/settlements/settlement.model";
+import {
+  approveTreasuryOperation,
+  createSettlementSweepOperation,
+  executeTreasuryOperation,
+  getSettlementSweepOperation,
+  listSettlementSweepOperations,
+  rejectTreasuryOperation,
+} from "@/features/treasury/treasury.service";
 import type {
+  ApproveSweepApprovalInput,
   CreateSettlementInput,
   ListSettlementsQuery,
   ListSweepApprovalsQuery,
@@ -27,11 +33,6 @@ type SweepApprover = {
   email: string;
   role: string;
 };
-
-function buildMockTxHash(settlementId: string) {
-  const hex = settlementId.replace(/[^a-fA-F0-9]/g, "");
-  return `0x${`${hex}deadbeefcafebabe`.padEnd(64, "0").slice(0, 64)}`;
-}
 
 function toSettlementResponse(document: {
   _id: { toString(): string };
@@ -74,45 +75,49 @@ function toSettlementResponse(document: {
 }
 
 function toSweepApprovalResponse(document: {
-  _id: { toString(): string };
-  merchantId: { toString(): string };
-  settlementId: { toString(): string };
+  id: string;
+  merchantId: string;
+  settlementId?: string | null;
   status: string;
   threshold: number;
-  requestedBy: string;
-  approvals: Array<{
+  createdBy: string;
+  approvedCount: number;
+  canExecute: boolean;
+  signatures: Array<{
     teamMemberId: string;
     name: string;
     email: string;
     role: string;
-    approvedAt: Date;
+    signedAt: Date;
   }>;
   rejectedBy?: string | null;
   rejectionReason?: string | null;
   rejectedAt?: Date | null;
   executedAt?: Date | null;
-  lastActionAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }) {
   return {
-    id: document._id.toString(),
-    merchantId: document.merchantId.toString(),
-    settlementId: document.settlementId.toString(),
+    id: document.id,
+    merchantId: document.merchantId,
+    settlementId: document.settlementId ?? null,
     status: document.status,
     threshold: document.threshold,
-    approvedCount: document.approvals.length,
-    canExecute:
-      document.status !== "executed" &&
-      document.status !== "rejected" &&
-      document.approvals.length >= document.threshold,
-    requestedBy: document.requestedBy,
-    approvals: document.approvals,
+    approvedCount: document.approvedCount,
+    canExecute: document.canExecute,
+    requestedBy: document.createdBy,
+    approvals: document.signatures.map((entry) => ({
+      teamMemberId: entry.teamMemberId,
+      name: entry.name,
+      email: entry.email,
+      role: entry.role,
+      approvedAt: entry.signedAt,
+    })),
     rejectedBy: document.rejectedBy ?? null,
     rejectionReason: document.rejectionReason ?? null,
     rejectedAt: document.rejectedAt ?? null,
     executedAt: document.executedAt ?? null,
-    lastActionAt: document.lastActionAt ?? null,
+    lastActionAt: document.updatedAt,
     createdAt: document.createdAt,
     updatedAt: document.updatedAt,
   };
@@ -189,82 +194,6 @@ async function ensureSettlementScope(settlementId: string, merchantId?: string) 
   }
 
   return settlement;
-}
-
-async function getOrCreateSweepApproval(input: {
-  settlementId: string;
-  merchantId: string;
-  threshold: number;
-  requestedBy: string;
-}) {
-  let approval = await SettlementApprovalModel.findOne({
-    settlementId: input.settlementId,
-  }).exec();
-
-  if (!approval) {
-    approval = await SettlementApprovalModel.create({
-      settlementId: input.settlementId,
-      merchantId: input.merchantId,
-      status: "pending",
-      threshold: input.threshold,
-      requestedBy: input.requestedBy,
-      approvals: [],
-      rejectedBy: null,
-      rejectionReason: null,
-      rejectedAt: null,
-      executedAt: null,
-      lastActionAt: new Date(),
-    });
-
-    return approval;
-  }
-
-  if (approval.status === "executed") {
-    return approval;
-  }
-
-  if (approval.threshold !== input.threshold) {
-    approval.threshold = input.threshold;
-  }
-
-  approval.requestedBy = input.requestedBy;
-  approval.lastActionAt = new Date();
-  await approval.save();
-
-  return approval;
-}
-
-function ensureSweepApprovalCanProceed(input: {
-  approvalStatus: string;
-  approvalCount: number;
-  threshold: number;
-}) {
-  if (input.approvalStatus === "rejected") {
-    throw new HttpError(
-      409,
-      "Sweep approval is rejected. Request a new approval cycle first."
-    );
-  }
-
-  if (input.approvalCount < input.threshold) {
-    throw new HttpError(
-      409,
-      `Sweep requires ${input.threshold} approvals. ${input.approvalCount} recorded.`
-    );
-  }
-}
-
-async function markSweepApprovalExecutedIfNeeded(settlementId: string) {
-  const approval = await SettlementApprovalModel.findOne({ settlementId }).exec();
-
-  if (!approval || approval.status === "executed") {
-    return;
-  }
-
-  approval.status = "executed";
-  approval.executedAt = new Date();
-  approval.lastActionAt = new Date();
-  await approval.save();
 }
 
 export async function createSettlement(input: CreateSettlementInput) {
@@ -392,10 +321,6 @@ export async function updateSettlement(
 
   await syncLinkedChargeFromSettlement(settlement);
 
-  if (settlement.status === "settled") {
-    await markSweepApprovalExecutedIfNeeded(settlement._id.toString());
-  }
-
   return toSettlementResponse(settlement);
 }
 
@@ -404,28 +329,11 @@ export async function requestSweepApproval(
   input: RequestSweepApprovalInput
 ) {
   const settlement = await ensureSettlementScope(settlementId, input.merchantId);
-  await assertMerchantKybApprovedForLive(
-    input.merchantId,
-    "requesting settlement sweep approvals"
-  );
-  const threshold = input.threshold ?? (await getSweepApprovalThreshold(input.merchantId));
-
-  const approval = await getOrCreateSweepApproval({
-    settlementId,
+  const approval = await createSettlementSweepOperation({
     merchantId: input.merchantId,
-    threshold,
-    requestedBy: input.actor,
+    settlementId,
+    actor: input.actor,
   });
-
-  if (approval.status === "rejected") {
-    approval.status = "pending";
-    approval.rejectedBy = null;
-    approval.rejectedAt = null;
-    approval.rejectionReason = null;
-    approval.approvals.splice(0, approval.approvals.length);
-    approval.lastActionAt = new Date();
-    await approval.save();
-  }
 
   await appendAuditLog({
     merchantId: input.merchantId,
@@ -448,51 +356,21 @@ export async function requestSweepApproval(
 
 export async function approveSweep(
   settlementId: string,
-  input: SettlementActionInput & { approver: SweepApprover }
+  input: ApproveSweepApprovalInput & { approver: SweepApprover }
 ) {
-  await assertMerchantKybApprovedForLive(
-    input.merchantId,
-    "approving settlement sweeps"
-  );
   await ensureSettlementScope(settlementId, input.merchantId);
-  const threshold = await getSweepApprovalThreshold(input.merchantId);
-  const approval = await getOrCreateSweepApproval({
-    settlementId,
+  const operation = await createSettlementSweepOperation({
     merchantId: input.merchantId,
-    threshold,
-    requestedBy: input.actor,
+    settlementId,
+    actor: input.actor,
   });
-
-  if (approval.status === "rejected") {
-    throw new HttpError(409, "Sweep approval was rejected.");
-  }
-
-  if (approval.status === "executed") {
-    return toSweepApprovalResponse(approval);
-  }
-
-  const alreadyApproved = approval.approvals.some(
-    (entry) => entry.teamMemberId === input.approver.teamMemberId
-  );
-
-  if (!alreadyApproved) {
-    approval.approvals.push({
-      teamMemberId: input.approver.teamMemberId,
-      name: input.approver.name,
-      email: input.approver.email,
-      role: input.approver.role,
-      approvedAt: new Date(),
-    });
-  }
-
-  if (approval.approvals.length >= approval.threshold) {
-    approval.status = "approved";
-  } else {
-    approval.status = "pending";
-  }
-
-  approval.lastActionAt = new Date();
-  await approval.save();
+  const approval = await approveTreasuryOperation({
+    merchantId: input.merchantId,
+    operationId: operation.id,
+    teamMemberId: input.approver.teamMemberId,
+    actor: input.actor,
+    signature: input.signature,
+  });
 
   await appendAuditLog({
     merchantId: input.merchantId,
@@ -505,7 +383,7 @@ export async function approveSweep(
     metadata: {
       settlementId,
       threshold: approval.threshold,
-      approvals: approval.approvals.length,
+      approvals: approval.approvedCount,
     },
     ipAddress: null,
     userAgent: null,
@@ -518,29 +396,20 @@ export async function rejectSweep(
   settlementId: string,
   input: RejectSweepApprovalInput
 ) {
-  await assertMerchantKybApprovedForLive(
-    input.merchantId,
-    "rejecting settlement sweeps"
-  );
   await ensureSettlementScope(settlementId, input.merchantId);
-  const threshold = await getSweepApprovalThreshold(input.merchantId);
-  const approval = await getOrCreateSweepApproval({
-    settlementId,
+  const operation = await createSettlementSweepOperation({
     merchantId: input.merchantId,
-    threshold,
-    requestedBy: input.actor,
+    settlementId,
+    actor: input.actor,
   });
-
-  if (approval.status === "executed") {
-    throw new HttpError(409, "Settled sweep cannot be rejected.");
-  }
-
-  approval.status = "rejected";
-  approval.rejectedBy = input.actor;
-  approval.rejectedAt = new Date();
-  approval.rejectionReason = input.reason;
-  approval.lastActionAt = new Date();
-  await approval.save();
+  const approval = await rejectTreasuryOperation({
+    merchantId: input.merchantId,
+    operationId: operation.id,
+    actor: input.actor,
+    payload: {
+      reason: input.reason,
+    },
+  });
 
   await appendAuditLog({
     merchantId: input.merchantId,
@@ -562,18 +431,11 @@ export async function rejectSweep(
 }
 
 export async function listSweepApprovals(query: ListSweepApprovalsQuery) {
-  const mongoQuery: Record<string, unknown> = {
+  const approvals = await listSettlementSweepOperations({
     merchantId: query.merchantId,
-  };
-
-  if (query.status) {
-    mongoQuery.status = query.status;
-  }
-
-  const approvals = await SettlementApprovalModel.find(mongoQuery)
-    .sort({ createdAt: -1 })
-    .limit(query.limit)
-    .exec();
+    status: query.status,
+    limit: query.limit,
+  });
 
   return approvals.map(toSweepApprovalResponse);
 }
@@ -605,65 +467,22 @@ export async function queueSettlementSweep(
   }
 
   const threshold = await getSweepApprovalThreshold(settlement.merchantId.toString());
-
-  if (threshold > 1) {
-    const approval = await getOrCreateSweepApproval({
-      settlementId,
-      merchantId: settlement.merchantId.toString(),
-      threshold,
-      requestedBy:
-        options?.actor?.name ??
-        options?.actor?.email ??
-        options?.merchantId ??
-        "system",
-    });
-
-    if (approval.status === "rejected") {
-      return {
-        queued: false,
-        processedInline: false,
-        settlementId,
-        awaitingApproval: false,
-        approval: toSweepApprovalResponse(approval),
-      };
-    }
-
-    if (approval.approvals.length < approval.threshold) {
-      return {
-        queued: false,
-        processedInline: false,
-        settlementId,
-        awaitingApproval: true,
-        approval: toSweepApprovalResponse(approval),
-      };
-    }
-  }
-
-  const queuedJob = await enqueueQueueJob(
-    queueNames.settlementSweep,
-    "settlement-sweep",
-    { settlementId },
-    {
-      jobId: `settlement-sweep:${settlementId}:${Date.now()}`,
-      attempts: 5,
-    }
-  );
-
-  if (!queuedJob) {
-    const result = await runSettlementSweepJob({ settlementId });
-
-    return {
-      queued: false,
-      processedInline: true,
-      settlementId,
-      result,
-    };
-  }
+  const approval = await createSettlementSweepOperation({
+    merchantId: settlement.merchantId.toString(),
+    settlementId,
+    actor:
+      options?.actor?.name ??
+      options?.actor?.email ??
+      options?.merchantId ??
+      "system",
+  });
 
   return {
-    queued: true,
+    queued: false,
     processedInline: false,
     settlementId,
+    awaitingApproval: approval.approvedCount < Math.max(threshold, approval.threshold),
+    approval: toSweepApprovalResponse(approval),
   };
 }
 
@@ -671,92 +490,44 @@ export async function executeApprovedSweep(
   settlementId: string,
   input: SettlementActionInput & { approver?: SweepApprover }
 ) {
-  const approval = await SettlementApprovalModel.findOne({
+  const operation = await getSettlementSweepOperation(settlementId, input.merchantId);
+  const executed = await executeTreasuryOperation({
+    merchantId: input.merchantId,
+    operationId: operation.id,
+    actor: input.actor,
+  });
+
+  return {
+    queued: false,
+    processedInline: true,
     settlementId,
-    merchantId: input.merchantId,
-  }).exec();
-
-  if (!approval) {
-    throw new HttpError(409, "Sweep approval has not been requested.");
-  }
-
-  ensureSweepApprovalCanProceed({
-    approvalStatus: approval.status,
-    approvalCount: approval.approvals.length,
-    threshold: approval.threshold,
-  });
-
-  const queued = await queueSettlementSweep(settlementId, {
-    merchantId: input.merchantId,
-    actor: input.approver,
-  });
-
-  if ("awaitingApproval" in queued && queued.awaitingApproval) {
-    throw new HttpError(409, "Sweep still awaits required approvals.");
-  }
-
-  return queued;
+    result: executed,
+  };
 }
 
 export async function runSettlementSweepJob(input: { settlementId: string }) {
-  const settlement = await SettlementModel.findById(input.settlementId).exec();
+  const settlement = await SettlementModel.findById(input.settlementId)
+    .select({ merchantId: 1 })
+    .lean()
+    .exec();
 
   if (!settlement) {
     throw new HttpError(404, "Settlement was not found.");
   }
 
-  await assertMerchantKybApprovedForLive(
-    settlement.merchantId.toString(),
-    "executing settlement sweeps"
+  const operation = await getSettlementSweepOperation(
+    input.settlementId,
+    settlement.merchantId.toString()
   );
-
-  if (settlement.status === "settled") {
-    return {
-      skipped: true,
-      settlementId: settlement._id.toString(),
-      status: "settled",
-    };
-  }
-
-  if (settlement.status === "queued") {
-    settlement.status = "confirming";
-    settlement.txHash = settlement.txHash ?? buildMockTxHash(settlement._id.toString());
-    settlement.submittedAt = settlement.submittedAt ?? new Date();
-    await settlement.save();
-    await syncLinkedChargeFromSettlement(settlement);
-
-    const queuedFollowUp = await enqueueQueueJob(
-      queueNames.settlementSweep,
-      "settlement-confirmation",
-      { settlementId: settlement._id.toString() },
-      {
-        delayMs: 1500,
-        attempts: 5,
-        jobId: `settlement-confirmation:${settlement._id.toString()}:${Date.now()}`,
-      }
-    );
-
-    if (queuedFollowUp) {
-      return {
-        settlementId: settlement._id.toString(),
-        status: settlement.status,
-        txHash: settlement.txHash,
-      };
-    }
-  }
-
-  settlement.status = "settled";
-  settlement.txHash = settlement.txHash ?? buildMockTxHash(settlement._id.toString());
-  settlement.submittedAt = settlement.submittedAt ?? new Date();
-  settlement.settledAt = new Date();
-  await settlement.save();
-  await syncLinkedChargeFromSettlement(settlement);
-  await markSweepApprovalExecutedIfNeeded(settlement._id.toString());
+  const executed = await executeTreasuryOperation({
+    merchantId: settlement.merchantId.toString(),
+    operationId: operation.id,
+    actor: "system",
+  });
 
   return {
-    settlementId: settlement._id.toString(),
-    status: settlement.status,
-    txHash: settlement.txHash,
-    settledAt: settlement.settledAt,
+    settlementId: input.settlementId,
+    status: executed.status,
+    txHash: executed.txHash,
   };
 }

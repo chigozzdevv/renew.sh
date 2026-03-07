@@ -2,6 +2,7 @@ import { Router } from "express";
 
 import {
   createDeveloperKeyController,
+  getDeveloperIntegrationStatusController,
   createTestDeliveryController,
   createWebhookController,
   listDeliveriesController,
@@ -14,6 +15,7 @@ import {
 
 const developerRouter = Router();
 
+developerRouter.get("/integrations", getDeveloperIntegrationStatusController);
 developerRouter.get("/keys", listDeveloperKeysController);
 developerRouter.post("/keys", createDeveloperKeyController);
 developerRouter.post("/keys/:developerKeyId/revoke", revokeDeveloperKeyController);

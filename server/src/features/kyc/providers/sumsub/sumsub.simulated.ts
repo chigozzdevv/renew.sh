@@ -40,7 +40,7 @@ function toHexSeed(seed: string) {
 
 const mockApplicants = new Map<string, MockApplicantRecord>();
 
-export class SumsubTestProvider implements SumsubProvider {
+export class SumsubSimulatedProvider implements SumsubProvider {
   private readonly config: ReturnType<typeof getSumsubConfig>;
 
   constructor(mode: RuntimeMode = "test") {

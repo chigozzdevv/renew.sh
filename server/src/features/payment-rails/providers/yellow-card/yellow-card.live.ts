@@ -1,4 +1,5 @@
 import { getYellowCardConfig } from "@/config/yellow-card.config";
+import { HttpError } from "@/shared/errors/http-error";
 import type {
   CreateWidgetQuoteInput,
   ResolveBankAccountInput,
@@ -86,6 +87,13 @@ export class YellowCardLiveProvider implements YellowCardProvider {
       body?: string;
     }
   ) {
+    if (!this.config.apiKey) {
+      throw new HttpError(
+        500,
+        "Yellow Card credentials are missing for live provider configuration."
+      );
+    }
+
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.config.timeoutMs);
 

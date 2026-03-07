@@ -278,6 +278,12 @@ contract RenewProtocol {
         emit MerchantReserveWalletUpdated(msg.sender, reserveWallet);
     }
 
+    function clearReserveWallet() external onlyRegisteredMerchant {
+        merchants[msg.sender].reserveWallet = address(0);
+
+        emit MerchantReserveWalletUpdated(msg.sender, address(0));
+    }
+
     function requestMerchantPayoutWalletUpdate(address payoutWallet) external onlyRegisteredMerchant {
         if (payoutWallet == address(0)) revert InvalidAddress();
 
@@ -310,11 +316,15 @@ contract RenewProtocol {
 
         if (merchant.reserveWallet == address(0)) revert NoReserveWallet();
 
+        address previousPayoutWallet = merchant.payoutWallet;
+
         merchant.payoutWallet = merchant.reserveWallet;
+        merchant.reserveWallet = previousPayoutWallet;
         merchant.pendingPayoutWallet = address(0);
         merchant.payoutWalletChangeReadyAt = 0;
 
         emit MerchantReserveWalletPromoted(msg.sender, merchant.payoutWallet);
+        emit MerchantReserveWalletUpdated(msg.sender, merchant.reserveWallet);
     }
 
     function setMerchantStatus(address merchant, bool active) external onlyOwner {
@@ -614,14 +624,6 @@ contract RenewProtocol {
         vault.withdrawMerchantBalance(msg.sender, payoutWallet, amount);
 
         emit MerchantWithdrawal(msg.sender, payoutWallet, amount);
-    }
-
-    function withdrawTo(address to, uint256 amount) external onlyRegisteredMerchant {
-        if (to == address(0)) revert InvalidAddress();
-
-        vault.withdrawMerchantBalance(msg.sender, to, amount);
-
-        emit MerchantWithdrawal(msg.sender, to, amount);
     }
 
     function withdrawProtocolFees(uint256 amount) external onlyOwner {

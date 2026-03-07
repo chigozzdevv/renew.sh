@@ -1,4 +1,5 @@
 import { useWorkspaceMode } from "@/components/dashboard/mode-provider";
+import { useDashboardSession } from "@/components/dashboard/session-provider";
 import { cn } from "@/lib/utils";
 
 type DashboardTopbarProps = {
@@ -7,6 +8,7 @@ type DashboardTopbarProps = {
 
 export function DashboardTopbar({ onOpenSidebar }: DashboardTopbarProps) {
   const { mode, isUpdating, setMode } = useWorkspaceMode();
+  const { user } = useDashboardSession();
 
   return (
     <header className="sticky top-0 z-30 border-b border-[color:var(--line)] bg-[#f4f7f1]/88 backdrop-blur-xl">
@@ -125,10 +127,16 @@ export function DashboardTopbar({ onOpenSidebar }: DashboardTopbarProps) {
             aria-label="Open workspace profile"
           >
             <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-[#0c4a27] text-xs font-semibold text-[#d9f6bc]">
-              RW
+              {user?.name
+                ? user.name
+                    .split(" ")
+                    .slice(0, 2)
+                    .map((part) => part[0]?.toUpperCase() ?? "")
+                    .join("")
+                : "RW"}
             </span>
             <span className="hidden text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)] sm:inline">
-              Renew Labs
+              {user?.name ?? "Renew Labs"}
             </span>
           </button>
         </div>

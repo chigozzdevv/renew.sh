@@ -1,5 +1,5 @@
 import { YellowCardLiveProvider } from "@/features/payment-rails/providers/yellow-card/yellow-card.live";
-import { YellowCardTestProvider } from "@/features/payment-rails/providers/yellow-card/yellow-card.test";
+import { YellowCardSimulatedProvider } from "@/features/payment-rails/providers/yellow-card/yellow-card.simulated";
 import type { YellowCardProvider } from "@/features/payment-rails/providers/yellow-card/yellow-card.types";
 import type { RuntimeMode } from "@/shared/constants/runtime-mode";
 
@@ -15,7 +15,7 @@ export function getYellowCardProvider(mode: RuntimeMode): YellowCardProvider {
   const provider =
     mode === "live"
       ? new YellowCardLiveProvider(mode)
-      : new YellowCardTestProvider(mode);
+      : new YellowCardSimulatedProvider(mode);
   providerInstances.set(mode, provider);
 
   return provider;

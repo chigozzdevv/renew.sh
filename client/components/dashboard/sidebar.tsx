@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 
+import { useDashboardSession } from "@/components/dashboard/session-provider";
 import { dashboardNav } from "@/lib/dashboard";
 import type { DashboardNavItem } from "@/types/dashboard";
 import { Logo } from "@/components/shared/logo";
@@ -18,6 +19,8 @@ export function DashboardSidebar({
   mobile = false,
   onNavigate,
 }: DashboardSidebarProps) {
+  const { signOut } = useDashboardSession();
+
   return (
     <div
       className={cn(
@@ -73,6 +76,7 @@ export function DashboardSidebar({
       <div className="mt-auto pt-4">
         <button
           type="button"
+          onClick={signOut}
           className="flex w-full items-center justify-between rounded-2xl border border-[color:var(--line)] bg-white/82 px-4 py-3 text-left transition-all duration-200 hover:border-[#0c4a27]/12 hover:bg-[#f7fbf5]"
         >
           <span className="inline-flex items-center gap-3">

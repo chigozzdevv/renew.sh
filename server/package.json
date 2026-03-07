@@ -12,12 +12,16 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@safe-global/api-kit": "^4.0.1",
+    "@safe-global/protocol-kit": "^6.1.2",
+    "@safe-global/types-kit": "^3.0.0",
     "bullmq": "^5.63.0",
     "cors": "^2.8.5",
     "dotenv": "^16.6.1",
     "express": "^5.1.0",
     "ioredis": "^5.8.1",
     "mongoose": "^8.18.1",
+    "viem": "^2.47.0",
     "zod": "^4.1.5"
   },
   "devDependencies": {

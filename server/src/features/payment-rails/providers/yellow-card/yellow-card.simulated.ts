@@ -219,7 +219,7 @@ function buildMockNetworks(country?: string): YellowCardNetwork[] {
 
 const mockCollections = new Map<string, MockCollectionRecord>();
 
-export class YellowCardTestProvider implements YellowCardProvider {
+export class YellowCardSimulatedProvider implements YellowCardProvider {
   private readonly config: ReturnType<typeof getYellowCardConfig>;
 
   constructor(mode: RuntimeMode = "test") {

@@ -1,5 +1,5 @@
 import { SumsubLiveProvider } from "@/features/kyc/providers/sumsub/sumsub.live";
-import { SumsubTestProvider } from "@/features/kyc/providers/sumsub/sumsub.test";
+import { SumsubSimulatedProvider } from "@/features/kyc/providers/sumsub/sumsub.simulated";
 import type { SumsubProvider } from "@/features/kyc/providers/sumsub/sumsub.types";
 import type { RuntimeMode } from "@/shared/constants/runtime-mode";
 
@@ -15,7 +15,7 @@ export function getSumsubProvider(mode: RuntimeMode): SumsubProvider {
   const provider =
     mode === "live"
       ? new SumsubLiveProvider(mode)
-      : new SumsubTestProvider(mode);
+      : new SumsubSimulatedProvider(mode);
   providerInstances.set(mode, provider);
 
   return provider;

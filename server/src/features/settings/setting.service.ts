@@ -4,6 +4,13 @@ import { appendAuditLog } from "@/features/audit/audit.service";
 import { assertMerchantKybApprovedForLive } from "@/features/kyc/kyc.service";
 import { MerchantModel } from "@/features/merchants/merchant.model";
 import { SettingModel } from "@/features/settings/setting.model";
+import {
+  createPayoutWalletConfirmOperation,
+  createReserveClearOperation,
+  createReservePromoteOperation,
+  createWalletUpdateOperations,
+  getTreasuryByMerchantId,
+} from "@/features/treasury/treasury.service";
 import type {
   SaveWalletInput,
   UpdateSettingsInput,
@@ -41,6 +48,19 @@ function toSettingResponse(document: {
   sweepApprovalThreshold: number;
   createdAt: Date;
   updatedAt: Date;
+},
+treasury?: {
+  account: {
+    safeAddress: string;
+    threshold: number;
+    pendingPayoutWallet?: string | null;
+    payoutWalletChangeReadyAt?: Date | null;
+  } | null;
+  operations: Array<{
+    id: string;
+    kind: string;
+    status: string;
+  }>;
 }) {
   return {
     id: document._id.toString(),
@@ -68,6 +88,10 @@ function toSettingResponse(document: {
       primaryWallet: document.primaryWallet,
       reserveWallet: document.reserveWallet ?? null,
       walletAlerts: document.walletAlerts,
+      safeAddress: treasury?.account?.safeAddress ?? null,
+      pendingPayoutWallet: treasury?.account?.pendingPayoutWallet ?? null,
+      payoutWalletChangeReadyAt:
+        treasury?.account?.payoutWalletChangeReadyAt ?? null,
     },
     notifications: {
       financeDigest: document.financeDigest,
@@ -80,6 +104,10 @@ function toSettingResponse(document: {
       enforceTwoFactor: document.enforceTwoFactor,
       restrictInviteDomains: document.restrictInviteDomains,
       sweepApprovalThreshold: document.sweepApprovalThreshold,
+    },
+    treasury: {
+      threshold: treasury?.account?.threshold ?? 0,
+      pendingOperations: treasury?.operations ?? [],
     },
     createdAt: document.createdAt,
     updatedAt: document.updatedAt,
@@ -137,8 +165,27 @@ async function getOrCreateSetting(merchantId: string) {
 
 export async function getSettingsByMerchantId(merchantId: string) {
   const { setting } = await getOrCreateSetting(merchantId);
+  const treasury = await getTreasuryByMerchantId(merchantId).catch(() => ({
+    account: null,
+    signers: [],
+    operations: [],
+  }));
 
-  return toSettingResponse(setting);
+  return toSettingResponse(setting, {
+    account: treasury.account
+      ? {
+          safeAddress: treasury.account.safeAddress,
+          threshold: treasury.account.threshold,
+          pendingPayoutWallet: treasury.account.pendingPayoutWallet,
+          payoutWalletChangeReadyAt: treasury.account.payoutWalletChangeReadyAt,
+        }
+      : null,
+    operations: treasury.operations.map((entry) => ({
+      id: entry.id,
+      kind: entry.kind,
+      status: entry.status,
+    })),
+  });
 }
 
 export async function updateSettingsByMerchantId(
@@ -227,16 +274,6 @@ export async function updateSettingsByMerchantId(
   }
 
   if (input.wallets) {
-    if (input.wallets.primaryWallet !== undefined) {
-      setting.primaryWallet = input.wallets.primaryWallet.toLowerCase();
-      merchant.payoutWallet = input.wallets.primaryWallet.toLowerCase();
-    }
-
-    if (input.wallets.reserveWallet !== undefined) {
-      setting.reserveWallet = input.wallets.reserveWallet?.toLowerCase() ?? null;
-      merchant.reserveWallet = input.wallets.reserveWallet?.toLowerCase() ?? null;
-    }
-
     if (input.wallets.walletAlerts !== undefined) {
       setting.walletAlerts = input.wallets.walletAlerts;
     }
@@ -299,7 +336,7 @@ export async function updateSettingsByMerchantId(
     userAgent: null,
   });
 
-  return toSettingResponse(setting);
+  return getSettingsByMerchantId(merchantId);
 }
 
 export async function saveWalletSettings(
@@ -311,19 +348,19 @@ export async function saveWalletSettings(
     "changing treasury wallets"
   );
 
-  const { merchant, setting } = await getOrCreateSetting(merchantId);
-
-  setting.primaryWallet = input.primaryWallet.toLowerCase();
-  setting.reserveWallet = input.reserveWallet?.toLowerCase() ?? null;
+  const { setting } = await getOrCreateSetting(merchantId);
 
   if (input.walletAlerts !== undefined) {
     setting.walletAlerts = input.walletAlerts;
   }
+  await setting.save();
 
-  merchant.payoutWallet = setting.primaryWallet;
-  merchant.reserveWallet = setting.reserveWallet;
-
-  await Promise.all([setting.save(), merchant.save()]);
+  const operations = await createWalletUpdateOperations({
+    merchantId,
+    actor: input.actor,
+    primaryWallet: input.primaryWallet,
+    reserveWallet: input.reserveWallet,
+  });
 
   await appendAuditLog({
     merchantId,
@@ -331,17 +368,23 @@ export async function saveWalletSettings(
     action: "Updated wallet settings",
     category: "security",
     status: "ok",
-    target: merchant.supportEmail,
-    detail: "Primary or reserve wallet was updated.",
+    target: input.primaryWallet,
+    detail: "Treasury wallet change request created.",
     metadata: {
-      primaryWallet: setting.primaryWallet,
-      reserveWallet: setting.reserveWallet,
+      primaryWallet: input.primaryWallet.toLowerCase(),
+      reserveWallet: input.reserveWallet?.toLowerCase() ?? null,
+      operationIds: operations.map((entry) => entry.id),
     },
     ipAddress: null,
     userAgent: null,
   });
 
-  return toSettingResponse(setting);
+  const settings = await getSettingsByMerchantId(merchantId);
+
+  return {
+    settings,
+    operations,
+  };
 }
 
 export async function promoteReserveWallet(
@@ -353,39 +396,30 @@ export async function promoteReserveWallet(
     "promoting treasury reserve wallets"
   );
 
-  const { merchant, setting } = await getOrCreateSetting(merchantId);
-
-  if (!setting.reserveWallet) {
-    throw new HttpError(409, "Reserve wallet is not configured.");
-  }
-
-  // Swap wallets so finance can promote a standby address in one action.
-  const oldPrimaryWallet = setting.primaryWallet;
-  setting.primaryWallet = setting.reserveWallet;
-  setting.reserveWallet = oldPrimaryWallet;
-
-  merchant.payoutWallet = setting.primaryWallet;
-  merchant.reserveWallet = setting.reserveWallet;
-
-  await Promise.all([setting.save(), merchant.save()]);
+  const operation = await createReservePromoteOperation({
+    merchantId,
+    actor: input.actor,
+  });
 
   await appendAuditLog({
     merchantId,
     actor: input.actor,
-    action: "Promoted reserve wallet",
+    action: "Requested reserve wallet promotion",
     category: "security",
     status: "warning",
-    target: merchant.supportEmail,
-    detail: "Reserve wallet promoted to primary.",
+    target: operation.id,
+    detail: "Reserve wallet promotion queued for treasury approvals.",
     metadata: {
-      primaryWallet: setting.primaryWallet,
-      reserveWallet: setting.reserveWallet,
+      operationId: operation.id,
     },
     ipAddress: null,
     userAgent: null,
   });
 
-  return toSettingResponse(setting);
+  return {
+    settings: await getSettingsByMerchantId(merchantId),
+    operation,
+  };
 }
 
 export async function removeReserveWallet(
@@ -397,32 +431,63 @@ export async function removeReserveWallet(
     "removing treasury reserve wallets"
   );
 
-  const { merchant, setting } = await getOrCreateSetting(merchantId);
-
-  if (!setting.reserveWallet) {
-    throw new HttpError(409, "Reserve wallet is not configured.");
-  }
-
-  const removedWallet = setting.reserveWallet;
-  setting.reserveWallet = null;
-  merchant.reserveWallet = null;
-
-  await Promise.all([setting.save(), merchant.save()]);
+  const operation = await createReserveClearOperation({
+    merchantId,
+    actor: input.actor,
+  });
 
   await appendAuditLog({
     merchantId,
     actor: input.actor,
-    action: "Removed reserve wallet",
+    action: "Requested reserve wallet removal",
     category: "security",
     status: "warning",
-    target: merchant.supportEmail,
-    detail: "Reserve wallet removed from workspace settings.",
+    target: operation.id,
+    detail: "Reserve wallet removal queued for treasury approvals.",
     metadata: {
-      removedWallet,
+      operationId: operation.id,
     },
     ipAddress: null,
     userAgent: null,
   });
 
-  return toSettingResponse(setting);
+  return {
+    settings: await getSettingsByMerchantId(merchantId),
+    operation,
+  };
+}
+
+export async function confirmPendingPrimaryWalletChange(
+  merchantId: string,
+  input: WalletActionInput
+) {
+  await assertMerchantKybApprovedForLive(
+    merchantId,
+    "confirming treasury payout wallet changes"
+  );
+
+  const operation = await createPayoutWalletConfirmOperation({
+    merchantId,
+    actor: input.actor,
+  });
+
+  await appendAuditLog({
+    merchantId,
+    actor: input.actor,
+    action: "Requested payout wallet confirmation",
+    category: "security",
+    status: "ok",
+    target: operation.id,
+    detail: "Pending payout wallet confirmation queued for treasury approvals.",
+    metadata: {
+      operationId: operation.id,
+    },
+    ipAddress: null,
+    userAgent: null,
+  });
+
+  return {
+    settings: await getSettingsByMerchantId(merchantId),
+    operation,
+  };
 }

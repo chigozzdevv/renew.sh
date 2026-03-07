@@ -1,5 +1,8 @@
 import { createHash, randomBytes } from "crypto";
 
+import { getSafeConfig } from "@/config/safe.config";
+import { getSumsubConfig } from "@/config/sumsub.config";
+import { getYellowCardConfig } from "@/config/yellow-card.config";
 import { HttpError } from "@/shared/errors/http-error";
 
 import { appendAuditLog } from "@/features/audit/audit.service";
@@ -18,6 +21,20 @@ import type {
   WebhookActionInput,
 } from "@/features/developers/developer.validation";
 import { MerchantModel } from "@/features/merchants/merchant.model";
+import type { RuntimeMode } from "@/shared/constants/runtime-mode";
+
+type IntegrationModeStatus = {
+  mode: RuntimeMode;
+  implementation: string;
+  state: "ready" | "simulated" | "credentials_pending";
+  detail: string;
+};
+
+type IntegrationStatusRecord = {
+  key: "safe" | "yellow_card" | "sumsub";
+  label: string;
+  modes: IntegrationModeStatus[];
+};
 
 function hashSecret(value: string) {
   return createHash("sha256").update(value).digest("hex");
@@ -140,6 +157,77 @@ async function ensureMerchant(merchantId: string) {
   return merchant;
 }
 
+function hasConfiguredAddress(value: string) {
+  const normalized = value.trim().toLowerCase();
+  return normalized.length > 0 && normalized !== "0x0000000000000000000000000000000000000000";
+}
+
+function resolveSafeModeStatus(mode: RuntimeMode): IntegrationModeStatus {
+  const config = getSafeConfig(mode);
+  const isReady =
+    config.rpcUrl.trim().length > 0 &&
+    config.txServiceUrl.trim().length > 0 &&
+    config.executorPrivateKey.trim().length > 0 &&
+    hasConfiguredAddress(config.protocolAddress);
+
+  return {
+    mode,
+    implementation: mode === "live" ? "live" : "testnet",
+    state: isReady ? "ready" : "credentials_pending",
+    detail: isReady
+      ? mode === "live"
+        ? "Mainnet Safe treasury is configured."
+        : "Fuji Safe treasury is configured."
+      : "Safe RPC, transaction service, executor key, or protocol address is missing.",
+  };
+}
+
+function resolveYellowCardModeStatus(mode: RuntimeMode): IntegrationModeStatus {
+  if (mode === "test") {
+    return {
+      mode,
+      implementation: "simulated",
+      state: "simulated",
+      detail: "Fiat collection is simulated in the MVP runtime.",
+    };
+  }
+
+  const config = getYellowCardConfig(mode);
+  const isReady = config.apiKey.length > 0;
+
+  return {
+    mode,
+    implementation: "live",
+    state: isReady ? "ready" : "credentials_pending",
+    detail: isReady
+      ? "Live Yellow Card credentials are configured."
+      : "Waiting for Yellow Card live credentials.",
+  };
+}
+
+function resolveSumsubModeStatus(mode: RuntimeMode): IntegrationModeStatus {
+  if (mode === "test") {
+    return {
+      mode,
+      implementation: "simulated",
+      state: "simulated",
+      detail: "KYB/KYC is simulated in the MVP runtime.",
+    };
+  }
+
+  const config = getSumsubConfig(mode);
+  const isReady = config.appToken.length > 0 && config.secretKey.length > 0;
+
+  return {
+    mode,
+    implementation: "live",
+    state: isReady ? "ready" : "credentials_pending",
+    detail: isReady
+      ? "Live Sumsub credentials are configured."
+      : "Waiting for Sumsub live credentials.",
+  };
+}
+
 async function ensureDeveloperKey(developerKeyId: string, merchantId: string) {
   const key = await DeveloperKeyModel.findOne({
     _id: developerKeyId,
@@ -186,6 +274,34 @@ export async function listDeveloperKeys(query: ListDeveloperKeysQuery) {
     .exec();
 
   return keys.map(toDeveloperKeyResponse);
+}
+
+export async function getDeveloperIntegrationStatus(merchantId: string) {
+  const merchant = await ensureMerchant(merchantId);
+
+  return {
+    workspaceMode: merchant.environmentMode === "live" ? "live" : "test",
+    providers: [
+      {
+        key: "safe",
+        label: "Safe treasury",
+        modes: [resolveSafeModeStatus("test"), resolveSafeModeStatus("live")],
+      },
+      {
+        key: "yellow_card",
+        label: "Yellow Card",
+        modes: [
+          resolveYellowCardModeStatus("test"),
+          resolveYellowCardModeStatus("live"),
+        ],
+      },
+      {
+        key: "sumsub",
+        label: "Sumsub",
+        modes: [resolveSumsubModeStatus("test"), resolveSumsubModeStatus("live")],
+      },
+    ] satisfies IntegrationStatusRecord[],
+  };
 }
 
 export async function createDeveloperKey(input: CreateDeveloperKeyInput) {

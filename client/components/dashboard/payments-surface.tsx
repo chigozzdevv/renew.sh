@@ -1,0 +1,220 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+
+import { useDashboardSession } from "@/components/dashboard/session-provider";
+import {
+  StatusBadge,
+  formatCurrency,
+  formatDateTime,
+  toErrorMessage,
+} from "@/components/dashboard/surface-utils";
+import { useAuthedResource } from "@/components/dashboard/use-authed-resource";
+import {
+  Button,
+  Card,
+  Field,
+  Input,
+  MetricCard,
+  PageState,
+  Select,
+  StatGrid,
+  Table,
+  TableRow,
+} from "@/components/dashboard/ui";
+import { loadPaymentWorkspace, retryCharge, type PaymentRecord } from "@/lib/payments";
+
+type PaymentStatusFilter = PaymentRecord["status"] | "all";
+
+export function PaymentsSurface() {
+  const { token } = useDashboardSession();
+  const [status, setStatus] = useState<PaymentStatusFilter>("all");
+  const [search, setSearch] = useState("");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [isBusy, setIsBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const { data, isLoading, error, reload } = useAuthedResource(
+    async ({ token, merchantId }) =>
+      loadPaymentWorkspace({
+        token,
+        merchantId,
+        status,
+        search,
+      }),
+    [status, search]
+  );
+
+  const payments = data?.payments ?? [];
+  const subscriptions = data?.subscriptions ?? [];
+  const selectedPayment = payments.find((payment) => payment.id === selectedId) ?? payments[0] ?? null;
+  const subscriptionById = useMemo(
+    () => new Map(subscriptions.map((subscription) => [subscription.id, subscription])),
+    [subscriptions]
+  );
+
+  useEffect(() => {
+    if (!selectedPayment) {
+      setSelectedId(null);
+      return;
+    }
+
+    setSelectedId(selectedPayment.id);
+  }, [selectedPayment?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!message && !errorMessage) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      setMessage(null);
+      setErrorMessage(null);
+    }, 3000);
+
+    return () => window.clearTimeout(timeout);
+  }, [errorMessage, message]);
+
+  const metrics = useMemo(() => {
+    const settled = payments.filter((payment) => payment.status === "settled");
+    const failed = payments.filter((payment) => payment.status === "failed");
+    const pending = payments.filter((payment) =>
+      ["pending", "awaiting_settlement", "confirming"].includes(payment.status)
+    );
+
+    return {
+      total: payments.length,
+      settled: settled.reduce((sum, payment) => sum + payment.usdcAmount, 0),
+      failed: failed.length,
+      pending: pending.length,
+    };
+  }, [payments]);
+
+  async function handleRetry() {
+    if (!token || !selectedPayment) {
+      return;
+    }
+
+    setIsBusy(true);
+    setMessage(null);
+    setErrorMessage(null);
+
+    try {
+      await retryCharge({
+        token,
+        chargeId: selectedPayment.id,
+      });
+      setMessage("Retry queued.");
+      await reload();
+    } catch (error) {
+      setErrorMessage(toErrorMessage(error));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  if (isLoading && !data) {
+    return <PageState title="Loading payments" message="Fetching real charge and settlement state." />;
+  }
+
+  if (error || !data) {
+    return (
+      <PageState
+        title="Payments unavailable"
+        message={error ?? "Unable to load payments."}
+        tone="danger"
+        action={<button className="text-sm font-semibold" onClick={() => void reload()}>Retry</button>}
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <StatGrid>
+        <MetricCard label="Charges" value={String(metrics.total)} note="Recorded payment attempts" tone="brand" />
+        <MetricCard label="Settled" value={formatCurrency(metrics.settled)} note="Successful USDC volume" />
+        <MetricCard label="Pending" value={String(metrics.pending)} note="Still processing" />
+        <MetricCard label="Failed" value={String(metrics.failed)} note="Need retry or review" />
+      </StatGrid>
+
+      <div className="grid gap-4 xl:grid-cols-[1.08fr_0.92fr]">
+        <Card title="Charge ledger" description="Live charges and settlement state from the backend.">
+          <div className="space-y-4">
+            <div className="grid gap-3 md:grid-cols-[180px_minmax(0,1fr)]">
+              <Select value={status} onChange={(event) => setStatus(event.target.value as PaymentStatusFilter)}>
+                <option value="all">All statuses</option>
+                <option value="pending">Pending</option>
+                <option value="awaiting_settlement">Awaiting settlement</option>
+                <option value="confirming">Confirming</option>
+                <option value="settled">Settled</option>
+                <option value="failed">Failed</option>
+                <option value="reversed">Reversed</option>
+              </Select>
+              <Input
+                placeholder="Search by external charge id"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+              />
+            </div>
+
+            {message ? <p className="text-sm text-[color:var(--brand)]">{message}</p> : null}
+            {errorMessage ? <p className="text-sm text-[#a8382b]">{errorMessage}</p> : null}
+
+            <Table columns={["Charge", "Subscription", "USDC", "Processed", "Status"]}>
+              {payments.map((payment) => {
+                const subscription = subscriptionById.get(payment.subscriptionId);
+
+                return (
+                  <button key={payment.id} type="button" className="text-left" onClick={() => setSelectedId(payment.id)}>
+                    <TableRow columns={5}>
+                      <div>
+                        <p className="text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)]">{payment.externalChargeId}</p>
+                        <p className="mt-1 text-sm text-[color:var(--muted)]">{payment.id.slice(-8)}</p>
+                      </div>
+                      <p className="text-sm text-[color:var(--muted)]">{subscription?.customerName ?? payment.subscriptionId.slice(-8)}</p>
+                      <p className="text-sm text-[color:var(--muted)]">{formatCurrency(payment.usdcAmount)}</p>
+                      <p className="text-sm text-[color:var(--muted)]">{formatDateTime(payment.processedAt)}</p>
+                      <div><StatusBadge value={payment.status} /></div>
+                    </TableRow>
+                  </button>
+                );
+              })}
+            </Table>
+          </div>
+        </Card>
+
+        <Card title={selectedPayment?.externalChargeId ?? "Charge details"} description={selectedPayment ? subscriptionById.get(selectedPayment.subscriptionId)?.customerName ?? selectedPayment.subscriptionId : "Select a charge to inspect it."}>
+          {selectedPayment ? (
+            <div className="space-y-4">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Local amount" value={String(selectedPayment.localAmount)} />
+                <Field label="USDC amount" value={formatCurrency(selectedPayment.usdcAmount)} />
+                <Field label="FX rate" value={String(selectedPayment.fxRate)} />
+                <Field label="Fee" value={formatCurrency(selectedPayment.feeAmount)} />
+                <Field label="Settlement source" value={selectedPayment.settlementSource ?? "Not set"} />
+                <Field label="Processed" value={formatDateTime(selectedPayment.processedAt)} />
+              </div>
+
+              {selectedPayment.failureCode ? (
+                <div className="rounded-2xl border border-[#eed0cb] bg-[#fff7f6] px-4 py-4 text-sm leading-7 text-[#8b4338]">
+                  {selectedPayment.failureCode}
+                </div>
+              ) : null}
+
+              {selectedPayment.status !== "settled" && selectedPayment.status !== "reversed" ? (
+                <Button tone="brand" disabled={isBusy} onClick={() => void handleRetry()}>
+                  {isBusy ? "Queueing..." : "Retry charge"}
+                </Button>
+              ) : null}
+            </div>
+          ) : (
+            <p className="text-sm leading-7 text-[color:var(--muted)]">
+              No charge matches the current filter.
+            </p>
+          )}
+        </Card>
+      </div>
+    </div>
+  );
+}

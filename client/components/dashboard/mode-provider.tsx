@@ -10,6 +10,12 @@ import {
   type ReactNode,
 } from "react";
 
+import { useDashboardSession } from "@/components/dashboard/session-provider";
+import {
+  fetchApi,
+  workspaceModeStorageKey,
+} from "@/lib/api";
+
 type WorkspaceMode = "test" | "live";
 
 type ModeContextValue = {
@@ -18,17 +24,7 @@ type ModeContextValue = {
   setMode: (mode: WorkspaceMode) => Promise<void>;
 };
 
-const workspaceModeStorageKey = "renew:workspace-mode";
-const accessTokenStorageKey = "renew:platform-access-token";
-
 const ModeContext = createContext<ModeContextValue | null>(null);
-
-function getApiBaseUrl() {
-  return (
-    process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ??
-    "https://api.renew.sh/v1"
-  );
-}
 
 function readStoredMode(): WorkspaceMode {
   if (typeof window === "undefined") {
@@ -40,60 +36,20 @@ function readStoredMode(): WorkspaceMode {
     : "test";
 }
 
-function readAccessToken() {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  const token = window.localStorage.getItem(accessTokenStorageKey);
-  return token?.trim() ? token.trim() : null;
-}
-
-async function fetchSessionMode(token: string) {
-  const response = await fetch(`${getApiBaseUrl()}/auth/me`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-    cache: "no-store",
-  });
-
-  if (!response.ok) {
-    throw new Error("Unable to read workspace mode.");
-  }
-
-  const payload = (await response.json()) as {
-    data?: {
-      workspaceMode?: WorkspaceMode;
-    } | null;
-  };
-
-  return payload.data?.workspaceMode === "live" ? "live" : "test";
-}
-
 async function updateSessionMode(mode: WorkspaceMode, token: string) {
-  const response = await fetch(`${getApiBaseUrl()}/auth/me/workspace-mode`, {
+  const response = await fetchApi<{
+    workspaceMode?: WorkspaceMode;
+  }>("/auth/me/workspace-mode", {
     method: "PATCH",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
+    token,
     body: JSON.stringify({ mode }),
   });
 
-  if (!response.ok) {
-    throw new Error("Unable to update workspace mode.");
-  }
-
-  const payload = (await response.json()) as {
-    data?: {
-      workspaceMode?: WorkspaceMode;
-    } | null;
-  };
-
-  return payload.data?.workspaceMode === "live" ? "live" : "test";
+  return response.data?.workspaceMode === "live" ? "live" : "test";
 }
 
 export function ModeProvider({ children }: { children: ReactNode }) {
+  const { token, user } = useDashboardSession();
   const [mode, setModeState] = useState<WorkspaceMode>("test");
   const [isUpdating, setIsUpdating] = useState(false);
 
@@ -103,24 +59,19 @@ export function ModeProvider({ children }: { children: ReactNode }) {
       setModeState(storedMode);
     });
 
-    const token = readAccessToken();
+  }, []);
 
-    // Prefer the authenticated workspace mode when a real session exists.
-    if (!token) {
+  useEffect(() => {
+    if (!user) {
       return;
     }
 
-    void fetchSessionMode(token)
-      .then((nextMode) => {
-        window.localStorage.setItem(workspaceModeStorageKey, nextMode);
-        startTransition(() => {
-          setModeState(nextMode);
-        });
-      })
-      .catch(() => {
-        window.localStorage.setItem(workspaceModeStorageKey, storedMode);
-      });
-  }, []);
+    const nextMode = user.workspaceMode === "live" ? "live" : "test";
+    window.localStorage.setItem(workspaceModeStorageKey, nextMode);
+    startTransition(() => {
+      setModeState(nextMode);
+    });
+  }, [user]);
 
   const value = useMemo<ModeContextValue>(
     () => ({
@@ -132,7 +83,6 @@ export function ModeProvider({ children }: { children: ReactNode }) {
         }
 
         const previousMode = mode;
-        const token = readAccessToken();
 
         setIsUpdating(true);
         window.localStorage.setItem(workspaceModeStorageKey, nextMode);
@@ -160,7 +110,7 @@ export function ModeProvider({ children }: { children: ReactNode }) {
         }
       },
     }),
-    [isUpdating, mode]
+    [isUpdating, mode, token]
   );
 
   return <ModeContext.Provider value={value}>{children}</ModeContext.Provider>;

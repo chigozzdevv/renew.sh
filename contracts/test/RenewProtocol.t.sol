@@ -386,5 +386,12 @@ contract RenewProtocolTest {
 
         merchant = protocol.getMerchant(MERCHANT);
         assert(merchant.payoutWallet == RESERVE_WALLET);
+        assert(merchant.reserveWallet == NEW_PAYOUT_WALLET);
+
+        vm.prank(MERCHANT);
+        protocol.clearReserveWallet();
+
+        merchant = protocol.getMerchant(MERCHANT);
+        assert(merchant.reserveWallet == address(0));
     }
 }
