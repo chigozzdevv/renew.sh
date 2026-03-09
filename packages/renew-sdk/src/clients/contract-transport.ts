@@ -1,5 +1,5 @@
-import type { Abi } from "../types/abi";
-import type { Address } from "../types/protocol";
+import type { Abi } from "../types/abi.js";
+import type { Address } from "../types/protocol.js";
 
 export type ContractCallRequest = {
   readonly address: Address;

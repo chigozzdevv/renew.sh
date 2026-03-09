@@ -1,4 +1,4 @@
-import type { Abi } from "../types/abi";
+import type { Abi } from "../types/abi.js";
 
 export const renewProtocolAbi = [
   {

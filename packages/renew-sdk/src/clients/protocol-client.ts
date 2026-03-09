@@ -1,6 +1,6 @@
-import { renewProtocolAbi } from "../abi/renew-protocol";
-import type { ContractTransport } from "./contract-transport";
-import type { Address } from "../types/protocol";
+import { renewProtocolAbi } from "../abi/renew-protocol.js";
+import type { ContractTransport } from "./contract-transport.js";
+import type { Address } from "../types/protocol.js";
 
 export type RenewProtocolClient = ReturnType<typeof createRenewProtocolClient>;
 

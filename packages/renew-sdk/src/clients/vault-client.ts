@@ -1,6 +1,6 @@
-import { renewVaultAbi } from "../abi/renew-vault";
-import type { ContractTransport } from "./contract-transport";
-import type { Address } from "../types/protocol";
+import { renewVaultAbi } from "../abi/renew-vault.js";
+import type { ContractTransport } from "./contract-transport.js";
+import type { Address } from "../types/protocol.js";
 
 export type RenewVaultClient = ReturnType<typeof createRenewVaultClient>;
 
