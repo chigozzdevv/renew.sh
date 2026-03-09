@@ -816,15 +816,6 @@ export function RenewCheckoutModal({
               </div>
 
               <div className="renew-modal__state-card">
-                <p className="renew-modal__state-label">Settlement</p>
-                <p className="renew-modal__state-value">
-                  {currentSession.settlement?.status
-                    ? humanizeValue(currentSession.settlement.status)
-                    : "Not created yet"}
-                </p>
-              </div>
-
-              <div className="renew-modal__state-card">
                 <p className="renew-modal__state-label">Session ID</p>
                 <p className="renew-modal__session-id">{currentSession.id}</p>
               </div>

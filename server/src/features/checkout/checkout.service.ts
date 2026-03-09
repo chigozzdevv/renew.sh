@@ -323,65 +323,66 @@ function toCheckoutSessionResponse(input: {
     customer:
       session.customerDraft && session.customerDraft.email
         ? {
-            name: session.customerDraft.name,
-            email: session.customerDraft.email,
-            market: session.customerDraft.market,
-            paymentAccountType: session.customerDraft.paymentAccountType,
-            paymentAccountNumber: session.customerDraft.paymentAccountNumber,
-            paymentNetworkId: session.customerDraft.paymentNetworkId,
-          }
+          name: session.customerDraft.name,
+          email: session.customerDraft.email,
+          market: session.customerDraft.market,
+          paymentAccountType: session.customerDraft.paymentAccountType,
+          paymentAccountNumber: session.customerDraft.paymentAccountNumber,
+          paymentNetworkId: session.customerDraft.paymentNetworkId,
+        }
         : null,
     charge: charge
       ? {
-          id: charge._id.toString(),
-          externalChargeId: charge.externalChargeId,
-          status: charge.status,
-          localAmount: charge.localAmount,
-          usdcAmount: charge.usdcAmount,
-          feeAmount: charge.feeAmount,
-          failureCode: charge.failureCode ?? null,
-          processedAt: charge.processedAt,
-        }
+        id: charge._id.toString(),
+        externalChargeId: charge.externalChargeId,
+        status: charge.status,
+        localAmount: charge.localAmount,
+        usdcAmount: charge.usdcAmount,
+        feeAmount: charge.feeAmount,
+        failureCode: charge.failureCode ?? null,
+        processedAt: charge.processedAt,
+      }
       : null,
     settlement: settlement
       ? {
-          id: settlement._id.toString(),
-          status: settlement.status,
-          netUsdc: settlement.netUsdc,
-          grossUsdc: settlement.grossUsdc,
-          destinationWallet: settlement.destinationWallet,
-          bridgeSourceTxHash: settlement.bridgeSourceTxHash ?? null,
-          bridgeReceiveTxHash: settlement.bridgeReceiveTxHash ?? null,
-          creditTxHash: settlement.creditTxHash ?? null,
-        }
+        id: settlement._id.toString(),
+        status: settlement.status,
+        netUsdc: settlement.netUsdc,
+        grossUsdc: settlement.grossUsdc,
+        destinationWallet: settlement.destinationWallet,
+        bridgeSourceTxHash: settlement.bridgeSourceTxHash ?? null,
+        bridgeReceiveTxHash: settlement.bridgeReceiveTxHash ?? null,
+        creditTxHash: settlement.creditTxHash ?? null,
+      }
       : null,
     paymentInstructions: session.paymentSnapshot
       ? {
-          externalChargeId: session.paymentSnapshot.externalChargeId,
-          billingCurrency: session.paymentSnapshot.billingCurrency,
-          localAmount: session.paymentSnapshot.localAmount,
-          usdcAmount: session.paymentSnapshot.usdcAmount,
-          feeAmount: session.paymentSnapshot.feeAmount,
-          status: session.paymentSnapshot.status,
-          collectionId: session.paymentSnapshot.collectionId,
-          collectionSequenceId: session.paymentSnapshot.collectionSequenceId,
-          reference: session.paymentSnapshot.collectionReference,
-          depositId: session.paymentSnapshot.depositId,
-          expiresAt: session.paymentSnapshot.expiresAt,
-          bankInfo: session.paymentSnapshot.bankInfo
-            ? {
-                name: session.paymentSnapshot.bankInfo.name,
-                accountNumber: session.paymentSnapshot.bankInfo.accountNumber,
-                accountName: session.paymentSnapshot.bankInfo.accountName,
-              }
-            : null,
-        }
+        externalChargeId: session.paymentSnapshot.externalChargeId,
+        billingCurrency: session.paymentSnapshot.billingCurrency,
+        localAmount: session.paymentSnapshot.localAmount,
+        usdcAmount: session.paymentSnapshot.usdcAmount,
+        feeAmount: session.paymentSnapshot.feeAmount,
+        status: session.paymentSnapshot.status,
+        collectionId: session.paymentSnapshot.collectionId,
+        collectionSequenceId: session.paymentSnapshot.collectionSequenceId,
+        reference: session.paymentSnapshot.collectionReference,
+        depositId: session.paymentSnapshot.depositId,
+        expiresAt: session.paymentSnapshot.expiresAt,
+        bankInfo: session.paymentSnapshot.bankInfo
+          ? {
+            name: session.paymentSnapshot.bankInfo.name,
+            accountNumber: session.paymentSnapshot.bankInfo.accountNumber,
+            accountName: session.paymentSnapshot.bankInfo.accountName,
+          }
+          : null,
+      }
       : null,
     failureReason: session.failureReason ?? null,
     testMode: {
       enabled: runtimeEnvironment === "test",
       canCompletePayment:
-        runtimeEnvironment === "test" && session.status === "pending_payment",
+        runtimeEnvironment === "test" &&
+        (session.status === "pending_payment" || session.status === "processing"),
     },
   };
 }
