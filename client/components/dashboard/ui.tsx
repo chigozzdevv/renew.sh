@@ -232,9 +232,11 @@ export function Field({
 export function DarkField({
   label,
   value,
+  href,
 }: {
   label: string;
   value: ReactNode;
+  href?: string;
 }) {
   return (
     <div className="rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.04))] px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
@@ -245,7 +247,27 @@ export function DarkField({
         className="mt-2 text-sm font-semibold tracking-[-0.02em] text-white truncate"
         title={typeof value === 'string' ? value : undefined}
       >
-        {value}
+        {href ? (
+          <a
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 transition-colors hover:text-[#d9f6bc]"
+          >
+            {value}
+            <svg
+              className="h-3 w-3 opacity-60"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2.5}
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 19.5l15-15m0 0H8.25m11.25 0v11.25" />
+            </svg>
+          </a>
+        ) : (
+          value
+        )}
       </div>
     </div>
   );

@@ -128,59 +128,59 @@ async function syncCheckoutSessionWithChargeResult(input: {
       collectionId:
         "collection" in input.chargeResult
           ? toNullableString(
-              (input.chargeResult.collection as Record<string, unknown>).id
-            )
+            (input.chargeResult.collection as Record<string, unknown>).id
+          )
           : null,
       collectionSequenceId:
         "collection" in input.chargeResult
           ? toNullableString(
-              (input.chargeResult.collection as Record<string, unknown>).sequenceId
-            )
+            (input.chargeResult.collection as Record<string, unknown>).sequenceId
+          )
           : null,
       collectionReference:
         "collection" in input.chargeResult
           ? toNullableString(
-              (input.chargeResult.collection as Record<string, unknown>).reference
-            )
+            (input.chargeResult.collection as Record<string, unknown>).reference
+          )
           : null,
       depositId:
         "collection" in input.chargeResult
           ? toNullableString(
-              (input.chargeResult.collection as Record<string, unknown>).depositId
-            )
+            (input.chargeResult.collection as Record<string, unknown>).depositId
+          )
           : null,
       expiresAt:
         "collection" in input.chargeResult &&
-        (input.chargeResult.collection as Record<string, unknown>).expiresAt
+          (input.chargeResult.collection as Record<string, unknown>).expiresAt
           ? new Date(
-              (input.chargeResult.collection as Record<string, unknown>).expiresAt as string
-            )
+            (input.chargeResult.collection as Record<string, unknown>).expiresAt as string
+          )
           : null,
       bankInfo:
         "collection" in input.chargeResult &&
-        typeof (input.chargeResult.collection as Record<string, unknown>).bankInfo ===
+          typeof (input.chargeResult.collection as Record<string, unknown>).bankInfo ===
           "object" &&
-        (input.chargeResult.collection as Record<string, unknown>).bankInfo !== null
+          (input.chargeResult.collection as Record<string, unknown>).bankInfo !== null
           ? {
-              name: toNullableString(
-                ((input.chargeResult.collection as Record<string, unknown>).bankInfo as Record<
-                  string,
-                  unknown
-                >).name
-              ),
-              accountNumber: toNullableString(
-                ((input.chargeResult.collection as Record<string, unknown>).bankInfo as Record<
-                  string,
-                  unknown
-                >).accountNumber
-              ),
-              accountName: toNullableString(
-                ((input.chargeResult.collection as Record<string, unknown>).bankInfo as Record<
-                  string,
-                  unknown
-                >).accountName
-              ),
-            }
+            name: toNullableString(
+              ((input.chargeResult.collection as Record<string, unknown>).bankInfo as Record<
+                string,
+                unknown
+              >).name
+            ),
+            accountNumber: toNullableString(
+              ((input.chargeResult.collection as Record<string, unknown>).bankInfo as Record<
+                string,
+                unknown
+              >).accountNumber
+            ),
+            accountName: toNullableString(
+              ((input.chargeResult.collection as Record<string, unknown>).bankInfo as Record<
+                string,
+                unknown
+              >).accountName
+            ),
+          }
           : null,
     };
     session.failureReason = null;
@@ -1218,10 +1218,10 @@ export async function bootstrapTreasuryAccount(input: {
   const provider = createSafeProvider(input.payload.environment);
   let safeInfo:
     | {
-        safeAddress: string;
-        owners: string[];
-        threshold: number;
-      }
+      safeAddress: string;
+      owners: string[];
+      threshold: number;
+    }
     | undefined;
 
   if (input.payload.mode === "create") {
@@ -1367,8 +1367,8 @@ export async function createSettlementSweepOperation(input: {
   const protocolAddress = getSafeConfig(input.environment).protocolAddress;
   const protocolAmountUsdc =
     typeof settlement.protocolAmountUsdc === "number" &&
-    Number.isFinite(settlement.protocolAmountUsdc) &&
-    settlement.protocolAmountUsdc > 0
+      Number.isFinite(settlement.protocolAmountUsdc) &&
+      settlement.protocolAmountUsdc > 0
       ? settlement.protocolAmountUsdc
       : settlement.netUsdc;
   const grossBaseUnits = toUsdcBaseUnits(protocolAmountUsdc);
@@ -1945,26 +1945,26 @@ export async function queuePlanProtocolSync(input: {
     targetAddress: getSafeConfig(input.environment).protocolAddress,
     data: plan.protocolPlanId
       ? encodePlanUpdateCall({
-          protocolPlanId: plan.protocolPlanId,
-          usdAmount: plan.usdAmount,
-          billingIntervalDays: plan.billingIntervalDays,
-          trialDays: plan.trialDays,
-          retryWindowHours: plan.retryWindowHours,
-          maxRetryCount,
-          billingMode: plan.billingMode,
-          usageRate: plan.usageRate ?? null,
-          active: targetStatus === "active",
-        })
+        protocolPlanId: plan.protocolPlanId,
+        usdAmount: plan.usdAmount,
+        billingIntervalDays: plan.billingIntervalDays,
+        trialDays: plan.trialDays,
+        retryWindowHours: plan.retryWindowHours,
+        maxRetryCount,
+        billingMode: plan.billingMode,
+        usageRate: plan.usageRate ?? null,
+        active: targetStatus === "active",
+      })
       : encodePlanCreateCall({
-          planCode: plan.planCode,
-          usdAmount: plan.usdAmount,
-          billingIntervalDays: plan.billingIntervalDays,
-          trialDays: plan.trialDays,
-          retryWindowHours: plan.retryWindowHours,
-          maxRetryCount,
-          billingMode: plan.billingMode,
-          usageRate: plan.usageRate ?? null,
-        }),
+        planCode: plan.planCode,
+        usdAmount: plan.usdAmount,
+        billingIntervalDays: plan.billingIntervalDays,
+        trialDays: plan.trialDays,
+        retryWindowHours: plan.retryWindowHours,
+        maxRetryCount,
+        billingMode: plan.billingMode,
+        usageRate: plan.usageRate ?? null,
+      }),
     metadata: {
       entityType: "plan",
       planId: plan._id.toString(),
@@ -2123,10 +2123,10 @@ async function queueSubscriptionProtocolOperation(input: {
   environment: RuntimeMode;
   subscriptionId: string;
   kind:
-    | "subscription_pause"
-    | "subscription_resume"
-    | "subscription_cancel"
-    | "subscription_mandate_update";
+  | "subscription_pause"
+  | "subscription_resume"
+  | "subscription_cancel"
+  | "subscription_mandate_update";
 }) {
   const subscription = await SubscriptionModel.findOne({
     _id: input.subscriptionId,
@@ -2180,29 +2180,29 @@ async function queueSubscriptionProtocolOperation(input: {
   const execution =
     input.kind === "subscription_pause"
       ? await pauseProtocolSubscription({
+        environment: input.environment,
+        merchantAddress: readiness.treasuryAccount.safeAddress,
+        protocolSubscriptionId: subscription.protocolSubscriptionId,
+      })
+      : input.kind === "subscription_resume"
+        ? await resumeProtocolSubscription({
           environment: input.environment,
           merchantAddress: readiness.treasuryAccount.safeAddress,
           protocolSubscriptionId: subscription.protocolSubscriptionId,
+          nextChargeAt: subscription.nextChargeAt,
         })
-      : input.kind === "subscription_resume"
-        ? await resumeProtocolSubscription({
+        : input.kind === "subscription_cancel"
+          ? await cancelProtocolSubscription({
             environment: input.environment,
             merchantAddress: readiness.treasuryAccount.safeAddress,
             protocolSubscriptionId: subscription.protocolSubscriptionId,
-            nextChargeAt: subscription.nextChargeAt,
           })
-        : input.kind === "subscription_cancel"
-          ? await cancelProtocolSubscription({
-              environment: input.environment,
-              merchantAddress: readiness.treasuryAccount.safeAddress,
-              protocolSubscriptionId: subscription.protocolSubscriptionId,
-            })
           : await updateProtocolSubscriptionMandate({
-              environment: input.environment,
-              merchantAddress: readiness.treasuryAccount.safeAddress,
-              protocolSubscriptionId: subscription.protocolSubscriptionId,
-              mandateHash,
-            });
+            environment: input.environment,
+            merchantAddress: readiness.treasuryAccount.safeAddress,
+            protocolSubscriptionId: subscription.protocolSubscriptionId,
+            mandateHash,
+          });
 
   subscription.protocolOperationId = null;
   subscription.protocolSyncStatus = "synced";
@@ -2738,10 +2738,16 @@ export async function executeTreasuryOperation(input: {
         data: operation.data,
       },
     ],
-    signatures: operation.signatures.map((entry) => ({
-      signer: entry.walletAddress,
-      signature: entry.signature,
-    })),
+    signatures: operation.signatures
+      .map((entry) => ({
+        signer: entry.walletAddress,
+        signature: entry.signature,
+      }))
+      .sort((a, b) => {
+        const addrA = a.signer.toLowerCase();
+        const addrB = b.signer.toLowerCase();
+        return addrA < addrB ? -1 : addrA > addrB ? 1 : 0;
+      }),
   });
 
   operation.status = "executed";

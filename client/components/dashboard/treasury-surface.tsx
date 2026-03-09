@@ -887,10 +887,12 @@ export function TreasuryPageSurface() {
                     <DarkField
                       label="Safe tx"
                       value={selectedOperation.safeTxHash ?? "Prepared on demand"}
+                      href={selectedOperation.safeTxHash ? `${TARGET_CHAINS[mode].blockExplorerUrls[0]}tx/${selectedOperation.safeTxHash}` : undefined}
                     />
                     <DarkField
                       label="Execution"
                       value={selectedOperation.txHash ?? "Waiting"}
+                      href={selectedOperation.txHash ? `${TARGET_CHAINS[mode].blockExplorerUrls[0]}tx/${selectedOperation.txHash}` : undefined}
                     />
                   </div>
 
