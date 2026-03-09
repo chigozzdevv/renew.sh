@@ -1,6 +1,7 @@
 import {
   createPublicClient,
   createWalletClient,
+  getAddress,
   http,
   keccak256,
   parseAbi,
@@ -36,7 +37,10 @@ const renewProtocolAbi = parseAbi([
 
 const SIX_DECIMAL_SCALE = 1_000_000n;
 const ZERO_BYTES32 = `0x${"0".repeat(64)}` as Hex;
+const FAST_FINALITY_THRESHOLD = 1_000;
 const STANDARD_FINALITY_THRESHOLD = 2_000;
+const FAST_TRANSFER_FEE_BUFFER_NUMERATOR = 120n;
+const FAST_TRANSFER_FEE_BUFFER_DENOMINATOR = 100n;
 
 type CircleAttestationResponse = {
   messages?: Array<{
@@ -45,6 +49,33 @@ type CircleAttestationResponse = {
     status?: string;
   }>;
 };
+
+type CircleTransferFee = {
+  finalityThreshold?: number;
+  minimumFee?: number;
+};
+
+type CircleFastTransferAllowance = {
+  allowance?: number;
+};
+
+type BurnParameters = {
+  maxFee: bigint;
+  minFinalityThreshold: number;
+  transferMode: "fast" | "standard";
+  fastTransferFeeBps: number | null;
+  fastTransferAllowanceUsdc: number | null;
+  fallbackReason: string | null;
+};
+
+function logCctp(event: string, details: Record<string, unknown>) {
+  console.log(
+    `[cctp] ${event} ${JSON.stringify({
+      ...details,
+      timestamp: new Date().toISOString(),
+    })}`
+  );
+}
 
 function toUsdcBaseUnits(amount: number) {
   if (!Number.isFinite(amount) || amount <= 0) {
@@ -60,6 +91,142 @@ function addressToBytes32(address: Address) {
 
 function formatBaseUnitsToUsdc(amount: bigint) {
   return Number(amount) / Number(SIX_DECIMAL_SCALE);
+}
+
+function ceilDiv(dividend: bigint, divisor: bigint) {
+  return (dividend + divisor - 1n) / divisor;
+}
+
+function toScaledBps(value: number) {
+  if (!Number.isFinite(value) || value < 0) {
+    throw new HttpError(502, "Circle returned an invalid transfer fee.");
+  }
+
+  return BigInt(Math.ceil(value * 10_000));
+}
+
+function calculateFeeFromBps(amount: bigint, minimumFeeBps: number) {
+  const scaledBps = toScaledBps(minimumFeeBps);
+  return ceilDiv(amount * scaledBps, 100_000_000n);
+}
+
+function toUsdcBaseUnitsFromFloat(amount: number) {
+  if (!Number.isFinite(amount) || amount < 0) {
+    throw new HttpError(502, "Circle returned an invalid fast transfer allowance.");
+  }
+
+  return BigInt(Math.floor(amount * Number(SIX_DECIMAL_SCALE)));
+}
+
+async function fetchTransferFees(input: {
+  attestationApiUrl: string;
+  sourceDomain: number;
+  destinationDomain: number;
+}) {
+  const response = await fetch(
+    `${input.attestationApiUrl}/v2/burn/USDC/fees/${input.sourceDomain}/${input.destinationDomain}`
+  );
+
+  if (!response.ok) {
+    throw new HttpError(
+      502,
+      `Circle fee quote request failed with status ${response.status}.`
+    );
+  }
+
+  return (await response.json()) as CircleTransferFee[];
+}
+
+async function fetchFastTransferAllowance(attestationApiUrl: string) {
+  const response = await fetch(`${attestationApiUrl}/v2/fastBurn/USDC/allowance`);
+
+  if (!response.ok) {
+    throw new HttpError(
+      502,
+      `Circle fast transfer allowance request failed with status ${response.status}.`
+    );
+  }
+
+  return (await response.json()) as CircleFastTransferAllowance;
+}
+
+async function resolveBurnParameters(input: {
+  attestationApiUrl: string;
+  sourceDomain: number;
+  destinationDomain: number;
+  amount: bigint;
+}): Promise<BurnParameters> {
+  const fees = await fetchTransferFees(input);
+  const fastTransferFee = fees.find(
+    (entry) =>
+      entry.finalityThreshold === FAST_FINALITY_THRESHOLD &&
+      typeof entry.minimumFee === "number"
+  );
+
+  if (!fastTransferFee || typeof fastTransferFee.minimumFee !== "number") {
+    return {
+      maxFee: 0n,
+      minFinalityThreshold: STANDARD_FINALITY_THRESHOLD,
+      transferMode: "standard",
+      fastTransferFeeBps: null,
+      fastTransferAllowanceUsdc: null,
+      fallbackReason: "fast_fee_quote_unavailable",
+    };
+  }
+
+  try {
+    const allowance = await fetchFastTransferAllowance(input.attestationApiUrl);
+    const allowanceUsdc =
+      typeof allowance.allowance === "number" ? allowance.allowance : null;
+
+    if (
+      typeof allowance.allowance === "number" &&
+      toUsdcBaseUnitsFromFloat(allowance.allowance) < input.amount
+    ) {
+      return {
+        maxFee: 0n,
+        minFinalityThreshold: STANDARD_FINALITY_THRESHOLD,
+        transferMode: "standard",
+        fastTransferFeeBps: fastTransferFee.minimumFee,
+        fastTransferAllowanceUsdc: allowanceUsdc,
+        fallbackReason: "fast_allowance_too_low",
+      };
+    }
+
+    const protocolFee = calculateFeeFromBps(input.amount, fastTransferFee.minimumFee);
+
+    return {
+      maxFee:
+        protocolFee === 0n
+          ? 0n
+          : ceilDiv(
+              protocolFee * FAST_TRANSFER_FEE_BUFFER_NUMERATOR,
+              FAST_TRANSFER_FEE_BUFFER_DENOMINATOR
+            ),
+      minFinalityThreshold: FAST_FINALITY_THRESHOLD,
+      transferMode: "fast",
+      fastTransferFeeBps: fastTransferFee.minimumFee,
+      fastTransferAllowanceUsdc: allowanceUsdc,
+      fallbackReason: null,
+    };
+  } catch {
+    const protocolFee = calculateFeeFromBps(input.amount, fastTransferFee.minimumFee);
+
+    return {
+      maxFee:
+        protocolFee === 0n
+          ? 0n
+          : ceilDiv(
+              protocolFee * FAST_TRANSFER_FEE_BUFFER_NUMERATOR,
+              FAST_TRANSFER_FEE_BUFFER_DENOMINATOR
+            ),
+      minFinalityThreshold: FAST_FINALITY_THRESHOLD,
+      transferMode: "fast",
+      fastTransferFeeBps: fastTransferFee.minimumFee,
+      fastTransferAllowanceUsdc: null,
+      fallbackReason: "fast_allowance_endpoint_unavailable",
+    };
+  }
 }
 
 async function ensureNativeGas(
@@ -79,14 +246,32 @@ async function ensureNativeGas(
   );
 }
 
+async function ensureContractDeployed(
+  label: string,
+  client: ReturnType<typeof createPublicClient>,
+  address: Address
+) {
+  const code = await client.getCode({ address });
+
+  if (!code || code === "0x") {
+    throw new HttpError(
+      500,
+      `${label} is not deployed at ${address}. Check the configured CCTP contract addresses.`
+    );
+  }
+}
+
 async function fetchAttestation(input: {
   attestationApiUrl: string;
   sourceDomain: number;
   transactionHash: Hex;
   pollIntervalMs: number;
   timeoutMs: number;
+  onStatusChange?: (status: string, elapsedMs: number) => void;
 }) {
   const startedAt = Date.now();
+  let lastKnownStatus = "pending";
+  let lastLoggedStatus = "";
 
   while (Date.now() - startedAt < input.timeoutMs) {
     const response = await fetch(
@@ -95,6 +280,18 @@ async function fetchAttestation(input: {
 
     if (response.ok) {
       const payload = (await response.json()) as CircleAttestationResponse;
+      lastKnownStatus =
+        payload.messages?.find(
+          (entry) =>
+            typeof entry.status === "string" || entry.attestation === "PENDING"
+        )?.status ??
+        (payload.messages?.some((entry) => entry.attestation === "PENDING")
+          ? "pending"
+          : lastKnownStatus);
+      if (lastKnownStatus !== lastLoggedStatus) {
+        input.onStatusChange?.(lastKnownStatus, Date.now() - startedAt);
+        lastLoggedStatus = lastKnownStatus;
+      }
       const messageEntry = payload.messages?.find(
         (entry) =>
           typeof entry.message === "string" &&
@@ -108,12 +305,31 @@ async function fetchAttestation(input: {
           attestation: messageEntry.attestation as Hex,
         };
       }
+    } else {
+      let errorMessage = `http_${response.status}`;
+
+      try {
+        const payload = (await response.json()) as { error?: string; message?: string };
+        errorMessage = payload.error ?? payload.message ?? errorMessage;
+      } catch {
+        // Fall back to the HTTP status label.
+      }
+
+      if (errorMessage !== lastLoggedStatus) {
+        input.onStatusChange?.(errorMessage, Date.now() - startedAt);
+        lastLoggedStatus = errorMessage;
+      }
     }
 
     await new Promise((resolve) => setTimeout(resolve, input.pollIntervalMs));
   }
 
-  throw new HttpError(504, "Timed out waiting for Circle attestation.");
+  throw new HttpError(
+    504,
+    `Timed out waiting for Circle attestation for ${input.transactionHash} after ${Math.round(
+      input.timeoutMs / 1000
+    )}s (last status: ${lastKnownStatus}).`
+  );
 }
 
 export async function bridgeSettlementToAvalanche(input: {
@@ -156,16 +372,57 @@ export async function bridgeSettlementToAvalanche(input: {
       destinationClient,
       destinationAccount.address
     ),
+    ensureContractDeployed(
+      "CCTP source USDC contract",
+      sourceClient,
+      getAddress(cctpConfig.sourceUsdcAddress)
+    ),
+    ensureContractDeployed(
+      "CCTP token messenger contract",
+      sourceClient,
+      getAddress(cctpConfig.tokenMessengerAddress)
+    ),
+    ensureContractDeployed(
+      "CCTP message transmitter contract",
+      destinationClient,
+      getAddress(cctpConfig.messageTransmitterAddress)
+    ),
   ]);
 
   const amount = toUsdcBaseUnits(input.netUsdc);
+  const burnParameters = await resolveBurnParameters({
+    attestationApiUrl: cctpConfig.attestationApiUrl,
+    sourceDomain: cctpConfig.sourceDomain,
+    destinationDomain: cctpConfig.destinationDomain,
+    amount,
+  });
   const externalChargeIdHash = keccak256(stringToHex(input.externalChargeId));
-  const sourceUsdcAddress = cctpConfig.sourceUsdcAddress as Address;
-  const destinationUsdcAddress = protocolConfig.settlementAssetAddress as Address;
-  const protocolAddress = protocolConfig.protocolAddress as Address;
-  const tokenMessengerAddress = cctpConfig.tokenMessengerAddress as Address;
-  const messageTransmitterAddress =
-    cctpConfig.messageTransmitterAddress as Address;
+  const sourceUsdcAddress = getAddress(cctpConfig.sourceUsdcAddress);
+  const destinationUsdcAddress = getAddress(protocolConfig.settlementAssetAddress);
+  const protocolAddress = getAddress(protocolConfig.protocolAddress);
+  const tokenMessengerAddress = getAddress(cctpConfig.tokenMessengerAddress);
+  const messageTransmitterAddress = getAddress(
+    cctpConfig.messageTransmitterAddress
+  );
+
+  logCctp("bridge-start", {
+    environment: mode,
+    externalChargeId: input.externalChargeId,
+    merchantAddress: input.merchantAddress.toLowerCase(),
+    sourceWalletAddress: sourceAccount.address.toLowerCase(),
+    destinationWalletAddress: destinationAccount.address.toLowerCase(),
+    sourceDomain: cctpConfig.sourceDomain,
+    destinationDomain: cctpConfig.destinationDomain,
+    sourceRpcUrl: cctpConfig.sourceRpcUrl,
+    destinationRpcUrl: protocolConfig.rpcUrl,
+    amountUsdc: formatBaseUnitsToUsdc(amount),
+    transferMode: burnParameters.transferMode,
+    minFinalityThreshold: burnParameters.minFinalityThreshold,
+    maxFeeUsdc: formatBaseUnitsToUsdc(burnParameters.maxFee),
+    fastTransferFeeBps: burnParameters.fastTransferFeeBps,
+    fastTransferAllowanceUsdc: burnParameters.fastTransferAllowanceUsdc,
+    fallbackReason: burnParameters.fallbackReason,
+  });
 
   const sourceUsdcBalance = await sourceClient.readContract({
     address: sourceUsdcAddress,
@@ -199,6 +456,11 @@ export async function bridgeSettlementToAvalanche(input: {
       chain: undefined,
     });
     await sourceClient.waitForTransactionReceipt({ hash: approvalHash });
+    logCctp("source-approve-confirmed", {
+      externalChargeId: input.externalChargeId,
+      approvalTxHash: approvalHash.toLowerCase(),
+      amountUsdc: formatBaseUnitsToUsdc(amount),
+    });
   }
 
   const burnHash = await sourceWalletClient.writeContract({
@@ -211,12 +473,19 @@ export async function bridgeSettlementToAvalanche(input: {
       addressToBytes32(destinationAccount.address),
       sourceUsdcAddress,
       ZERO_BYTES32,
-      0n,
-      STANDARD_FINALITY_THRESHOLD,
+      burnParameters.maxFee,
+      burnParameters.minFinalityThreshold,
     ],
     chain: undefined,
   });
   await sourceClient.waitForTransactionReceipt({ hash: burnHash });
+  logCctp("burn-confirmed", {
+    externalChargeId: input.externalChargeId,
+    burnTxHash: burnHash.toLowerCase(),
+    transferMode: burnParameters.transferMode,
+    minFinalityThreshold: burnParameters.minFinalityThreshold,
+    maxFeeUsdc: formatBaseUnitsToUsdc(burnParameters.maxFee),
+  });
 
   const attestation = await fetchAttestation({
     attestationApiUrl: cctpConfig.attestationApiUrl,
@@ -224,6 +493,18 @@ export async function bridgeSettlementToAvalanche(input: {
     transactionHash: burnHash,
     pollIntervalMs: cctpConfig.attestationPollIntervalMs,
     timeoutMs: cctpConfig.attestationTimeoutMs,
+    onStatusChange(status, elapsedMs) {
+      logCctp("attestation-status", {
+        externalChargeId: input.externalChargeId,
+        burnTxHash: burnHash.toLowerCase(),
+        status,
+        elapsedSeconds: Math.round(elapsedMs / 1000),
+      });
+    },
+  });
+  logCctp("attestation-complete", {
+    externalChargeId: input.externalChargeId,
+    burnTxHash: burnHash.toLowerCase(),
   });
 
   const receiveHash = await destinationWalletClient.writeContract({
@@ -234,6 +515,11 @@ export async function bridgeSettlementToAvalanche(input: {
     chain: undefined,
   });
   await destinationClient.waitForTransactionReceipt({ hash: receiveHash });
+  logCctp("receive-confirmed", {
+    externalChargeId: input.externalChargeId,
+    burnTxHash: burnHash.toLowerCase(),
+    receiveTxHash: receiveHash.toLowerCase(),
+  });
 
   const destinationAllowance = await destinationClient.readContract({
     address: destinationUsdcAddress,
@@ -251,6 +537,11 @@ export async function bridgeSettlementToAvalanche(input: {
       chain: undefined,
     });
     await destinationClient.waitForTransactionReceipt({ hash: approvalHash });
+    logCctp("destination-approve-confirmed", {
+      externalChargeId: input.externalChargeId,
+      approvalTxHash: approvalHash.toLowerCase(),
+      amountUsdc: formatBaseUnitsToUsdc(amount),
+    });
   }
 
   const isChargeOperator = await destinationClient.readContract({
@@ -280,6 +571,12 @@ export async function bridgeSettlementToAvalanche(input: {
     chain: undefined,
   });
   await destinationClient.waitForTransactionReceipt({ hash: creditHash });
+  logCctp("credit-confirmed", {
+    externalChargeId: input.externalChargeId,
+    burnTxHash: burnHash.toLowerCase(),
+    creditTxHash: creditHash.toLowerCase(),
+    merchantAddress: input.merchantAddress.toLowerCase(),
+  });
 
   return {
     sourceWalletAddress: sourceAccount.address.toLowerCase(),

@@ -12,6 +12,10 @@ export const checkoutSessionParamSchema = z.object({
   sessionId: objectIdSchema,
 });
 
+export const checkoutMarketQuoteQuerySchema = z.object({
+  market: z.string().trim().min(2).max(8).toUpperCase(),
+});
+
 export const submitCheckoutCustomerSchema = z.object({
   name: z.string().trim().min(2).max(120),
   email: z.string().trim().email().max(180),
@@ -24,4 +28,5 @@ export const submitCheckoutCustomerSchema = z.object({
 
 export type CreateCheckoutSessionInput = z.infer<typeof createCheckoutSessionSchema>;
 export type CheckoutSessionParamInput = z.infer<typeof checkoutSessionParamSchema>;
+export type CheckoutMarketQuoteQuery = z.infer<typeof checkoutMarketQuoteQuerySchema>;
 export type SubmitCheckoutCustomerInput = z.infer<typeof submitCheckoutCustomerSchema>;

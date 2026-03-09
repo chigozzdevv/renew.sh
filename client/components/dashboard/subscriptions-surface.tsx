@@ -14,7 +14,8 @@ import { useAuthedResource } from "@/components/dashboard/use-authed-resource";
 import {
   Button,
   Card,
-  Field,
+  DarkCard,
+  DarkField,
   Input,
   MetricCard,
   PageState,
@@ -23,6 +24,11 @@ import {
   Table,
   TableRow,
 } from "@/components/dashboard/ui";
+import {
+  loadBillingMarketCatalog,
+  loadPlanMarketQuote,
+  type BillingMarketQuote,
+} from "@/lib/markets";
 import {
   createSubscription,
   loadSubscriptionWorkspace,
@@ -47,11 +53,13 @@ export function SubscriptionsSurface() {
     planId: "",
     customerRef: "",
     customerName: "",
-    billingCurrency: "NGN",
-    localAmount: "5000",
+    billingCurrency: "",
     nextChargeAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 16),
     paymentAccountType: "bank" as SubscriptionRecord["paymentAccountType"],
   });
+  const [quote, setQuote] = useState<BillingMarketQuote | null>(null);
+  const [quoteError, setQuoteError] = useState<string | null>(null);
+  const [isQuoteLoading, setIsQuoteLoading] = useState(false);
 
   const { data, isLoading, error, reload } = useAuthedResource(
     async ({ token, merchantId }) =>
@@ -64,9 +72,26 @@ export function SubscriptionsSurface() {
       }),
     [mode, status, search]
   );
+  const { data: marketCatalog } = useAuthedResource(
+    async ({ token, merchantId }) =>
+      loadBillingMarketCatalog({
+        token,
+        merchantId,
+        environment: mode,
+      }),
+    [mode]
+  );
 
   const subscriptions = data?.subscriptions ?? [];
   const plans = data?.plans ?? [];
+  const selectedDraftPlan = plans.find((plan) => plan.id === draft.planId) ?? null;
+  const supportedBillingCurrencies = marketCatalog
+    ? marketCatalog.markets.filter((market) =>
+        (selectedDraftPlan?.supportedMarkets ?? marketCatalog.merchantSupportedMarkets).includes(
+          market.currency
+        )
+      )
+    : [];
   const selectedSubscription =
     subscriptions.find((subscription) => subscription.id === selectedId) ??
     subscriptions[0] ??
@@ -97,6 +122,83 @@ export function SubscriptionsSurface() {
 
     return () => window.clearTimeout(timeout);
   }, [errorMessage, message]);
+
+  useEffect(() => {
+    const nextCurrency =
+      selectedDraftPlan?.supportedMarkets[0] ??
+      marketCatalog?.defaultMarket ??
+      marketCatalog?.merchantSupportedMarkets[0] ??
+      "";
+
+    setDraft((current) => {
+      if (current.billingCurrency && selectedDraftPlan?.supportedMarkets.includes(current.billingCurrency)) {
+        return current;
+      }
+
+      if (
+        !current.billingCurrency &&
+        nextCurrency &&
+        (!selectedDraftPlan || selectedDraftPlan.supportedMarkets.includes(nextCurrency))
+      ) {
+        return { ...current, billingCurrency: nextCurrency };
+      }
+
+      if (
+        current.billingCurrency &&
+        selectedDraftPlan &&
+        !selectedDraftPlan.supportedMarkets.includes(current.billingCurrency)
+      ) {
+        return { ...current, billingCurrency: nextCurrency };
+      }
+
+      return current;
+    });
+  }, [marketCatalog?.defaultMarket, marketCatalog?.merchantSupportedMarkets, selectedDraftPlan]);
+
+  useEffect(() => {
+    if (!token || !user?.merchantId || !draft.planId || !draft.billingCurrency) {
+      setQuote(null);
+      setQuoteError(null);
+      setIsQuoteLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setIsQuoteLoading(true);
+    setQuoteError(null);
+
+    void loadPlanMarketQuote({
+      token,
+      merchantId: user.merchantId,
+      environment: mode,
+      planId: draft.planId,
+      currency: draft.billingCurrency,
+    })
+      .then((nextQuote) => {
+        if (cancelled) {
+          return;
+        }
+
+        setQuote(nextQuote);
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return;
+        }
+
+        setQuote(null);
+        setQuoteError(toErrorMessage(error));
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsQuoteLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [draft.billingCurrency, draft.planId, mode, token, user?.merchantId]);
 
   const metrics = useMemo(() => {
     const active = subscriptions.filter((subscription) => subscription.status === "active").length;
@@ -143,11 +245,20 @@ export function SubscriptionsSurface() {
         customerRef: draft.customerRef.trim(),
         customerName: draft.customerName.trim(),
         billingCurrency: draft.billingCurrency,
-        localAmount: Number(draft.localAmount),
+        localAmount: quote?.localAmount,
         nextChargeAt: new Date(draft.nextChargeAt).toISOString(),
         paymentAccountType: draft.paymentAccountType,
       });
       setShowCreate(false);
+      setDraft({
+        planId: "",
+        customerRef: "",
+        customerName: "",
+        billingCurrency: marketCatalog?.defaultMarket ?? "",
+        nextChargeAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 16),
+        paymentAccountType: "bank",
+      });
+      setQuote(null);
       setMessage("Subscription created.");
     });
   }
@@ -244,15 +355,32 @@ export function SubscriptionsSurface() {
                   ))}
                 </Select>
                 <Select value={draft.billingCurrency} onChange={(event) => setDraft((current) => ({ ...current, billingCurrency: event.target.value }))}>
-                  {["NGN", "GHS", "KES", "ZMW", "UGX", "TZS"].map((currency) => (
-                    <option key={currency} value={currency}>
-                      {currency}
+                  <option value="">Select currency</option>
+                  {supportedBillingCurrencies.map((currency) => (
+                    <option key={currency.currency} value={currency.currency}>
+                      {currency.currency}
                     </option>
                   ))}
                 </Select>
                 <Input placeholder="Customer ref" value={draft.customerRef} onChange={(event) => setDraft((current) => ({ ...current, customerRef: event.target.value }))} />
                 <Input placeholder="Customer name" value={draft.customerName} onChange={(event) => setDraft((current) => ({ ...current, customerName: event.target.value }))} />
-                <Input placeholder="Local amount" value={draft.localAmount} onChange={(event) => setDraft((current) => ({ ...current, localAmount: event.target.value }))} />
+                <div className="rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--muted)]">
+                    Local quote
+                  </p>
+                  <p className="mt-2 text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)]">
+                    {quote
+                      ? formatCurrency(quote.localAmount, quote.currency)
+                      : isQuoteLoading
+                        ? "Loading quote..."
+                        : "Select a plan and currency"}
+                  </p>
+                  <p className="mt-1 text-xs text-[color:var(--muted)]">
+                    {quote
+                      ? `${quote.fxRate.toFixed(2)} ${quote.currency} per USDC`
+                      : quoteError ?? "The amount is derived from the selected plan."}
+                  </p>
+                </div>
                 <Select value={draft.paymentAccountType} onChange={(event) => setDraft((current) => ({ ...current, paymentAccountType: event.target.value as SubscriptionRecord["paymentAccountType"] }))}>
                   <option value="bank">Bank</option>
                   <option value="momo">MoMo</option>
@@ -264,8 +392,10 @@ export function SubscriptionsSurface() {
                     disabled={
                       isBusy === "create-subscription" ||
                       !draft.planId ||
+                      !draft.billingCurrency ||
                       !draft.customerRef.trim() ||
-                      !draft.customerName.trim()
+                      !draft.customerName.trim() ||
+                      !quote
                     }
                     onClick={() => void handleCreate()}
                   >
@@ -297,44 +427,85 @@ export function SubscriptionsSurface() {
           </div>
         </Card>
 
-        <Card title={selectedSubscription?.customerName ?? "Subscription profile"} description={selectedSubscription ? planNameById.get(selectedSubscription.planId) ?? "Plan" : "Select a subscription to inspect its billing state."}>
+        <DarkCard
+          title={selectedSubscription?.customerName ?? "Subscription profile"}
+          description={
+            selectedSubscription
+              ? planNameById.get(selectedSubscription.planId) ?? "Plan"
+              : "Select a subscription to inspect its billing state."
+          }
+        >
           {selectedSubscription ? (
             <div className="space-y-4">
               <div className="grid gap-3 sm:grid-cols-2">
-                <Field label="Currency" value={selectedSubscription.billingCurrency} />
-                <Field label="Amount" value={formatCurrency(selectedSubscription.localAmount, selectedSubscription.billingCurrency)} />
-                <Field label="Next charge" value={formatDateTime(selectedSubscription.nextChargeAt)} />
-                <Field label="Last charge" value={formatDateTime(selectedSubscription.lastChargeAt)} />
-                <Field label="Account type" value={selectedSubscription.paymentAccountType} />
-                <Field label="Retry opens" value={formatDateTime(selectedSubscription.retryAvailableAt)} />
+                <DarkField label="Currency" value={selectedSubscription.billingCurrency} />
+                <DarkField
+                  label="Amount"
+                  value={formatCurrency(
+                    selectedSubscription.localAmount,
+                    selectedSubscription.billingCurrency
+                  )}
+                />
+                <DarkField
+                  label="Next charge"
+                  value={formatDateTime(selectedSubscription.nextChargeAt)}
+                />
+                <DarkField
+                  label="Last charge"
+                  value={formatDateTime(selectedSubscription.lastChargeAt)}
+                />
+                <DarkField
+                  label="Account type"
+                  value={selectedSubscription.paymentAccountType}
+                />
+                <DarkField
+                  label="Retry opens"
+                  value={formatDateTime(selectedSubscription.retryAvailableAt)}
+                />
               </div>
 
               <div className="flex flex-wrap gap-3">
-                <Button tone="brand" disabled={isBusy === "queue-charge"} onClick={() => void handleQueueCharge()}>
+                <Button
+                  tone="darkBrand"
+                  disabled={isBusy === "queue-charge"}
+                  onClick={() => void handleQueueCharge()}
+                >
                   {isBusy === "queue-charge" ? "Queueing..." : "Queue charge"}
                 </Button>
                 {selectedSubscription.status === "active" ? (
-                  <Button disabled={isBusy === "update-subscription"} onClick={() => void handleStatusChange("paused")}>
+                  <Button
+                    tone="darkNeutral"
+                    disabled={isBusy === "update-subscription"}
+                    onClick={() => void handleStatusChange("paused")}
+                  >
                     Pause
                   </Button>
                 ) : selectedSubscription.status === "paused" ? (
-                  <Button disabled={isBusy === "update-subscription"} onClick={() => void handleStatusChange("active")}>
+                  <Button
+                    tone="darkNeutral"
+                    disabled={isBusy === "update-subscription"}
+                    onClick={() => void handleStatusChange("active")}
+                  >
                     Resume
                   </Button>
                 ) : null}
                 {selectedSubscription.status !== "cancelled" ? (
-                  <Button tone="danger" disabled={isBusy === "update-subscription"} onClick={() => void handleStatusChange("cancelled")}>
+                  <Button
+                    tone="darkDanger"
+                    disabled={isBusy === "update-subscription"}
+                    onClick={() => void handleStatusChange("cancelled")}
+                  >
                     Cancel
                   </Button>
                 ) : null}
               </div>
             </div>
           ) : (
-            <p className="text-sm leading-7 text-[color:var(--muted)]">
+            <p className="text-sm leading-7 text-white/66">
               No subscription matches the current filter.
             </p>
           )}
-        </Card>
+        </DarkCard>
       </div>
     </div>
   );

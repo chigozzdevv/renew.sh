@@ -100,7 +100,7 @@ const envSchema = z
       .string()
       .trim()
       .min(1)
-      .default("0x9f3B8679d8d7a735A6fA14618F2Fa3012fD52d2C"),
+      .default("0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA"),
     CCTP_TOKEN_MESSENGER_ADDRESS_LIVE: z
       .string()
       .trim()
@@ -110,7 +110,7 @@ const envSchema = z
       .string()
       .trim()
       .min(1)
-      .default("0xa9fb1b3009dcb79e2fe346c16a604b8fa8ae0a79"),
+      .default("0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275"),
     CCTP_MESSAGE_TRANSMITTER_ADDRESS_LIVE: z
       .string()
       .trim()
@@ -132,7 +132,7 @@ const envSchema = z
       .int()
       .positive()
       .default(2000),
-    CCTP_ATTESTATION_TIMEOUT_MS: z.coerce.number().int().positive().default(300000),
+    CCTP_ATTESTATION_TIMEOUT_MS: z.coerce.number().int().positive().default(1200000),
     ENABLE_WORKERS: booleanEnv.default(true),
     REDIS_URL: z.string().trim().min(1).default("redis://127.0.0.1:6379"),
     REDIS_QUEUE_PREFIX: z.string().trim().min(1).default("renew"),

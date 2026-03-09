@@ -1,7 +1,15 @@
 import type { Request, Response } from "express";
 
-import { dashboardOverviewQuerySchema } from "@/features/dashboard/dashboard.validation";
-import { getDashboardOverview } from "@/features/dashboard/dashboard.service";
+import {
+  dashboardMarketCatalogQuerySchema,
+  dashboardMarketQuoteQuerySchema,
+  dashboardOverviewQuerySchema,
+} from "@/features/dashboard/dashboard.validation";
+import {
+  getDashboardMarketCatalog,
+  getDashboardOverview,
+  getDashboardPlanMarketQuote,
+} from "@/features/dashboard/dashboard.service";
 import { optionalEnvironmentInputSchema } from "@/shared/utils/runtime-environment";
 import { asyncHandler } from "@/shared/utils/async-handler";
 
@@ -34,6 +42,48 @@ export const getDashboardOverviewController = asyncHandler(
     response.status(200).json({
       success: true,
       data: overview,
+    });
+  }
+);
+
+export const getDashboardMarketCatalogController = asyncHandler(
+  async (request: Request, response: Response) => {
+    const query = dashboardMarketCatalogQuerySchema.parse({
+      ...request.query,
+      merchantId: resolveMerchantScope(
+        request,
+        typeof request.query.merchantId === "string"
+          ? request.query.merchantId
+          : undefined
+      ),
+      environment: resolveEnvironmentScope(request),
+    });
+    const catalog = await getDashboardMarketCatalog(query);
+
+    response.status(200).json({
+      success: true,
+      data: catalog,
+    });
+  }
+);
+
+export const getDashboardPlanMarketQuoteController = asyncHandler(
+  async (request: Request, response: Response) => {
+    const query = dashboardMarketQuoteQuerySchema.parse({
+      ...request.query,
+      merchantId: resolveMerchantScope(
+        request,
+        typeof request.query.merchantId === "string"
+          ? request.query.merchantId
+          : undefined
+      ),
+      environment: resolveEnvironmentScope(request),
+    });
+    const quote = await getDashboardPlanMarketQuote(query);
+
+    response.status(200).json({
+      success: true,
+      data: quote,
     });
   }
 );

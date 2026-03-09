@@ -63,6 +63,8 @@ async function ensureMerchant(merchantId: string) {
   if (!merchant) {
     throw new HttpError(404, "Merchant was not found.");
   }
+
+  return merchant;
 }
 
 async function ensureCustomer(
@@ -143,7 +145,14 @@ export async function getCustomerById(
 }
 
 export async function createCustomer(input: CreateCustomerInput) {
-  await ensureMerchant(input.merchantId);
+  const merchant = await ensureMerchant(input.merchantId);
+
+  if (!merchant.supportedMarkets.includes(input.market)) {
+    throw new HttpError(
+      409,
+      `Customer market ${input.market} is not enabled for this merchant.`
+    );
+  }
 
   const existing = await CustomerModel.findOne({
     $and: [
@@ -207,7 +216,7 @@ export async function updateCustomer(
   environment: RuntimeMode,
   input: UpdateCustomerInput
 ) {
-  await ensureMerchant(merchantId);
+  const merchant = await ensureMerchant(merchantId);
   const customer = await ensureCustomer(customerId, merchantId, environment);
 
   if (input.name !== undefined) {
@@ -219,6 +228,12 @@ export async function updateCustomer(
   }
 
   if (input.market !== undefined) {
+    if (!merchant.supportedMarkets.includes(input.market)) {
+      throw new HttpError(
+        409,
+        `Customer market ${input.market} is not enabled for this merchant.`
+      );
+    }
     customer.market = input.market;
   }
 

@@ -79,6 +79,31 @@ export type RenewCheckoutPaymentInstructions = {
   } | null;
 };
 
+export type RenewCheckoutMarketQuote = {
+  readonly currency: string;
+  readonly localAmount: number;
+  readonly usdcAmount: number;
+  readonly fxRate: number;
+  readonly feeAmount: number;
+  readonly expiresAt: string | Date | null;
+  readonly settlementAsset: "USDC";
+  readonly settlementNetwork: "AVALANCHE";
+  readonly channel: {
+    readonly externalId: string;
+    readonly country: string;
+    readonly channelType: string;
+    readonly estimatedSettlementTime: number;
+    readonly min: number;
+    readonly max: number;
+  };
+  readonly network: {
+    readonly externalId: string;
+    readonly name: string;
+    readonly country: string;
+    readonly accountNumberType: string | null;
+  } | null;
+};
+
 export type RenewCheckoutSession = {
   readonly id: string;
   readonly environment: RenewEnvironment;

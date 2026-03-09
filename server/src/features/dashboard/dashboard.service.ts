@@ -2,10 +2,19 @@ import { Types } from "mongoose";
 
 import { CustomerModel } from "@/features/customers/customer.model";
 import { MerchantModel } from "@/features/merchants/merchant.model";
+import {
+  listBillingMarketCatalog,
+  quoteUsdAmountInBillingCurrency,
+} from "@/features/payment-rails/payment-rails.service";
 import { PlanModel } from "@/features/plans/plan.model";
+import { SettingModel } from "@/features/settings/setting.model";
 import { SettlementModel } from "@/features/settlements/settlement.model";
 import { SubscriptionModel } from "@/features/subscriptions/subscription.model";
-import type { DashboardOverviewQuery } from "@/features/dashboard/dashboard.validation";
+import type {
+  DashboardMarketCatalogQuery,
+  DashboardMarketQuoteQuery,
+  DashboardOverviewQuery,
+} from "@/features/dashboard/dashboard.validation";
 import { HttpError } from "@/shared/errors/http-error";
 import { createRuntimeModeCondition } from "@/shared/utils/runtime-environment";
 
@@ -201,4 +210,64 @@ export async function getDashboardOverview(query: DashboardOverviewQuery) {
     marketMix,
     upcomingRenewals,
   };
+}
+
+export async function getDashboardMarketCatalog(query: DashboardMarketCatalogQuery) {
+  const merchant = await ensureMerchant(query.merchantId);
+  const [settings, marketCatalog] = await Promise.all([
+    SettingModel.findOne({ merchantId: query.merchantId })
+      .select({ defaultMarket: 1 })
+      .lean()
+      .exec(),
+    listBillingMarketCatalog(query.environment),
+  ]);
+
+  const marketMap = new Map(marketCatalog.map((entry) => [entry.currency, entry]));
+  const merchantSupportedMarkets = merchant.supportedMarkets.filter((market) =>
+    marketMap.has(market)
+  );
+  const defaultMarketCandidate = settings?.defaultMarket ?? merchant.supportedMarkets[0] ?? null;
+  const defaultMarket =
+    defaultMarketCandidate && marketMap.has(defaultMarketCandidate)
+      ? defaultMarketCandidate
+      : merchantSupportedMarkets[0] ?? marketCatalog[0]?.currency ?? null;
+
+  return {
+    merchantSupportedMarkets,
+    defaultMarket,
+    markets: marketCatalog,
+  };
+}
+
+export async function getDashboardPlanMarketQuote(query: DashboardMarketQuoteQuery) {
+  const merchant = await ensureMerchant(query.merchantId);
+  const plan = await PlanModel.findOne({
+    _id: query.planId,
+    merchantId: query.merchantId,
+    ...createRuntimeModeCondition("environment", query.environment),
+  }).exec();
+
+  if (!plan) {
+    throw new HttpError(404, "Plan was not found.");
+  }
+
+  if (!merchant.supportedMarkets.includes(query.currency)) {
+    throw new HttpError(
+      409,
+      `Currency ${query.currency} is not enabled for this merchant.`
+    );
+  }
+
+  if (!plan.supportedMarkets.includes(query.currency)) {
+    throw new HttpError(
+      409,
+      `Currency ${query.currency} is not enabled for this plan.`
+    );
+  }
+
+  return quoteUsdAmountInBillingCurrency({
+    environment: query.environment,
+    currency: query.currency,
+    usdAmount: plan.usdAmount,
+  });
 }

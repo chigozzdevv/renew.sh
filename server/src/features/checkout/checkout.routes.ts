@@ -7,6 +7,7 @@ import {
   getCheckoutSessionController,
   listCheckoutPlansController,
   listWorkspaceCheckoutPlansController,
+  quoteCheckoutSessionMarketController,
   submitCheckoutCustomerController,
 } from "@/features/checkout/checkout.controller";
 import { requireCheckoutSessionAuth } from "@/shared/middleware/checkout-session-auth";
@@ -36,6 +37,11 @@ checkoutRouter.get(
   "/sessions/:sessionId",
   requireCheckoutSessionAuth,
   getCheckoutSessionController
+);
+checkoutRouter.get(
+  "/sessions/:sessionId/quote",
+  requireCheckoutSessionAuth,
+  quoteCheckoutSessionMarketController
 );
 checkoutRouter.post(
   "/sessions/:sessionId/customer",

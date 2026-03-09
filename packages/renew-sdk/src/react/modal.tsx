@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 
 import type { RenewCheckoutClient } from "../clients/checkout-client.js";
 import type {
+  RenewCheckoutMarketQuote,
   RenewCheckoutSession,
   SubmitCheckoutCustomerInput,
 } from "../types/checkout.js";
@@ -392,6 +393,9 @@ export function RenewCheckoutModal({
   const [formState, setFormState] = useState<FormState>(
     createInitialFormState(session)
   );
+  const [marketQuote, setMarketQuote] = useState<RenewCheckoutMarketQuote | null>(null);
+  const [marketQuoteError, setMarketQuoteError] = useState<string | null>(null);
+  const [isLoadingQuote, setIsLoadingQuote] = useState(false);
   const {
     session: currentSession,
     error,
@@ -415,6 +419,8 @@ export function RenewCheckoutModal({
     }
 
     setFormState(createInitialFormState(session));
+    setMarketQuote(null);
+    setMarketQuoteError(null);
   }, [isOpen, session]);
 
   useEffect(() => {
@@ -429,6 +435,52 @@ export function RenewCheckoutModal({
       document.body.style.overflow = previousOverflow;
     };
   }, [isOpen]);
+
+  useEffect(() => {
+    if (
+      !isOpen ||
+      !clientSecret ||
+      !currentSession ||
+      currentSession.nextAction !== "submit_customer" ||
+      !formState.market
+    ) {
+      setMarketQuote(null);
+      setMarketQuoteError(null);
+      setIsLoadingQuote(false);
+      return;
+    }
+
+    let cancelled = false;
+    setIsLoadingQuote(true);
+    setMarketQuoteError(null);
+
+    void client
+      .quoteMarket(currentSession.id, formState.market, {
+        clientSecret,
+      })
+      .then((quote) => {
+        if (!cancelled) {
+          setMarketQuote(quote);
+        }
+      })
+      .catch((quoteError) => {
+        if (!cancelled) {
+          setMarketQuote(null);
+          setMarketQuoteError(
+            quoteError instanceof Error ? quoteError.message : "Unable to load quote."
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsLoadingQuote(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [client, clientSecret, currentSession, formState.market, isOpen]);
 
   if (!isOpen || !currentSession) {
     return null;
@@ -469,6 +521,7 @@ export function RenewCheckoutModal({
               <p className="renew-modal__subtitle">
                 ${currentSession.plan.usdAmount.toFixed(2)} billed every{" "}
                 {formatInterval(currentSession.plan.billingIntervalDays)}
+                {marketQuote ? ` · approx. ${marketQuote.localAmount.toFixed(2)} ${marketQuote.currency}` : ""}
               </p>
             </div>
           </div>
@@ -556,6 +609,22 @@ export function RenewCheckoutModal({
                     ))}
                   </select>
                 </label>
+
+                <div className="renew-modal__card">
+                  <p className="renew-modal__card-label">Estimated local amount</p>
+                  <p className="renew-modal__card-value renew-modal__card-value--md">
+                    {marketQuote
+                      ? `${marketQuote.localAmount.toFixed(2)} ${marketQuote.currency}`
+                      : isLoadingQuote
+                        ? "Loading quote..."
+                        : "--"}
+                  </p>
+                  <p className="renew-modal__field-copy" style={{ marginTop: 8 }}>
+                    {marketQuote
+                      ? `${marketQuote.fxRate.toFixed(2)} ${marketQuote.currency} per USDC`
+                      : marketQuoteError ?? "Quote will update when the billing market changes."}
+                  </p>
+                </div>
 
                 <button
                   type="button"

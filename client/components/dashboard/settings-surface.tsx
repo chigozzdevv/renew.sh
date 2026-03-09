@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
+import { MarketMultiSelect } from "@/components/dashboard/market-controls";
 import { useWorkspaceMode } from "@/components/dashboard/mode-provider";
 import { useDashboardSession } from "@/components/dashboard/session-provider";
 import { useAuthedResource } from "@/components/dashboard/use-authed-resource";
@@ -18,6 +19,8 @@ import {
 } from "@/components/dashboard/ui";
 import { Logo } from "@/components/shared/logo";
 import { ApiError } from "@/lib/api";
+import { loadBillingMarketCatalog } from "@/lib/markets";
+import { updateMerchantSupportedMarkets } from "@/lib/merchants";
 import {
   confirmPrimaryWalletChange,
   loadWorkspaceSettings,
@@ -125,6 +128,15 @@ export function SettingsPageSurface() {
       }),
     [mode]
   );
+  const { data: marketCatalog, reload: reloadMarketCatalog } = useAuthedResource(
+    async ({ token, merchantId }) =>
+      loadBillingMarketCatalog({
+        token,
+        merchantId,
+        environment: mode,
+      }),
+    [mode]
+  );
 
   const [activeTab, setActiveTab] = useState<SettingsTabKey>("workspace");
   const [actionMessage, setActionMessage] = useState<string | null>(null);
@@ -142,6 +154,7 @@ export function SettingsPageSurface() {
     walletAlerts: true,
   });
   const [thresholdDraft, setThresholdDraft] = useState("1");
+  const [supportedMarketsDraft, setSupportedMarketsDraft] = useState<string[]>([]);
 
   useEffect(() => {
     if (!data) {
@@ -159,6 +172,14 @@ export function SettingsPageSurface() {
     });
     setThresholdDraft(String(data.treasury.threshold || data.security.sweepApprovalThreshold));
   }, [data]);
+
+  useEffect(() => {
+    if (!marketCatalog) {
+      return;
+    }
+
+    setSupportedMarketsDraft(marketCatalog.merchantSupportedMarkets);
+  }, [marketCatalog]);
 
   useEffect(() => {
     if (!actionMessage && !actionError) {
@@ -209,6 +230,22 @@ export function SettingsPageSurface() {
     setProfileDraft((current) => (current ? { ...current, [key]: value } : current));
   }
 
+  function patchSupportedMarkets(nextMarkets: string[]) {
+    setSupportedMarketsDraft(nextMarkets);
+    setProfileDraft((current) => {
+      if (!current) {
+        return current;
+      }
+
+      return {
+        ...current,
+        defaultMarket: nextMarkets.includes(current.defaultMarket)
+          ? current.defaultMarket
+          : (nextMarkets[0] ?? ""),
+      };
+    });
+  }
+
   function patchBilling<K extends keyof BillingDraft>(key: K, value: BillingDraft[K]) {
     setBillingDraft((current) => (current ? { ...current, [key]: value } : current));
   }
@@ -225,17 +262,23 @@ export function SettingsPageSurface() {
   }
 
   async function handleWorkspaceSave() {
-    if (!token || !user?.merchantId || !profileDraft) {
+    if (!token || !user?.merchantId || !profileDraft || supportedMarketsDraft.length === 0) {
       return;
     }
 
     await runMutation("workspace-save", async () => {
+      await updateMerchantSupportedMarkets({
+        token,
+        merchantId: user.merchantId,
+        supportedMarkets: supportedMarketsDraft,
+      });
       await updateWorkspaceSettings({
         token,
         merchantId: user.merchantId,
         environment: mode,
         payload: { profile: profileDraft },
       });
+      await reloadMarketCatalog();
       setActionMessage("Workspace settings saved.");
     });
   }
@@ -405,6 +448,11 @@ export function SettingsPageSurface() {
     );
   }
 
+  const availableMarkets = marketCatalog?.markets ?? [];
+  const supportedMarketOptions = availableMarkets.filter((market) =>
+    supportedMarketsDraft.includes(market.currency)
+  );
+
   return (
     <div className="space-y-4">
       <StatGrid>
@@ -488,9 +536,12 @@ export function SettingsPageSurface() {
                     value={profileDraft.defaultMarket}
                     onChange={(event) => patchProfile("defaultMarket", event.target.value)}
                   >
-                    {["NGN", "GHS", "KES", "ZMW"].map((market) => (
-                      <option key={market} value={market}>
-                        {market}
+                    {supportedMarketOptions.length === 0 ? (
+                      <option value="">Select a market</option>
+                    ) : null}
+                    {supportedMarketOptions.map((market) => (
+                      <option key={market.currency} value={market.currency}>
+                        {market.currency}
                       </option>
                     ))}
                   </Select>
@@ -563,6 +614,8 @@ export function SettingsPageSurface() {
                   </Select>
                 </SettingsField>
               </div>
+
+
             </div>
 
             <div className="space-y-5 rounded-[1.5rem] border border-[color:var(--line)] bg-[#f7fbf5] p-5">
@@ -596,7 +649,7 @@ export function SettingsPageSurface() {
             <Button
               type="button"
               tone="brand"
-              disabled={busyAction === "workspace-save"}
+              disabled={busyAction === "workspace-save" || supportedMarketsDraft.length === 0}
               onClick={() => void handleWorkspaceSave()}
             >
               Save workspace

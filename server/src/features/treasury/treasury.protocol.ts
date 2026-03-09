@@ -24,11 +24,23 @@ export function toUsdcBaseUnits(amount: number) {
   return BigInt(toScaledIntegerString(amount, 6));
 }
 
+export function fromUsdcBaseUnits(amount: bigint) {
+  return Number(amount) / 1_000_000;
+}
+
 export function encodeWithdrawCall(amount: number) {
   return encodeFunctionData({
     abi: renewProtocolAbi,
     functionName: "withdraw",
     args: [toUsdcBaseUnits(amount)],
+  });
+}
+
+export function encodeWithdrawCallBaseUnits(amount: bigint) {
+  return encodeFunctionData({
+    abi: renewProtocolAbi,
+    functionName: "withdraw",
+    args: [amount],
   });
 }
 

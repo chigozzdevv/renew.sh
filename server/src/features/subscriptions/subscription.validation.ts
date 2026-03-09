@@ -9,7 +9,7 @@ export const createSubscriptionSchema = z.object({
   customerRef: z.string().trim().min(2).max(120),
   customerName: z.string().trim().min(2).max(120),
   billingCurrency: z.string().trim().min(2).max(8).toUpperCase(),
-  localAmount: z.coerce.number().positive(),
+  localAmount: z.coerce.number().positive().optional(),
   paymentAccountType: z.enum(["bank", "momo"]).default("bank"),
   paymentAccountNumber: z.string().trim().min(6).max(24).nullable().optional(),
   paymentNetworkId: z.string().trim().min(2).max(120).nullable().optional(),

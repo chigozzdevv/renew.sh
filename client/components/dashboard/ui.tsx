@@ -83,7 +83,7 @@ export function DarkCard({
   action?: ReactNode;
 }) {
   return (
-    <div className="rounded-[2rem] border border-white/10 bg-[#121312] p-5 text-white shadow-[0_18px_70px_rgba(16,32,20,0.14)] sm:p-6">
+    <div className="rounded-[2rem] border border-white/10 bg-[linear-gradient(180deg,rgba(27,28,27,0.98),rgba(10,11,10,0.98))] p-5 text-white shadow-[0_24px_90px_rgba(5,12,8,0.28),inset_0_1px_0_rgba(255,255,255,0.05)] sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h2 className="font-display text-2xl font-semibold tracking-[-0.05em]">
@@ -178,7 +178,13 @@ export function Button({
   className,
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & {
-  tone?: "neutral" | "brand" | "danger";
+  tone?:
+    | "neutral"
+    | "brand"
+    | "danger"
+    | "darkNeutral"
+    | "darkBrand"
+    | "darkDanger";
 }) {
   return (
     <button
@@ -189,10 +195,18 @@ export function Button({
           ? "border-[#0c4a27] bg-[#0c4a27] text-[#d9f6bc]"
           : tone === "danger"
             ? "border-[#dcb7b0] bg-[#fff7f6] text-[#922f25]"
-            : "border-[color:var(--line)] bg-white text-[color:var(--ink)]",
+            : tone === "darkBrand"
+              ? "border-[#d9f6bc]/18 bg-[#d9f6bc] text-[#0c4a27] shadow-[0_12px_30px_rgba(217,246,188,0.16)] hover:bg-[#cfe8b0]"
+              : tone === "darkDanger"
+                ? "border-[#603029] bg-[#2d1613] text-[#ffb6aa] hover:bg-[#3a1d18]"
+                : tone === "darkNeutral"
+                  ? "border-white/12 bg-white/6 text-white hover:bg-white/10"
+                  : "border-[color:var(--line)] bg-white text-[color:var(--ink)]",
         className
       )}
-    />
+    >
+      {children}
+    </button>
   );
 }
 
@@ -209,6 +223,25 @@ export function Field({
         {label}
       </p>
       <div className="mt-2 text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)]">
+        {value}
+      </div>
+    </div>
+  );
+}
+
+export function DarkField({
+  label,
+  value,
+}: {
+  label: string;
+  value: ReactNode;
+}) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.04))] px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/46">
+        {label}
+      </p>
+      <div className="mt-2 text-sm font-semibold tracking-[-0.02em] text-white">
         {value}
       </div>
     </div>

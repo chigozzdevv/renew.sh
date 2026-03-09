@@ -68,100 +68,105 @@ export function createApp() {
     });
   });
 
-  app.use("/v1/protocol", protocolRouter);
-  app.use("/v1/auth", authRouter);
-  app.use("/v1/checkout", checkoutRouter);
-  app.use("/v1/kyc", kycRouter);
-  app.use("/v1/payment-rails", paymentRailRouter);
-  app.use(
-    "/v1/merchants",
-    requirePlatformAuth,
-    requirePlatformPermissions(["team_admin"]),
-    merchantRouter
-  );
-  app.use(
-    "/v1/dashboard",
-    requirePlatformAuth,
-    requirePlatformPermissions([
-      "customers",
-      "plans",
-      "subscriptions",
-      "payments",
-      "treasury",
-      "developers",
-      "team_admin",
-    ]),
-    blockLiveModeUntilLaunch(),
-    dashboardRouter
-  );
-  app.use(
-    "/v1/customers",
-    requirePlatformAuth,
-    requirePlatformPermissions(["customers", "team_admin"]),
-    blockLiveModeUntilLaunch(),
-    customerRouter
-  );
-  app.use(
-    "/v1/plans",
-    requirePlatformAuth,
-    requirePlatformPermissions(["plans", "team_admin"]),
-    blockLiveModeUntilLaunch(),
-    planRouter
-  );
-  app.use(
-    "/v1/subscriptions",
-    requirePlatformAuth,
-    requirePlatformPermissions(["subscriptions", "team_admin"]),
-    blockLiveModeUntilLaunch(),
-    subscriptionRouter
-  );
-  app.use(
-    "/v1/charges",
-    requirePlatformAuth,
-    requirePlatformPermissions(["payments", "team_admin"]),
-    blockLiveModeUntilLaunch(),
-    chargeRouter
-  );
-  app.use(
-    "/v1/settlements",
-    requirePlatformAuth,
-    requirePlatformPermissions(["treasury", "team_admin"]),
-    blockLiveModeUntilLaunch(),
-    settlementRouter
-  );
-  app.use(
-    "/v1/developers",
-    requirePlatformAuth,
-    requirePlatformPermissions(["developers", "team_admin"]),
-    blockLiveModeUntilLaunch(),
-    developerRouter
-  );
-  app.use(
-    "/v1/treasury",
-    requirePlatformAuth,
-    requirePlatformPermissions(["treasury", "team_admin"]),
-    blockLiveModeUntilLaunch(),
-    treasuryRouter
-  );
-  app.use(
-    "/v1/teams",
-    requirePlatformAuth,
-    requirePlatformPermissions(["team_admin"]),
-    teamRouter
-  );
-  app.use(
-    "/v1/settings",
-    requirePlatformAuth,
-    requirePlatformPermissions(["team_admin", "treasury"]),
-    blockLiveModeUntilLaunch(),
-    settingRouter
-  );
-  app.use(
-    "/v1/audit",
-    requirePlatformAuth,
-    requirePlatformPermissions(["team_admin"]),
-    auditRouter
-  );
+  const registerApiRoutes = (apiBasePath: string) => {
+    app.use(`${apiBasePath}/protocol`, protocolRouter);
+    app.use(`${apiBasePath}/auth`, authRouter);
+    app.use(`${apiBasePath}/checkout`, checkoutRouter);
+    app.use(`${apiBasePath}/kyc`, kycRouter);
+    app.use(`${apiBasePath}/payment-rails`, paymentRailRouter);
+    app.use(
+      `${apiBasePath}/merchants`,
+      requirePlatformAuth,
+      requirePlatformPermissions(["team_admin"]),
+      merchantRouter
+    );
+    app.use(
+      `${apiBasePath}/dashboard`,
+      requirePlatformAuth,
+      requirePlatformPermissions([
+        "customers",
+        "plans",
+        "subscriptions",
+        "payments",
+        "treasury",
+        "developers",
+        "team_admin",
+      ]),
+      blockLiveModeUntilLaunch(),
+      dashboardRouter
+    );
+    app.use(
+      `${apiBasePath}/customers`,
+      requirePlatformAuth,
+      requirePlatformPermissions(["customers", "team_admin"]),
+      blockLiveModeUntilLaunch(),
+      customerRouter
+    );
+    app.use(
+      `${apiBasePath}/plans`,
+      requirePlatformAuth,
+      requirePlatformPermissions(["plans", "team_admin"]),
+      blockLiveModeUntilLaunch(),
+      planRouter
+    );
+    app.use(
+      `${apiBasePath}/subscriptions`,
+      requirePlatformAuth,
+      requirePlatformPermissions(["subscriptions", "team_admin"]),
+      blockLiveModeUntilLaunch(),
+      subscriptionRouter
+    );
+    app.use(
+      `${apiBasePath}/charges`,
+      requirePlatformAuth,
+      requirePlatformPermissions(["payments", "team_admin"]),
+      blockLiveModeUntilLaunch(),
+      chargeRouter
+    );
+    app.use(
+      `${apiBasePath}/settlements`,
+      requirePlatformAuth,
+      requirePlatformPermissions(["treasury", "team_admin"]),
+      blockLiveModeUntilLaunch(),
+      settlementRouter
+    );
+    app.use(
+      `${apiBasePath}/developers`,
+      requirePlatformAuth,
+      requirePlatformPermissions(["developers", "team_admin"]),
+      blockLiveModeUntilLaunch(),
+      developerRouter
+    );
+    app.use(
+      `${apiBasePath}/treasury`,
+      requirePlatformAuth,
+      requirePlatformPermissions(["treasury", "team_admin"]),
+      blockLiveModeUntilLaunch(),
+      treasuryRouter
+    );
+    app.use(
+      `${apiBasePath}/teams`,
+      requirePlatformAuth,
+      requirePlatformPermissions(["team_admin"]),
+      teamRouter
+    );
+    app.use(
+      `${apiBasePath}/settings`,
+      requirePlatformAuth,
+      requirePlatformPermissions(["team_admin", "treasury"]),
+      blockLiveModeUntilLaunch(),
+      settingRouter
+    );
+    app.use(
+      `${apiBasePath}/audit`,
+      requirePlatformAuth,
+      requirePlatformPermissions(["team_admin"]),
+      auditRouter
+    );
+  };
+
+  registerApiRoutes("/v1");
+  registerApiRoutes("/api/v1");
   app.use(notFoundHandler);
   app.use(errorHandler);
 

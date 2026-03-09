@@ -13,7 +13,12 @@ import type {
   UpdateChargeInput,
 } from "@/features/charges/charge.validation";
 import { MerchantModel } from "@/features/merchants/merchant.model";
-import { getPreferredCollectionChannel, getPreferredCollectionNetwork, createCollectionRequest, createWidgetQuote } from "@/features/payment-rails/payment-rails.service";
+import {
+  createCollectionRequest,
+  getPreferredCollectionChannel,
+  getPreferredCollectionNetwork,
+  quoteUsdAmountInBillingCurrency,
+} from "@/features/payment-rails/payment-rails.service";
 import { PlanModel } from "@/features/plans/plan.model";
 import { SubscriptionModel } from "@/features/subscriptions/subscription.model";
 import type { RuntimeMode } from "@/shared/constants/runtime-mode";
@@ -55,12 +60,6 @@ function toChargeResponse(document: {
     createdAt: document.createdAt,
     updatedAt: document.updatedAt,
   };
-}
-
-function toSafeNumber(value: unknown, fallback = 0) {
-  const numeric = Number(value);
-
-  return Number.isFinite(numeric) ? numeric : fallback;
 }
 
 function buildFallbackAccountNumber(customerRef: string) {
@@ -281,7 +280,7 @@ export async function queueChargeRetry(
     { subscriptionId: charge.subscriptionId.toString() },
     {
       attempts: 5,
-      jobId: `subscription-charge-retry:${charge.subscriptionId.toString()}:${Date.now()}`,
+      jobId: `subscription-charge-retry-${charge.subscriptionId.toString()}-${Date.now()}`,
     }
   );
 
@@ -389,37 +388,16 @@ export async function runSubscriptionChargeJob(input: { subscriptionId: string }
           environment
         );
 
-  const quote = (await createWidgetQuote({
+  const quote = await quoteUsdAmountInBillingCurrency({
     environment,
     currency: subscription.billingCurrency,
-    cryptoAmount: plan.usdAmount,
-    channelId: channel.externalId,
-    coin: "USDC",
-    network: "AVALANCHE",
-    transactionType: "Buy",
-  })) as Record<string, unknown>;
+    usdAmount: plan.usdAmount,
+  });
 
-  const localAmount = toSafeNumber(
-    quote.convertedAmount,
-    subscription.localAmount
-  );
-  const usdcAmount = Number(
-    Math.max(0.01, toSafeNumber(quote.cryptoAmount, plan.usdAmount)).toFixed(4)
-  );
-  const fxRate = Number(
-    Math.max(
-      0.0001,
-      toSafeNumber(
-        quote.rateLocal,
-        localAmount > 0 ? localAmount / usdcAmount : subscription.localAmount
-      )
-    ).toFixed(4)
-  );
-  const feeAmount = Number(
-    (
-      toSafeNumber(quote.serviceFeeUSD) + toSafeNumber(quote.partnerFeeUSD)
-    ).toFixed(2)
-  );
+  const localAmount = quote.localAmount;
+  const usdcAmount = quote.usdcAmount;
+  const fxRate = quote.fxRate;
+  const feeAmount = quote.feeAmount;
   const netUsdc = Number(Math.max(0.01, usdcAmount - feeAmount).toFixed(2));
 
   const collection = (await createCollectionRequest({

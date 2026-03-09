@@ -110,7 +110,7 @@ async function queueDeliveryJob(
     {
       attempts: 1,
       delayMs,
-      jobId: `developer-webhook-delivery:${deliveryId}:attempt:${attempt}`,
+      jobId: `developer-webhook-delivery-${deliveryId}-attempt-${attempt}`,
     }
   );
 

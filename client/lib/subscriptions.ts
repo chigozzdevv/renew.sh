@@ -66,7 +66,7 @@ export async function createSubscription(input: {
   customerRef: string;
   customerName: string;
   billingCurrency: string;
-  localAmount: number;
+  localAmount?: number;
   nextChargeAt: string;
   paymentAccountType: SubscriptionRecord["paymentAccountType"];
 }) {

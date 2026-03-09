@@ -1,8 +1,9 @@
 import { randomBytes } from "crypto";
 
 import { Types } from "mongoose";
-import { verifyMessage } from "viem";
+import { createPublicClient, getAddress, http, parseAbi, verifyMessage } from "viem";
 
+import { getProtocolRuntimeConfig } from "@/config/protocol.config";
 import { getSafeConfig } from "@/config/safe.config";
 import { appendAuditLog } from "@/features/audit/audit.service";
 import { ChargeModel } from "@/features/charges/charge.model";
@@ -17,7 +18,9 @@ import {
   encodeReserveWalletClearCall,
   encodeReserveWalletPromoteCall,
   encodeReserveWalletUpdateCall,
-  encodeWithdrawCall,
+  encodeWithdrawCallBaseUnits,
+  fromUsdcBaseUnits,
+  toUsdcBaseUnits,
 } from "@/features/treasury/treasury.protocol";
 import { TreasuryAccountModel } from "@/features/treasury/treasury-account.model";
 import { TreasuryOperationModel } from "@/features/treasury/treasury-operation.model";
@@ -38,9 +41,25 @@ import { HttpError } from "@/shared/errors/http-error";
 import { SettlementModel } from "@/features/settlements/settlement.model";
 
 const PAYOUT_WALLET_CHANGE_DELAY_MS = 24 * 60 * 60 * 1000;
+const renewProtocolReadAbi = parseAbi([
+  "function protocolFeeBps() view returns (uint16)",
+]);
 
 function normalizeAddress(value: string) {
   return value.trim().toLowerCase();
+}
+
+async function getProtocolFeeBps(environment: RuntimeMode) {
+  const protocolConfig = getProtocolRuntimeConfig(environment);
+  const client = createPublicClient({
+    transport: http(protocolConfig.rpcUrl),
+  });
+
+  return client.readContract({
+    address: getAddress(protocolConfig.protocolAddress),
+    abi: renewProtocolReadAbi,
+    functionName: "protocolFeeBps",
+  });
 }
 
 function toTreasurySignerResponse(document: {
@@ -890,13 +909,14 @@ export async function createSettlementSweepOperation(input: {
     input.environment
   );
 
-  const [settlement, treasuryAccount] = await Promise.all([
+  const [settlement, treasuryAccount, protocolFeeBps] = await Promise.all([
     SettlementModel.findOne({
       _id: input.settlementId,
       merchantId: input.merchantId,
       ...createRuntimeModeCondition("environment", input.environment),
     }).exec(),
     ensureTreasuryAccount(input.merchantId, input.environment),
+    getProtocolFeeBps(input.environment),
   ]);
 
   if (!settlement) {
@@ -916,6 +936,18 @@ export async function createSettlementSweepOperation(input: {
   }
 
   const protocolAddress = getSafeConfig(input.environment).protocolAddress;
+  const grossBaseUnits = toUsdcBaseUnits(settlement.netUsdc);
+  const protocolFeeBaseUnits =
+    (grossBaseUnits * BigInt(protocolFeeBps)) / 10_000n;
+  const withdrawBaseUnits = grossBaseUnits - protocolFeeBaseUnits;
+
+  if (withdrawBaseUnits <= 0n) {
+    throw new HttpError(
+      409,
+      "Settlement net amount is too low after protocol fees to queue a treasury sweep."
+    );
+  }
+
   const operation = await TreasuryOperationModel.create({
     merchantId: new Types.ObjectId(input.merchantId),
     environment: input.environment,
@@ -929,13 +961,16 @@ export async function createSettlementSweepOperation(input: {
     threshold: treasuryAccount.threshold,
     targetAddress: normalizeAddress(protocolAddress),
     value: "0",
-    data: encodeWithdrawCall(settlement.netUsdc),
+    data: encodeWithdrawCallBaseUnits(withdrawBaseUnits),
     origin: `settlement:${settlement.batchRef}`,
     createdBy: input.actor,
     signatures: [],
     metadata: {
       batchRef: settlement.batchRef,
-      netUsdc: settlement.netUsdc,
+      grossSettlementUsdc: settlement.netUsdc,
+      protocolFeeBps: Number(protocolFeeBps),
+      protocolFeeUsdc: fromUsdcBaseUnits(protocolFeeBaseUnits),
+      netUsdc: fromUsdcBaseUnits(withdrawBaseUnits),
       destinationWallet: treasuryAccount.payoutWallet,
     },
   });

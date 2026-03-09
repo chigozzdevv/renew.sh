@@ -71,10 +71,21 @@ async function ensurePlanScope(
 }
 
 export async function createPlan(input: CreatePlanInput) {
-  const merchantExists = await MerchantModel.exists({ _id: input.merchantId });
+  const merchant = await MerchantModel.findById(input.merchantId).exec();
 
-  if (!merchantExists) {
+  if (!merchant) {
     throw new HttpError(404, "Merchant was not found.");
+  }
+
+  const unsupportedMarkets = input.supportedMarkets.filter(
+    (market) => !merchant.supportedMarkets.includes(market)
+  );
+
+  if (unsupportedMarkets.length > 0) {
+    throw new HttpError(
+      409,
+      `Plan markets must be selected from the merchant-supported catalog: ${unsupportedMarkets.join(", ")}.`
+    );
   }
 
   const createdPlan = await PlanModel.create({
@@ -150,6 +161,11 @@ export async function updatePlan(
   environment?: RuntimeMode
 ) {
   const plan = await ensurePlanScope(planId, merchantId, environment);
+  const merchant = await MerchantModel.findById(plan.merchantId).exec();
+
+  if (!merchant) {
+    throw new HttpError(404, "Merchant was not found.");
+  }
 
   if (input.planCode !== undefined) {
     plan.planCode = input.planCode;
@@ -176,6 +192,16 @@ export async function updatePlan(
     plan.billingMode = input.billingMode;
   }
   if (input.supportedMarkets !== undefined) {
+    const unsupportedMarkets = input.supportedMarkets.filter(
+      (market) => !merchant.supportedMarkets.includes(market)
+    );
+
+    if (unsupportedMarkets.length > 0) {
+      throw new HttpError(
+        409,
+        `Plan markets must be selected from the merchant-supported catalog: ${unsupportedMarkets.join(", ")}.`
+      );
+    }
     plan.supportedMarkets = input.supportedMarkets;
   }
   if (input.status !== undefined) {

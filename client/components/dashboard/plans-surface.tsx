@@ -3,13 +3,15 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { useWorkspaceMode } from "@/components/dashboard/mode-provider";
+import { MarketMultiSelect } from "@/components/dashboard/market-controls";
 import { useDashboardSession } from "@/components/dashboard/session-provider";
 import { StatusBadge, formatCurrency, toErrorMessage } from "@/components/dashboard/surface-utils";
 import { useAuthedResource } from "@/components/dashboard/use-authed-resource";
 import {
   Button,
   Card,
-  Field,
+  DarkCard,
+  DarkField,
   Input,
   MetricCard,
   PageState,
@@ -18,6 +20,7 @@ import {
   Table,
   TableRow,
 } from "@/components/dashboard/ui";
+import { loadBillingMarketCatalog } from "@/lib/markets";
 import { createPlan, loadPlans, updatePlan, type PlanRecord } from "@/lib/plans";
 
 type PlanStatusFilter = PlanRecord["status"] | "all";
@@ -35,13 +38,13 @@ export function PlansSurface() {
   const [draft, setDraft] = useState({
     planCode: "",
     name: "",
-    usdAmount: "99",
+    usdAmount: "",
     usageRate: "",
-    billingIntervalDays: "30",
-    trialDays: "0",
-    retryWindowHours: "24",
+    billingIntervalDays: "",
+    trialDays: "",
+    retryWindowHours: "",
     billingMode: "fixed" as PlanRecord["billingMode"],
-    supportedMarkets: "NGN,GHS,KES",
+    supportedMarkets: [] as string[],
     status: "draft" as PlanRecord["status"],
   });
 
@@ -56,8 +59,21 @@ export function PlansSurface() {
       }),
     [mode, status, search]
   );
+  const { data: marketCatalog } = useAuthedResource(
+    async ({ token, merchantId }) =>
+      loadBillingMarketCatalog({
+        token,
+        merchantId,
+        environment: mode,
+      }),
+    [mode]
+  );
 
   const plans = data ?? [];
+  const merchantMarketOptions =
+    marketCatalog?.markets.filter((market) =>
+      marketCatalog.merchantSupportedMarkets.includes(market.currency)
+    ) ?? [];
   const selectedPlan = plans.find((plan) => plan.id === selectedId) ?? plans[0] ?? null;
 
   useEffect(() => {
@@ -125,26 +141,25 @@ export function PlansSurface() {
         usdAmount: Number(draft.usdAmount),
         usageRate: draft.usageRate.trim() ? Number(draft.usageRate) : null,
         billingIntervalDays: Number(draft.billingIntervalDays),
-        trialDays: Number(draft.trialDays),
-        retryWindowHours: Number(draft.retryWindowHours),
+        trialDays: draft.trialDays.trim() ? Number(draft.trialDays) : 0,
+        retryWindowHours: draft.retryWindowHours.trim()
+          ? Number(draft.retryWindowHours)
+          : 24,
         billingMode: draft.billingMode,
-        supportedMarkets: draft.supportedMarkets
-          .split(",")
-          .map((value) => value.trim().toUpperCase())
-          .filter(Boolean),
+        supportedMarkets: draft.supportedMarkets,
         status: draft.status,
       });
       setShowCreate(false);
       setDraft({
         planCode: "",
         name: "",
-        usdAmount: "99",
+        usdAmount: "",
         usageRate: "",
-        billingIntervalDays: "30",
-        trialDays: "0",
-        retryWindowHours: "24",
+        billingIntervalDays: "",
+        trialDays: "",
+        retryWindowHours: "",
         billingMode: "fixed",
-        supportedMarkets: "NGN,GHS,KES",
+        supportedMarkets: [],
         status: "draft",
       });
       setMessage("Plan created.");
@@ -230,9 +245,21 @@ export function PlansSurface() {
                 </Select>
                 <Input placeholder="Billing interval (days)" value={draft.billingIntervalDays} onChange={(event) => setDraft((current) => ({ ...current, billingIntervalDays: event.target.value }))} />
                 <Input placeholder="Usage rate (optional)" value={draft.usageRate} onChange={(event) => setDraft((current) => ({ ...current, usageRate: event.target.value }))} />
-                <Input placeholder="Trial days" value={draft.trialDays} onChange={(event) => setDraft((current) => ({ ...current, trialDays: event.target.value }))} />
-                <Input placeholder="Retry window (hours)" value={draft.retryWindowHours} onChange={(event) => setDraft((current) => ({ ...current, retryWindowHours: event.target.value }))} />
-                <Input className="md:col-span-2" placeholder="Markets comma-separated" value={draft.supportedMarkets} onChange={(event) => setDraft((current) => ({ ...current, supportedMarkets: event.target.value }))} />
+                <Input placeholder="Trial days (defaults to 0)" value={draft.trialDays} onChange={(event) => setDraft((current) => ({ ...current, trialDays: event.target.value }))} />
+                <Input placeholder="Retry window (hours, defaults to 24)" value={draft.retryWindowHours} onChange={(event) => setDraft((current) => ({ ...current, retryWindowHours: event.target.value }))} />
+                <div className="space-y-3 md:col-span-2">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--muted)]">
+                    Billing currencies
+                  </p>
+                  <MarketMultiSelect
+                    options={merchantMarketOptions}
+                    value={draft.supportedMarkets}
+                    onChange={(supportedMarkets) =>
+                      setDraft((current) => ({ ...current, supportedMarkets }))
+                    }
+                    allLabel="All merchant markets"
+                  />
+                </div>
                 <Select value={draft.status} onChange={(event) => setDraft((current) => ({ ...current, status: event.target.value as PlanRecord["status"] }))}>
                   <option value="draft">Draft</option>
                   <option value="active">Active</option>
@@ -241,7 +268,14 @@ export function PlansSurface() {
                 <div className="md:col-span-2">
                   <Button
                     tone="brand"
-                    disabled={isBusy === "create-plan" || !draft.planCode.trim() || !draft.name.trim()}
+                    disabled={
+                      isBusy === "create-plan" ||
+                      !draft.planCode.trim() ||
+                      !draft.name.trim() ||
+                      !draft.usdAmount.trim() ||
+                      !draft.billingIntervalDays.trim() ||
+                      draft.supportedMarkets.length === 0
+                    }
                     onClick={() => void handleCreate()}
                   >
                     {isBusy === "create-plan" ? "Saving..." : "Save plan"}
@@ -272,21 +306,38 @@ export function PlansSurface() {
           </div>
         </Card>
 
-        <Card title={selectedPlan?.name ?? "Plan details"} description={selectedPlan?.planCode ?? "Select a plan to inspect current billing rules."}>
+        <DarkCard
+          title={selectedPlan?.name ?? "Plan details"}
+          description={
+            selectedPlan?.planCode ?? "Select a plan to inspect current billing rules."
+          }
+        >
           {selectedPlan ? (
             <div className="space-y-4">
               <div className="grid gap-3 sm:grid-cols-2">
-                <Field label="USD price" value={formatCurrency(selectedPlan.usdAmount, "USD")} />
-                <Field label="Mode" value={selectedPlan.billingMode} />
-                <Field label="Interval" value={`${selectedPlan.billingIntervalDays} days`} />
-                <Field label="Trial" value={`${selectedPlan.trialDays} days`} />
-                <Field label="Retry window" value={`${selectedPlan.retryWindowHours} hours`} />
-                <Field label="Markets" value={selectedPlan.supportedMarkets.join(", ")} />
+                <DarkField
+                  label="USD price"
+                  value={formatCurrency(selectedPlan.usdAmount, "USD")}
+                />
+                <DarkField label="Mode" value={selectedPlan.billingMode} />
+                <DarkField
+                  label="Interval"
+                  value={`${selectedPlan.billingIntervalDays} days`}
+                />
+                <DarkField label="Trial" value={`${selectedPlan.trialDays} days`} />
+                <DarkField
+                  label="Retry window"
+                  value={`${selectedPlan.retryWindowHours} hours`}
+                />
+                <DarkField
+                  label="Markets"
+                  value={selectedPlan.supportedMarkets.join(", ")}
+                />
               </div>
 
               <div className="flex flex-wrap gap-3">
                 <Button
-                  tone={selectedPlan.status === "active" ? "neutral" : "brand"}
+                  tone={selectedPlan.status === "active" ? "darkNeutral" : "darkBrand"}
                   disabled={isBusy === "update-plan"}
                   onClick={() =>
                     void handleStatusChange(
@@ -301,18 +352,22 @@ export function PlansSurface() {
                       : "Activate plan"}
                 </Button>
                 {selectedPlan.status !== "draft" ? null : (
-                  <Button disabled={isBusy === "update-plan"} onClick={() => void handleStatusChange("draft")}>
+                  <Button
+                    tone="darkNeutral"
+                    disabled={isBusy === "update-plan"}
+                    onClick={() => void handleStatusChange("draft")}
+                  >
                     Keep draft
                   </Button>
                 )}
               </div>
             </div>
           ) : (
-            <p className="text-sm leading-7 text-[color:var(--muted)]">
+            <p className="text-sm leading-7 text-white/66">
               No plan matches the current filter.
             </p>
           )}
-        </Card>
+        </DarkCard>
       </div>
     </div>
   );

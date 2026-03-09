@@ -645,12 +645,19 @@ export async function queueSettlementBridge(
     "settlement-bridge",
     { settlementId },
     {
-      jobId: `settlement-bridge:${settlementId}`,
+      jobId: `settlement-bridge-${settlementId}`,
       attempts: 3,
     }
   );
 
   if (!queuedJob) {
+    console.log(
+      `[settlement-bridge] inline-start ${JSON.stringify({
+        settlementId,
+        environment: options?.environment ?? null,
+        merchantId: options?.merchantId ?? null,
+      })}`
+    );
     const inlineResult = await runSettlementBridgeJob({ settlementId });
 
     return {
@@ -660,6 +667,14 @@ export async function queueSettlementBridge(
       result: inlineResult,
     };
   }
+
+  console.log(
+    `[settlement-bridge] queued ${JSON.stringify({
+      settlementId,
+      environment: options?.environment ?? null,
+      merchantId: options?.merchantId ?? null,
+    })}`
+  );
 
   return {
     queued: true,
@@ -720,6 +735,11 @@ export async function runSettlementSweepJob(input: { settlementId: string }) {
 }
 
 export async function runSettlementBridgeJob(input: { settlementId: string }) {
+  console.log(
+    `[settlement-bridge] run-start ${JSON.stringify({
+      settlementId: input.settlementId,
+    })}`
+  );
   const settlement = await SettlementModel.findById(input.settlementId).exec();
 
   if (!settlement) {
@@ -795,6 +815,16 @@ export async function runSettlementBridgeJob(input: { settlementId: string }) {
     merchantId: settlement.merchantId.toString(),
     environment: toStoredRuntimeMode(settlement.environment),
   });
+
+  console.log(
+    `[settlement-bridge] run-complete ${JSON.stringify({
+      settlementId: input.settlementId,
+      status: settlement.status,
+      bridgeSourceTxHash: settlement.bridgeSourceTxHash,
+      bridgeReceiveTxHash: settlement.bridgeReceiveTxHash,
+      creditTxHash: settlement.creditTxHash,
+    })}`
+  );
 
   return {
     settlementId: input.settlementId,

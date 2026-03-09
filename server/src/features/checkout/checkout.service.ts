@@ -11,7 +11,10 @@ import type {
 } from "@/features/checkout/checkout.validation";
 import { CustomerModel } from "@/features/customers/customer.model";
 import { MerchantModel } from "@/features/merchants/merchant.model";
-import { processYellowCardWebhook } from "@/features/payment-rails/payment-rails.service";
+import {
+  processYellowCardWebhook,
+  quoteUsdAmountInBillingCurrency,
+} from "@/features/payment-rails/payment-rails.service";
 import { PlanModel } from "@/features/plans/plan.model";
 import {
   SettlementModel,
@@ -490,6 +493,11 @@ export async function submitCheckoutCustomer(
     runtimeEnvironment,
     input
   );
+  const initialQuote = await quoteUsdAmountInBillingCurrency({
+    environment: runtimeEnvironment,
+    currency: input.market,
+    usdAmount: plan.usdAmount,
+  });
   const nextChargeAt =
     plan.trialDays > 0 ? addDays(new Date(), plan.trialDays) : new Date();
 
@@ -500,7 +508,7 @@ export async function submitCheckoutCustomer(
     customerRef: customer.customerRef,
     customerName: customer.name,
     billingCurrency: input.market,
-    localAmount: plan.usdAmount,
+    localAmount: initialQuote.localAmount,
     paymentAccountType: input.paymentAccountType,
     paymentAccountNumber: input.paymentAccountNumber ?? null,
     paymentNetworkId: input.paymentNetworkId ?? null,
@@ -605,6 +613,38 @@ export async function submitCheckoutCustomer(
   await session.save();
 
   return getCheckoutSession(sessionId);
+}
+
+export async function quoteCheckoutSessionMarket(sessionId: string, market: string) {
+  const session = await ensureCheckoutSession(sessionId);
+
+  if (session.expiresAt.getTime() <= Date.now()) {
+    throw new HttpError(410, "Checkout session has expired.");
+  }
+
+  const runtimeEnvironment = session.environment === "live" ? "live" : "test";
+  const [merchant, plan] = await Promise.all([
+    ensureMerchantForCheckout(session.merchantId.toString(), runtimeEnvironment),
+    ensurePlanForCheckout(
+      session.planId.toString(),
+      session.merchantId.toString(),
+      runtimeEnvironment
+    ),
+  ]);
+
+  if (!merchant.supportedMarkets.includes(market)) {
+    throw new HttpError(409, `Market ${market} is not enabled for this merchant.`);
+  }
+
+  if (!plan.supportedMarkets.includes(market)) {
+    throw new HttpError(409, `Market ${market} is not enabled for this plan.`);
+  }
+
+  return quoteUsdAmountInBillingCurrency({
+    environment: runtimeEnvironment,
+    currency: market,
+    usdAmount: plan.usdAmount,
+  });
 }
 
 export async function completeCheckoutTestPayment(sessionId: string) {

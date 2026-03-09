@@ -13,7 +13,9 @@ import { privateKeyToAccount } from "viem/accounts";
 import { getCctpConfig } from "@/config/cctp.config";
 import { env } from "@/config/env.config";
 import { connectToDatabase, disconnectFromDatabase } from "@/config/db.config";
+import { ChargeModel } from "@/features/charges/charge.model";
 import { MerchantModel } from "@/features/merchants/merchant.model";
+import { SettlementModel } from "@/features/settlements/settlement.model";
 import { TeamMemberModel } from "@/features/teams/team.model";
 import { createSafeProvider } from "@/features/treasury/providers/safe/safe.factory";
 import { createPasswordHash } from "@/shared/utils/password-hash";
@@ -55,6 +57,14 @@ type SeedWorkspaceResult = {
   reserveWalletAddress: string;
 };
 
+type SubscriptionChargeResult = {
+  chargeId: string;
+  externalChargeId: string;
+  settlementId: string;
+  collectionStatus: string;
+  settlementStatus: string;
+};
+
 function generateEphemeralPrivateKey(): Hex {
   return `0x${randomBytes(32).toString("hex")}` as Hex;
 }
@@ -62,6 +72,19 @@ function generateEphemeralPrivateKey(): Hex {
 function getBaseUrl() {
   const port = process.env.PORT ?? String(env.PORT);
   return process.env.E2E_BASE_URL ?? `http://127.0.0.1:${port}`;
+}
+
+function getE2EPlanUsdAmount() {
+  const raw = process.env.E2E_PLAN_USD_AMOUNT?.trim() || "25";
+  const amount = Number(raw);
+
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new Error(
+      `E2E_PLAN_USD_AMOUNT must be a positive number, received "${raw}".`
+    );
+  }
+
+  return amount;
 }
 
 function getRequiredTestValue(label: string, value: string) {
@@ -274,6 +297,127 @@ async function waitForSettledState(input: {
   throw new Error("Timed out waiting for the final settled state.");
 }
 
+async function waitForSettlementBridgeReady(input: {
+  token: string;
+  settlementId: string;
+}) {
+  const cctpConfig = getCctpConfig("test");
+  const startedAt = Date.now();
+  let lastSeenStatus = "queued";
+  let lastProgressSnapshot = "";
+
+  while (
+    Date.now() - startedAt <
+    cctpConfig.attestationTimeoutMs + 120_000
+  ) {
+    const settlement = await apiRequest<{
+      id: string;
+      status: string;
+      txHash: string | null;
+      bridgeSourceTxHash: string | null;
+      bridgeReceiveTxHash: string | null;
+      creditTxHash: string | null;
+    }>(`/v1/settlements/${input.settlementId}?environment=test`, {
+      method: "GET",
+      token: input.token,
+    });
+    lastSeenStatus = settlement.data.status;
+    const progressSnapshot = JSON.stringify({
+      status: settlement.data.status,
+      bridgeSourceTxHash: settlement.data.bridgeSourceTxHash,
+      bridgeReceiveTxHash: settlement.data.bridgeReceiveTxHash,
+      creditTxHash: settlement.data.creditTxHash,
+    });
+
+    if (progressSnapshot !== lastProgressSnapshot) {
+      console.log(
+        `11b. Settlement bridge progress ${JSON.stringify({
+          settlementId: settlement.data.id,
+          status: settlement.data.status,
+          bridgeSourceTxHash: settlement.data.bridgeSourceTxHash,
+          bridgeReceiveTxHash: settlement.data.bridgeReceiveTxHash,
+          creditTxHash: settlement.data.creditTxHash,
+          elapsedSeconds: Math.round((Date.now() - startedAt) / 1000),
+        })}`
+      );
+      lastProgressSnapshot = progressSnapshot;
+    }
+
+    if (
+      settlement.data.status === "confirming" &&
+      settlement.data.bridgeSourceTxHash &&
+      settlement.data.bridgeReceiveTxHash &&
+      settlement.data.creditTxHash
+    ) {
+      return settlement.data;
+    }
+
+    if (settlement.data.status === "failed" || settlement.data.status === "reversed") {
+      throw new Error(
+        `Settlement bridge moved into ${settlement.data.status} before sweep execution.`
+      );
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+
+  throw new Error(
+    `Timed out waiting for settlement bridge confirmation state (last status: ${lastSeenStatus}).`
+  );
+}
+
+async function waitForQueuedChargeResult(input: {
+  merchantId: string;
+  subscriptionId: string;
+  environment: "test" | "live";
+}) {
+  await connectToDatabase();
+
+  try {
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const charge = await ChargeModel.findOne({
+        merchantId: input.merchantId,
+        subscriptionId: input.subscriptionId,
+        environment: input.environment,
+      })
+        .sort({ createdAt: -1 })
+        .exec();
+
+      if (charge) {
+        const settlement = await SettlementModel.findOne({
+          merchantId: input.merchantId,
+          sourceChargeId: charge._id,
+          environment: input.environment,
+        })
+          .sort({ createdAt: -1 })
+          .exec();
+
+        if (settlement) {
+          return {
+            chargeId: charge._id.toString(),
+            externalChargeId: charge.externalChargeId,
+            settlementId: settlement._id.toString(),
+            collectionStatus: charge.status,
+            settlementStatus: settlement.status,
+          } satisfies SubscriptionChargeResult;
+        }
+
+        if (charge.status === "failed") {
+          throw new Error(
+            `Subscription charge failed before settlement creation (${charge.failureCode ?? "unknown_failure"}).`
+          );
+        }
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+  } finally {
+    await disconnectFromDatabase();
+  }
+
+  throw new Error("Timed out waiting for the queued charge and settlement.");
+}
+
 async function executeSafeCall(input: {
   safeAddress: string;
   ownerPrivateKey: Hex;
@@ -337,7 +481,7 @@ async function executeSafeCall(input: {
   });
 }
 
-async function assertLiquidityFunding() {
+async function assertLiquidityFunding(requiredSourceUsdc: number) {
   const cctpConfig = getCctpConfig("test").assertConfigured();
   const sourceAccount = privateKeyToAccount(cctpConfig.sourcePrivateKey as Hex);
   const avalancheAccount = privateKeyToAccount(getExecutorPrivateKey());
@@ -367,9 +511,11 @@ async function assertLiquidityFunding() {
     );
   }
 
-  if (sourceUsdc < toUsdcBaseUnits(25n)) {
+  if (sourceUsdc < BigInt(Math.ceil(requiredSourceUsdc * 1_000_000))) {
     fundingIssues.push(
-      `Circle test USDC missing for ${sourceAccount.address} on ${cctpConfig.sourceUsdcAddress}`
+      `Circle test USDC missing for ${sourceAccount.address} on ${cctpConfig.sourceUsdcAddress} (need about ${requiredSourceUsdc.toFixed(
+        2
+      )} USDC)`
     );
   }
 
@@ -413,6 +559,7 @@ async function registerOnchainMerchant(input: {
 
 async function main() {
   assertTestnetPrerequisites();
+  const planUsdAmount = getE2EPlanUsdAmount();
 
   await connectToDatabase();
 
@@ -479,7 +626,7 @@ async function main() {
   });
 
   console.log("4. Verifying bridge liquidity wallets.");
-  await assertLiquidityFunding();
+  await assertLiquidityFunding(planUsdAmount);
 
   console.log("5. Registering the merchant Safe on RenewProtocol.");
   await registerOnchainMerchant({
@@ -529,7 +676,7 @@ async function main() {
       environment: "test",
       planCode: `MVP-${Date.now()}`,
       name: "Core Pro",
-      usdAmount: 25,
+      usdAmount: planUsdAmount,
       billingIntervalDays: 30,
       trialDays: 0,
       retryWindowHours: 24,
@@ -626,7 +773,7 @@ async function main() {
       billingState: "healthy",
       paymentMethodState: "ok",
       subscriptionCount: 1,
-      monthlyVolumeUsdc: 25,
+      monthlyVolumeUsdc: planUsdAmount,
       autoReminderEnabled: true,
     },
   });
@@ -658,13 +805,7 @@ async function main() {
     queued: boolean;
     processedInline: boolean;
     subscriptionId: string;
-    result: {
-      chargeId: string;
-      externalChargeId: string;
-      settlementId: string;
-      collectionStatus: string;
-      settlementStatus: string;
-    };
+    result?: SubscriptionChargeResult;
   }>(`/v1/subscriptions/${subscription.data.id}/queue-charge`, {
     method: "POST",
     token,
@@ -673,7 +814,18 @@ async function main() {
     },
   });
 
-  if (!queuedCharge.data.result?.chargeId || !queuedCharge.data.result?.settlementId) {
+  const chargeResult =
+    queuedCharge.data.result?.chargeId && queuedCharge.data.result?.settlementId
+      ? queuedCharge.data.result
+      : queuedCharge.data.queued
+        ? await waitForQueuedChargeResult({
+            merchantId: seeded.merchantId,
+            subscriptionId: subscription.data.id,
+            environment: "test",
+          })
+        : null;
+
+  if (!chargeResult?.chargeId || !chargeResult.settlementId) {
     throw new Error("Subscription charge did not produce a charge and settlement.");
   }
 
@@ -688,9 +840,14 @@ async function main() {
     method: "POST",
     body: {
       environment: "test",
-      sequenceId: queuedCharge.data.result.externalChargeId,
+      sequenceId: chargeResult.externalChargeId,
       state: "complete",
     },
+  });
+
+  const bridgedSettlement = await waitForSettlementBridgeReady({
+    token,
+    settlementId: chargeResult.settlementId,
   });
 
   console.log("12. Creating the treasury sweep operation.");
@@ -699,7 +856,7 @@ async function main() {
     status: string;
     threshold: number;
     approvedCount: number;
-  }>(`/v1/settlements/${queuedCharge.data.result.settlementId}/sweeps/request`, {
+  }>(`/v1/settlements/${chargeResult.settlementId}/sweeps/request`, {
     method: "POST",
     token,
     body: {
@@ -765,7 +922,7 @@ async function main() {
 
   console.log("15. Asserting final API state.");
   const finalCharge = await apiRequest<{ id: string; status: string; failureCode: string | null }>(
-    `/v1/charges/${queuedCharge.data.result.chargeId}?environment=test`,
+    `/v1/charges/${chargeResult.chargeId}?environment=test`,
     {
       method: "GET",
       token,
@@ -794,8 +951,8 @@ async function main() {
 
   const settledState = await waitForSettledState({
     token,
-    settlementId: queuedCharge.data.result.settlementId,
-    chargeId: queuedCharge.data.result.chargeId,
+    settlementId: chargeResult.settlementId,
+    chargeId: chargeResult.chargeId,
     treasuryTxHash: executedOperation.data.txHash as Hex,
   });
 
@@ -826,7 +983,7 @@ async function main() {
     bridgeSourceTxHash: string | null;
     bridgeReceiveTxHash: string | null;
     creditTxHash: string | null;
-  }>(`/v1/settlements/${queuedCharge.data.result.settlementId}?environment=test`, {
+  }>(`/v1/settlements/${chargeResult.settlementId}?environment=test`, {
     method: "GET",
     token,
   });
@@ -840,8 +997,8 @@ async function main() {
         safeAddress: finalTreasury.data.account.safeAddress,
         planId: plan.data.id,
         subscriptionId: subscription.data.id,
-        chargeId: queuedCharge.data.result.chargeId,
-        settlementId: queuedCharge.data.result.settlementId,
+        chargeId: chargeResult.chargeId,
+        settlementId: chargeResult.settlementId,
         treasuryOperationId: requestedSweep.data.id,
         treasuryExecutionTxHash: executedOperation.data.txHash,
         bridgeSourceTxHash: finalSettlement.data.bridgeSourceTxHash,

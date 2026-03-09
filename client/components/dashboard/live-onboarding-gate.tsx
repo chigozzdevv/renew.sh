@@ -2,42 +2,21 @@
 
 import { useDashboardSession } from "@/components/dashboard/session-provider";
 import { useWorkspaceMode } from "@/components/dashboard/mode-provider";
-import { Badge, Button, Card } from "@/components/dashboard/ui";
+import { Badge, Button } from "@/components/dashboard/ui";
 
 const rolloutChecks = [
   {
     label: "Security audit",
-    detail: "Required before we open live KYB and operator KYC.",
+    detail: "This must be completed before merchant KYB and operator KYC can open.",
   },
   {
     label: "Mainnet deployment",
-    detail: "Required before live billing, treasury, and settlement access unlock.",
+    detail: "This must be completed before live billing, treasury, and settlement access can unlock.",
   },
   {
     label: "Live onboarding",
-    detail: "Will open with workspace KYB and operator KYC after the launch gate clears.",
+    detail: "Merchant KYB and operator KYC will open after the audit and mainnet launch are complete.",
   },
-];
-
-const onboardingTracks = [
-  {
-    label: "KYB",
-    title: "Business verification",
-    description:
-      "Verify the legal entity, registration details, payout ownership, and treasury profile before the workspace can process live billing.",
-  },
-  {
-    label: "KYC",
-    title: "Operator verification",
-    description:
-      "Verify the owners, admins, and treasury approvers who will operate live collections, treasury actions, and settlements.",
-  },
-];
-
-const testModeChecklist = [
-  "Create customers, plans, subscriptions, and payments in test mode.",
-  "Validate treasury configuration, wallet flows, and webhook integrations safely.",
-  "Keep the team in test until Renew opens live onboarding after audit and mainnet deployment.",
 ];
 
 export function LiveOnboardingGate() {
@@ -53,13 +32,17 @@ export function LiveOnboardingGate() {
             <Badge tone="warning">Live onboarding locked</Badge>
             <div className="space-y-3">
               <h1 className="font-display text-3xl font-semibold tracking-[-0.06em] text-[color:var(--ink)] sm:text-[2.6rem]">
-                Live onboarding with KYC/KYB opens after audit and mainnet deployment.
+                Live access opens after audit and mainnet deployment.
               </h1>
               <p className="max-w-2xl text-sm leading-7 text-[color:var(--muted)] sm:text-[15px]">
                 {firstName ? `${firstName}, ` : ""}
-                live workspace access stays locked until Renew clears the rollout
-                gate for security audit, mainnet deployment, merchant KYB, and
-                operator KYC. Use test mode for billing work for now.
+                your workspace will stay in test mode until Renew clears the live
+                rollout checklist.
+              </p>
+              <p className="max-w-2xl text-sm leading-7 text-[color:var(--muted)] sm:text-[15px]">
+                Live onboarding will open after the security audit and mainnet
+                deployment are complete, followed by merchant KYB and operator
+                KYC. Use test mode for billing work for now.
               </p>
             </div>
 
@@ -82,21 +65,35 @@ export function LiveOnboardingGate() {
             <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--brand)]">
               Rollout status
             </p>
-            <div className="mt-4 space-y-3">
-              {rolloutChecks.map((item) => (
+            <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">
+              Live access opens in three steps.
+            </p>
+            <div className="mt-5 space-y-0">
+              {rolloutChecks.map((item, index) => (
                 <div
                   key={item.label}
-                  className="rounded-[1.4rem] border border-[color:var(--line)] bg-[#f8faf7] px-4 py-3"
+                  className="relative flex gap-4 pb-5 last:pb-0"
                 >
-                  <div className="flex items-center gap-3">
-                    <span className="inline-flex h-2.5 w-2.5 rounded-full bg-[#c58b33]" />
-                    <p className="text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)]">
+                  <div className="relative flex w-9 shrink-0 flex-col items-center">
+                    <span className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#0c4a27]/12 bg-[#edf7eb] text-sm font-semibold text-[color:var(--brand)]">
+                      {index + 1}
+                    </span>
+                    {index < rolloutChecks.length - 1 ? (
+                      <span className="mt-2 h-full w-px bg-gradient-to-b from-[#cfe3c4] to-transparent" />
+                    ) : null}
+                  </div>
+
+                  <div className="min-w-0 flex-1 rounded-[1.4rem] border border-[color:var(--line)] bg-[#f8faf7] px-4 py-4">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--muted)]">
+                      Step {index + 1}
+                    </p>
+                    <p className="mt-2 text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)]">
                       {item.label}
                     </p>
+                    <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">
+                      {item.detail}
+                    </p>
                   </div>
-                  <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">
-                    {item.detail}
-                  </p>
                 </div>
               ))}
             </div>
@@ -104,50 +101,6 @@ export function LiveOnboardingGate() {
         </div>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-2">
-        <Card
-          title="What unlocks live access"
-          description="Live access will stay blocked until the workspace clears both compliance tracks."
-        >
-          <div className="grid gap-3 md:grid-cols-2">
-            {onboardingTracks.map((track) => (
-              <div
-                key={track.label}
-                className="rounded-[1.75rem] border border-[color:var(--line)] bg-[#f8faf7] p-5"
-              >
-                <Badge tone={track.label === "KYB" ? "brand" : "neutral"}>
-                  {track.label}
-                </Badge>
-                <h3 className="mt-4 font-display text-2xl font-semibold tracking-[-0.05em] text-[color:var(--ink)]">
-                  {track.title}
-                </h3>
-                <p className="mt-3 text-sm leading-7 text-[color:var(--muted)]">
-                  {track.description}
-                </p>
-              </div>
-            ))}
-          </div>
-        </Card>
-
-        <Card
-          title="Use test mode for now"
-          description="Everything below remains available while live onboarding stays closed."
-        >
-          <div className="space-y-3">
-            {testModeChecklist.map((item) => (
-              <div
-                key={item}
-                className="flex gap-3 rounded-[1.4rem] border border-[color:var(--line)] bg-white px-4 py-3"
-              >
-                <span className="mt-1 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#0c4a27] text-[10px] font-semibold text-[#d9f6bc]">
-                  OK
-                </span>
-                <p className="text-sm leading-7 text-[color:var(--muted)]">{item}</p>
-              </div>
-            ))}
-          </div>
-        </Card>
-      </div>
     </section>
   );
 }

@@ -12,3 +12,4 @@ contracts/broadcast/
 .env.test.local
 .env.production.local
 *.tsbuildinfo
+yellow-card.md

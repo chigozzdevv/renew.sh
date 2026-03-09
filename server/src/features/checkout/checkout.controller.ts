@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 
 import {
+  quoteCheckoutSessionMarket,
   completeCheckoutTestPayment,
   createCheckoutSession,
   getCheckoutSession,
@@ -8,6 +9,7 @@ import {
   submitCheckoutCustomer,
 } from "@/features/checkout/checkout.service";
 import {
+  checkoutMarketQuoteQuerySchema,
   checkoutSessionParamSchema,
   createCheckoutSessionSchema,
   submitCheckoutCustomerSchema,
@@ -131,6 +133,23 @@ export const submitCheckoutCustomerController = asyncHandler(
       success: true,
       message: "Checkout customer submitted.",
       data: session,
+    });
+  }
+);
+
+export const quoteCheckoutSessionMarketController = asyncHandler(
+  async (request: Request, response: Response) => {
+    if (!request.checkoutSessionAuth) {
+      throw new HttpError(401, "Checkout session context is missing.");
+    }
+
+    const params = checkoutSessionParamSchema.parse(request.params);
+    const query = checkoutMarketQuoteQuerySchema.parse(request.query);
+    const quote = await quoteCheckoutSessionMarket(params.sessionId, query.market);
+
+    response.status(200).json({
+      success: true,
+      data: quote,
     });
   }
 );

@@ -10,6 +10,7 @@ import {
   Button,
   Card,
   DarkCard,
+  DarkField,
   Field,
   Input,
   MetricCard,
@@ -887,8 +888,7 @@ export function TreasuryPageSurface() {
                     <div className="grid gap-3 sm:grid-cols-2">
                       <Button
                         type="button"
-                        tone="brand"
-                        className="border-white/0 bg-[#d9f6bc] text-[#0c4a27]"
+                        tone="darkBrand"
                         disabled={
                           isMutating ||
                           !canCurrentUserApprove ||
@@ -904,7 +904,7 @@ export function TreasuryPageSurface() {
                       </Button>
                       <Button
                         type="button"
-                        className="border-white/12 bg-white/6 text-white"
+                        tone="darkNeutral"
                         disabled={
                           isMutating ||
                           selectedOperation.status === "rejected" ||
@@ -918,7 +918,8 @@ export function TreasuryPageSurface() {
                     </div>
                     <Button
                       type="button"
-                      className="w-full border-white/12 bg-white/6 text-white"
+                      tone="darkNeutral"
+                      className="w-full"
                       disabled={isMutating || !selectedOperation.canExecute}
                       onClick={() => void handleExecuteOperation(selectedOperation.id)}
                     >
@@ -1179,24 +1180,5 @@ export function TreasuryPageSurface() {
         </>
       )}
     </section>
-  );
-}
-
-function DarkField({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="rounded-2xl border border-white/10 bg-white/6 px-4 py-3">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/46">
-        {label}
-      </p>
-      <p className="mt-2 text-sm font-semibold tracking-[-0.02em] text-white">
-        {value}
-      </p>
-    </div>
   );
 }

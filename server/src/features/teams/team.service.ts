@@ -77,7 +77,18 @@ async function ensureTeamMember(teamMemberId: string, merchantId: string) {
 }
 
 export async function createTeamMember(input: CreateTeamMemberInput) {
-  await ensureMerchant(input.merchantId);
+  const merchant = await ensureMerchant(input.merchantId);
+
+  const unsupportedMarkets = input.markets.filter(
+    (market) => !merchant.supportedMarkets.includes(market)
+  );
+
+  if (unsupportedMarkets.length > 0) {
+    throw new HttpError(
+      409,
+      `Team member markets must be selected from the merchant-supported catalog: ${unsupportedMarkets.join(", ")}.`
+    );
+  }
 
   const existingMember = await TeamMemberModel.findOne({
     merchantId: input.merchantId,
@@ -174,7 +185,7 @@ export async function updateTeamMember(
   merchantId: string,
   input: UpdateTeamMemberInput
 ) {
-  await ensureMerchant(merchantId);
+  const merchant = await ensureMerchant(merchantId);
   const member = await ensureTeamMember(teamMemberId, merchantId);
 
   if (input.name !== undefined) {
@@ -195,6 +206,16 @@ export async function updateTeamMember(
   }
 
   if (input.markets !== undefined) {
+    const unsupportedMarkets = input.markets.filter(
+      (market) => !merchant.supportedMarkets.includes(market)
+    );
+
+    if (unsupportedMarkets.length > 0) {
+      throw new HttpError(
+        409,
+        `Team member markets must be selected from the merchant-supported catalog: ${unsupportedMarkets.join(", ")}.`
+      );
+    }
     member.markets = input.markets;
   }
 

@@ -14,7 +14,8 @@ import { useAuthedResource } from "@/components/dashboard/use-authed-resource";
 import {
   Button,
   Card,
-  Field,
+  DarkCard,
+  DarkField,
   Input,
   MetricCard,
   PageState,
@@ -188,36 +189,56 @@ export function PaymentsSurface() {
           </div>
         </Card>
 
-        <Card title={selectedPayment?.externalChargeId ?? "Charge details"} description={selectedPayment ? subscriptionById.get(selectedPayment.subscriptionId)?.customerName ?? selectedPayment.subscriptionId : "Select a charge to inspect it."}>
+        <DarkCard
+          title={selectedPayment?.externalChargeId ?? "Charge details"}
+          description={
+            selectedPayment
+              ? subscriptionById.get(selectedPayment.subscriptionId)?.customerName ??
+                selectedPayment.subscriptionId
+              : "Select a charge to inspect it."
+          }
+        >
           {selectedPayment ? (
             <div className="space-y-4">
               <div className="grid gap-3 sm:grid-cols-2">
-                <Field label="Local amount" value={String(selectedPayment.localAmount)} />
-                <Field label="USDC amount" value={formatCurrency(selectedPayment.usdcAmount)} />
-                <Field label="FX rate" value={String(selectedPayment.fxRate)} />
-                <Field label="Fee" value={formatCurrency(selectedPayment.feeAmount)} />
-                <Field label="Settlement source" value={selectedPayment.settlementSource ?? "Not set"} />
-                <Field label="Processed" value={formatDateTime(selectedPayment.processedAt)} />
+                <DarkField label="Local amount" value={String(selectedPayment.localAmount)} />
+                <DarkField
+                  label="USDC amount"
+                  value={formatCurrency(selectedPayment.usdcAmount)}
+                />
+                <DarkField label="FX rate" value={String(selectedPayment.fxRate)} />
+                <DarkField
+                  label="Fee"
+                  value={formatCurrency(selectedPayment.feeAmount)}
+                />
+                <DarkField
+                  label="Settlement source"
+                  value={selectedPayment.settlementSource ?? "Not set"}
+                />
+                <DarkField
+                  label="Processed"
+                  value={formatDateTime(selectedPayment.processedAt)}
+                />
               </div>
 
               {selectedPayment.failureCode ? (
-                <div className="rounded-2xl border border-[#eed0cb] bg-[#fff7f6] px-4 py-4 text-sm leading-7 text-[#8b4338]">
+                <div className="rounded-2xl border border-[#603029] bg-[#2d1613] px-4 py-4 text-sm leading-7 text-[#ffb6aa]">
                   {selectedPayment.failureCode}
                 </div>
               ) : null}
 
               {selectedPayment.status !== "settled" && selectedPayment.status !== "reversed" ? (
-                <Button tone="brand" disabled={isBusy} onClick={() => void handleRetry()}>
+                <Button tone="darkBrand" disabled={isBusy} onClick={() => void handleRetry()}>
                   {isBusy ? "Queueing..." : "Retry charge"}
                 </Button>
               ) : null}
             </div>
           ) : (
-            <p className="text-sm leading-7 text-[color:var(--muted)]">
+            <p className="text-sm leading-7 text-white/66">
               No charge matches the current filter.
             </p>
           )}
-        </Card>
+        </DarkCard>
       </div>
     </div>
   );

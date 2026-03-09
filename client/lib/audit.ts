@@ -60,5 +60,18 @@ export async function loadAuditLogs(input: {
     },
   });
 
-  return response.data;
+  const items = Array.isArray(response.data?.items) ? response.data.items : [];
+  const total = response.data?.pagination?.total ?? items.length;
+  const page = response.data?.pagination?.page ?? (input.page ?? 1);
+  const limit = response.data?.pagination?.limit ?? 20;
+
+  return {
+    items,
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages: response.data?.pagination?.totalPages ?? Math.max(1, Math.ceil(total / limit)),
+    },
+  } satisfies AuditLogPage;
 }

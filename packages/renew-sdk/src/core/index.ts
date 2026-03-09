@@ -47,6 +47,7 @@ export type {
 export type {
   CreateCheckoutSessionInput,
   CreateCheckoutSessionResult,
+  RenewCheckoutMarketQuote,
   RenewCheckoutPlan,
   RenewCheckoutNextAction,
   RenewCheckoutPaymentInstructions,

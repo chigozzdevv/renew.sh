@@ -1,4 +1,5 @@
 import { getYellowCardConfig } from "@/config/yellow-card.config";
+import { HttpError } from "@/shared/errors/http-error";
 import type {
   YellowCardChannel,
   YellowCardCollectionRequestInput,
@@ -9,6 +10,10 @@ import type {
   CreateWidgetQuoteInput,
   ResolveBankAccountInput,
 } from "@/features/payment-rails/payment-rails.validation";
+import {
+  getSimulatedYellowCardMarketByCurrency,
+  listSimulatedYellowCardMarkets,
+} from "@/features/payment-rails/providers/yellow-card/yellow-card.simulated-catalog";
 import type { RuntimeMode } from "@/shared/constants/runtime-mode";
 
 type MockCollectionRecord = {
@@ -88,133 +93,38 @@ function inferMockSettlementStatus(
 }
 
 function buildMockChannels(country?: string): YellowCardChannel[] {
-  const seed: YellowCardChannel[] = [
-    {
-      id: "yc-channel-ng-bank",
-      country: "NG",
-      currency: "NGN",
-      countryCurrency: "NGN",
-      status: "active",
-      widgetStatus: "active",
-      apiStatus: "active",
-      feeLocal: 185.2,
-      feeUSD: 1.2,
-      min: 100,
-      max: 5000000,
-      widgetMin: 100,
-      widgetMax: 10000,
-      channelType: "bank",
-      rampType: "withdraw",
-      settlementType: "instant",
-      estimatedSettlementTime: 60,
-    },
-    {
-      id: "yc-channel-gh-momo",
-      country: "GH",
-      currency: "GHS",
-      countryCurrency: "GHS",
-      status: "active",
-      widgetStatus: "active",
-      apiStatus: "active",
-      feeLocal: 12,
-      feeUSD: 0.8,
-      min: 25,
-      max: 250000,
-      widgetMin: 25,
-      widgetMax: 5000,
-      channelType: "momo",
-      rampType: "withdraw",
-      settlementType: "instant",
-      estimatedSettlementTime: 45,
-    },
-    {
-      id: "yc-channel-ke-bank",
-      country: "KE",
-      currency: "KES",
-      countryCurrency: "KES",
-      status: "active",
-      widgetStatus: "active",
-      apiStatus: "active",
-      feeLocal: 85,
-      feeUSD: 0.6,
-      min: 50,
-      max: 350000,
-      widgetMin: 50,
-      widgetMax: 7500,
-      channelType: "bank",
-      rampType: "withdraw",
-      settlementType: "instant",
-      estimatedSettlementTime: 50,
-    },
-    {
-      id: "yc-channel-zm-bank",
-      country: "ZM",
-      currency: "ZMW",
-      countryCurrency: "ZMW",
-      status: "active",
-      widgetStatus: "active",
-      apiStatus: "active",
-      feeLocal: 18,
-      feeUSD: 0.9,
-      min: 20,
-      max: 80000,
-      widgetMin: 20,
-      widgetMax: 2500,
-      channelType: "bank",
-      rampType: "withdraw",
-      settlementType: "instant",
-      estimatedSettlementTime: 90,
-    },
-  ];
-
-  return country ? seed.filter((entry) => entry.country === country) : seed;
+  return listSimulatedYellowCardMarkets(country).map((entry) => ({
+    id: `yc-channel-${entry.countryCode.toLowerCase()}-${entry.channelType}`,
+    country: entry.countryCode,
+    currency: entry.currency,
+    countryCurrency: entry.currency,
+    status: "active",
+    widgetStatus: "active",
+    apiStatus: "active",
+    feeLocal: entry.feeLocal,
+    feeUSD: entry.feeUsd,
+    min: entry.min,
+    max: entry.max,
+    widgetMin: entry.widgetMin,
+    widgetMax: entry.widgetMax,
+    channelType: entry.channelType,
+    rampType: "withdraw",
+    settlementType: "instant",
+    estimatedSettlementTime: entry.estimatedSettlementTime,
+  }));
 }
 
 function buildMockNetworks(country?: string): YellowCardNetwork[] {
-  const seed: YellowCardNetwork[] = [
-    {
-      id: "yc-network-ng-access",
-      code: "044",
-      country: "NG",
-      name: "Access Bank",
-      status: "active",
-      accountNumberType: "bank",
-      countryAccountNumberType: "NGBANK",
-      channelIds: ["yc-channel-ng-bank"],
-    },
-    {
-      id: "yc-network-gh-mtn",
-      code: "MTN",
-      country: "GH",
-      name: "MTN Ghana",
-      status: "active",
-      accountNumberType: "momo",
-      countryAccountNumberType: "GHMOMO",
-      channelIds: ["yc-channel-gh-momo"],
-    },
-    {
-      id: "yc-network-ke-kcb",
-      code: "01",
-      country: "KE",
-      name: "KCB Kenya",
-      status: "active",
-      accountNumberType: "bank",
-      countryAccountNumberType: "KEBANK",
-      channelIds: ["yc-channel-ke-bank"],
-    },
-    {
-      id: "yc-network-zm-zanaco",
-      code: "01",
-      country: "ZM",
-      name: "Zanaco",
-      status: "active",
-      accountNumberType: "bank",
-      countryAccountNumberType: "ZMBANK",
-      channelIds: ["yc-channel-zm-bank"],
-    },
-  ];
-
-  return country ? seed.filter((entry) => entry.country === country) : seed;
+  return listSimulatedYellowCardMarkets(country).map((entry) => ({
+    id: `yc-network-${entry.countryCode.toLowerCase()}-${entry.networkCode.toLowerCase()}`,
+    code: entry.networkCode,
+    country: entry.countryCode,
+    name: entry.networkName,
+    status: "active",
+    accountNumberType: entry.accountNumberType,
+    countryAccountNumberType: entry.countryAccountNumberType,
+    channelIds: [`yc-channel-${entry.countryCode.toLowerCase()}-${entry.channelType}`],
+  }));
 }
 
 const mockCollections = new Map<string, MockCollectionRecord>();
@@ -235,11 +145,27 @@ export class YellowCardSimulatedProvider implements YellowCardProvider {
   }
 
   async getWidgetQuote(input: CreateWidgetQuoteInput) {
-    const baseAmount = input.localAmount ?? Number((input.cryptoAmount ?? 0) * 1600);
-    const serviceFeeLocal = Number((baseAmount * 0.01).toFixed(2));
+    const market = getSimulatedYellowCardMarketByCurrency(input.currency);
+
+    if (!market) {
+      throw new HttpError(
+        404,
+        `Sandbox quote coverage is not configured for currency ${input.currency}.`
+      );
+    }
+
+    const quotedCryptoAmount = input.cryptoAmount ?? 0;
+    const baseAmount =
+      input.localAmount ??
+      Number((quotedCryptoAmount * market.rateLocalPerUsd).toFixed(2));
+    const serviceFeeLocal =
+      input.localAmount !== undefined
+        ? Number((baseAmount * 0.01).toFixed(2))
+        : Number(market.feeLocal.toFixed(2));
     const partnerFeeLocal = Number((baseAmount * 0.0025).toFixed(2));
     const fiatReceived = Number((baseAmount - serviceFeeLocal - partnerFeeLocal).toFixed(2));
-    const cryptoAmount = input.cryptoAmount ?? Number((baseAmount / 1600).toFixed(4));
+    const cryptoAmount =
+      input.cryptoAmount ?? Number((baseAmount / market.rateLocalPerUsd).toFixed(4));
 
     return {
       currency: input.currency,
@@ -252,15 +178,15 @@ export class YellowCardSimulatedProvider implements YellowCardProvider {
       convertedAmount: baseAmount,
       rateLocal: Number((baseAmount / cryptoAmount).toFixed(2)),
       serviceFeeLocal,
-      serviceFeeUSD: Number((serviceFeeLocal / 1600).toFixed(2)),
+      serviceFeeUSD: Number((serviceFeeLocal / market.rateLocalPerUsd).toFixed(2)),
       partnerFeeLocal,
-      partnerFeeUSD: Number((partnerFeeLocal / 1600).toFixed(2)),
+      partnerFeeUSD: Number((partnerFeeLocal / market.rateLocalPerUsd).toFixed(2)),
       paymentMethod: "local-collection",
       settlement: "instant",
       updatedAt: new Date().toISOString(),
       expireAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
-      transactionLimitMin: 100,
-      transactionLimitMax: 5000000,
+      transactionLimitMin: market.widgetMin,
+      transactionLimitMax: market.widgetMax,
     };
   }
 
@@ -281,11 +207,15 @@ export class YellowCardSimulatedProvider implements YellowCardProvider {
     const now = Date.now();
     const state = inferMockSettlementStatus(input.source.accountNumber);
     const seed = `${this.config.apiKey}:${input.sequenceId}`;
-    const convertedAmount = Number((input.localAmount ?? (input.amount ?? 0) * 1600).toFixed(2));
+    const market = getSimulatedYellowCardMarketByCurrency(input.currency ?? "NGN");
+    const rateLocalPerUsd = market?.rateLocalPerUsd ?? 1555;
+    const convertedAmount = Number(
+      (input.localAmount ?? (input.amount ?? 0) * rateLocalPerUsd).toFixed(2)
+    );
     const rate =
       input.amount && input.amount > 0
         ? Number((convertedAmount / input.amount).toFixed(4))
-        : 1600;
+        : rateLocalPerUsd;
     const bankInfo =
       input.source.accountType === "bank"
         ? {

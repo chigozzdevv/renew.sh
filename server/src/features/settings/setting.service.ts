@@ -227,6 +227,12 @@ export async function updateSettingsByMerchantId(
     }
 
     if (input.profile.defaultMarket !== undefined) {
+      if (!merchant.supportedMarkets.includes(input.profile.defaultMarket)) {
+        throw new HttpError(
+          409,
+          `Default market ${input.profile.defaultMarket} is not enabled for this merchant.`
+        );
+      }
       setting.defaultMarket = input.profile.defaultMarket;
     }
 

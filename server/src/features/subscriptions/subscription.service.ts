@@ -4,6 +4,7 @@ import { queueNames } from "@/shared/workers/queue-names";
 
 import { runSubscriptionChargeJob } from "@/features/charges/charge.service";
 import { MerchantModel } from "@/features/merchants/merchant.model";
+import { quoteUsdAmountInBillingCurrency } from "@/features/payment-rails/payment-rails.service";
 import { PlanModel } from "@/features/plans/plan.model";
 import { SubscriptionModel } from "@/features/subscriptions/subscription.model";
 import type {
@@ -79,22 +80,42 @@ async function ensureSubscriptionScope(
 }
 
 export async function createSubscription(input: CreateSubscriptionInput) {
-  const [merchantExists, planExists] = await Promise.all([
-    MerchantModel.exists({ _id: input.merchantId }),
-    PlanModel.exists({
+  const [merchant, plan] = await Promise.all([
+    MerchantModel.findById(input.merchantId).exec(),
+    PlanModel.findOne({
       _id: input.planId,
       merchantId: input.merchantId,
       ...createRuntimeModeCondition("environment", input.environment),
-    }),
+    }).exec(),
   ]);
 
-  if (!merchantExists) {
+  if (!merchant) {
     throw new HttpError(404, "Merchant was not found.");
   }
 
-  if (!planExists) {
+  if (!plan) {
     throw new HttpError(404, "Plan was not found.");
   }
+
+  if (!merchant.supportedMarkets.includes(input.billingCurrency)) {
+    throw new HttpError(
+      409,
+      `Currency ${input.billingCurrency} is not enabled for this merchant.`
+    );
+  }
+
+  if (!plan.supportedMarkets.includes(input.billingCurrency)) {
+    throw new HttpError(
+      409,
+      `Currency ${input.billingCurrency} is not enabled for this plan.`
+    );
+  }
+
+  const quote = await quoteUsdAmountInBillingCurrency({
+    environment: input.environment,
+    currency: input.billingCurrency,
+    usdAmount: plan.usdAmount,
+  });
 
   const createdSubscription = await SubscriptionModel.create({
     merchantId: input.merchantId,
@@ -103,7 +124,7 @@ export async function createSubscription(input: CreateSubscriptionInput) {
     customerRef: input.customerRef,
     customerName: input.customerName,
     billingCurrency: input.billingCurrency,
-    localAmount: input.localAmount,
+    localAmount: quote.localAmount,
     paymentAccountType: input.paymentAccountType,
     paymentAccountNumber: input.paymentAccountNumber ?? null,
     paymentNetworkId: input.paymentNetworkId ?? null,
@@ -240,7 +261,7 @@ export async function queueSubscriptionCharge(
     { subscriptionId },
     {
       attempts: 5,
-      jobId: `subscription-charge:${subscriptionId}:${Math.floor(
+      jobId: `subscription-charge-${subscriptionId}-${Math.floor(
         Date.now() / 60000
       )}`,
     }

@@ -9,7 +9,8 @@ import { useAuthedResource } from "@/components/dashboard/use-authed-resource";
 import {
   Button,
   Card,
-  Field,
+  DarkCard,
+  DarkField,
   Input,
   MetricCard,
   PageState,
@@ -18,6 +19,7 @@ import {
   Table,
   TableRow,
 } from "@/components/dashboard/ui";
+import { loadBillingMarketCatalog } from "@/lib/markets";
 import {
   blacklistCustomer,
   createCustomer,
@@ -43,7 +45,7 @@ export function CustomersSurface() {
     customerRef: "",
     name: "",
     email: "",
-    market: "NGN",
+    market: "",
   });
 
   const { data, isLoading, error, reload } = useAuthedResource(
@@ -57,8 +59,21 @@ export function CustomersSurface() {
       }),
     [mode, status, search]
   );
+  const { data: marketCatalog } = useAuthedResource(
+    async ({ token, merchantId }) =>
+      loadBillingMarketCatalog({
+        token,
+        merchantId,
+        environment: mode,
+      }),
+    [mode]
+  );
 
   const customers = data ?? [];
+  const supportedMarkets =
+    marketCatalog?.markets.filter((market) =>
+      marketCatalog.merchantSupportedMarkets.includes(market.currency)
+    ) ?? [];
   const selectedCustomer =
     customers.find((customer) => customer.id === selectedId) ?? customers[0] ?? null;
 
@@ -83,6 +98,16 @@ export function CustomersSurface() {
 
     return () => window.clearTimeout(timeout);
   }, [errorMessage, message]);
+
+  useEffect(() => {
+    if (!marketCatalog?.defaultMarket) {
+      return;
+    }
+
+    setDraft((current) =>
+      current.market ? current : { ...current, market: marketCatalog.defaultMarket ?? "" }
+    );
+  }, [marketCatalog?.defaultMarket]);
 
   const metrics = useMemo(() => {
     const atRisk = customers.filter(
@@ -136,7 +161,7 @@ export function CustomersSurface() {
         customerRef: "",
         name: "",
         email: "",
-        market: draft.market,
+        market: marketCatalog?.defaultMarket ?? draft.market,
       });
       setShowCreate(false);
       setMessage("Customer added.");
@@ -257,9 +282,10 @@ export function CustomersSurface() {
                     setDraft((current) => ({ ...current, market: event.target.value }))
                   }
                 >
-                  {["NGN", "GHS", "KES", "ZMW", "UGX", "TZS"].map((market) => (
-                    <option key={market} value={market}>
-                      {market}
+                  <option value="">Select market</option>
+                  {supportedMarkets.map((market) => (
+                    <option key={market.currency} value={market.currency}>
+                      {market.currency}
                     </option>
                   ))}
                 </Select>
@@ -285,7 +311,8 @@ export function CustomersSurface() {
                       isBusy === "create-customer" ||
                       !draft.customerRef.trim() ||
                       !draft.name.trim() ||
-                      !draft.email.trim()
+                      !draft.email.trim() ||
+                      !draft.market
                     }
                   >
                     {isBusy === "create-customer" ? "Saving..." : "Save customer"}
@@ -333,35 +360,60 @@ export function CustomersSurface() {
           </div>
         </Card>
 
-        <Card title={selectedCustomer?.name ?? "Customer profile"} description={selectedCustomer?.email ?? "Select a customer to inspect billing state in the selected environment."}>
+        <DarkCard
+          title={selectedCustomer?.name ?? "Customer profile"}
+          description={
+            selectedCustomer?.email ??
+            "Select a customer to inspect billing state in the selected environment."
+          }
+        >
           {selectedCustomer ? (
             <div className="space-y-4">
               <div className="grid gap-3 sm:grid-cols-2">
-                <Field label="Market" value={selectedCustomer.market} />
-                <Field label="Monthly volume" value={formatCurrency(selectedCustomer.monthlyVolumeUsdc)} />
-                <Field label="Next renewal" value={formatDate(selectedCustomer.nextRenewalAt)} />
-                <Field label="Last charge" value={formatDate(selectedCustomer.lastChargeAt)} />
-                <Field label="Payment method" value={selectedCustomer.paymentMethodState.replace(/_/g, " ")} />
-                <Field label="Billing state" value={selectedCustomer.billingState.replace(/_/g, " ")} />
+                <DarkField label="Market" value={selectedCustomer.market} />
+                <DarkField
+                  label="Monthly volume"
+                  value={formatCurrency(selectedCustomer.monthlyVolumeUsdc)}
+                />
+                <DarkField
+                  label="Next renewal"
+                  value={formatDate(selectedCustomer.nextRenewalAt)}
+                />
+                <DarkField
+                  label="Last charge"
+                  value={formatDate(selectedCustomer.lastChargeAt)}
+                />
+                <DarkField
+                  label="Payment method"
+                  value={selectedCustomer.paymentMethodState.replace(/_/g, " ")}
+                />
+                <DarkField
+                  label="Billing state"
+                  value={selectedCustomer.billingState.replace(/_/g, " ")}
+                />
               </div>
 
               <div className="flex flex-wrap gap-3">
                 {selectedCustomer.status === "paused" ? (
                   <Button
-                    tone="brand"
+                    tone="darkBrand"
                     disabled={isBusy === "resume"}
                     onClick={() => void handlePauseResume("resume")}
                   >
                     {isBusy === "resume" ? "Resuming..." : "Resume billing"}
                   </Button>
                 ) : (
-                  <Button disabled={isBusy === "pause"} onClick={() => void handlePauseResume("pause")}>
+                  <Button
+                    tone="darkNeutral"
+                    disabled={isBusy === "pause"}
+                    onClick={() => void handlePauseResume("pause")}
+                  >
                     {isBusy === "pause" ? "Pausing..." : "Pause billing"}
                   </Button>
                 )}
                 {selectedCustomer.status !== "blacklisted" ? (
                   <Button
-                    tone="danger"
+                    tone="darkDanger"
                     disabled={isBusy === "blacklist"}
                     onClick={() => void handleBlacklist()}
                   >
@@ -371,17 +423,17 @@ export function CustomersSurface() {
               </div>
 
               {selectedCustomer.blacklistReason ? (
-                <div className="rounded-2xl border border-[#eed0cb] bg-[#fff7f6] px-4 py-4 text-sm leading-7 text-[#8b4338]">
+                <div className="rounded-2xl border border-[#603029] bg-[#2d1613] px-4 py-4 text-sm leading-7 text-[#ffb6aa]">
                   {selectedCustomer.blacklistReason}
                 </div>
               ) : null}
             </div>
           ) : (
-            <p className="text-sm leading-7 text-[color:var(--muted)]">
+            <p className="text-sm leading-7 text-white/66">
               No customer record matches the current filter.
             </p>
           )}
-        </Card>
+        </DarkCard>
       </div>
     </div>
   );

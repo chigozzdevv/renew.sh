@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import { MarketMultiSelect } from "@/components/dashboard/market-controls";
+import { useWorkspaceMode } from "@/components/dashboard/mode-provider";
 import { useDashboardSession } from "@/components/dashboard/session-provider";
 import {
   StatusBadge,
@@ -12,7 +14,8 @@ import { useAuthedResource } from "@/components/dashboard/use-authed-resource";
 import {
   Button,
   Card,
-  Field,
+  DarkCard,
+  DarkField,
   Input,
   MetricCard,
   PageState,
@@ -21,6 +24,7 @@ import {
   Table,
   TableRow,
 } from "@/components/dashboard/ui";
+import { loadBillingMarketCatalog } from "@/lib/markets";
 import {
   createTeamMember,
   deleteTeamMember,
@@ -47,6 +51,7 @@ const roleOptions: TeamRole[] = [
 
 export function TeamsSurface() {
   const { token, user } = useDashboardSession();
+  const { mode } = useWorkspaceMode();
   const [status, setStatus] = useState<TeamStatusFilter>("all");
   const [role, setRole] = useState<TeamRoleFilter>("all");
   const [search, setSearch] = useState("");
@@ -58,7 +63,7 @@ export function TeamsSurface() {
     name: "",
     email: "",
     role: "support" as TeamRole,
-    markets: "NGN,GHS",
+    markets: [] as string[],
   });
 
   const { data, isLoading, error, reload } = useAuthedResource(
@@ -72,8 +77,21 @@ export function TeamsSurface() {
       }),
     [role, search, status]
   );
+  const { data: marketCatalog } = useAuthedResource(
+    async ({ token, merchantId }) =>
+      loadBillingMarketCatalog({
+        token,
+        merchantId,
+        environment: mode,
+      }),
+    [mode]
+  );
 
   const members = data ?? [];
+  const supportedMarkets =
+    marketCatalog?.markets.filter((market) =>
+      marketCatalog.merchantSupportedMarkets.includes(market.currency)
+    ) ?? [];
   const selectedMember = members.find((member) => member.id === selectedId) ?? members[0] ?? null;
 
   useEffect(() => {
@@ -97,6 +115,18 @@ export function TeamsSurface() {
 
     return () => window.clearTimeout(timeout);
   }, [errorMessage, message]);
+
+  useEffect(() => {
+    if (!marketCatalog?.merchantSupportedMarkets.length) {
+      return;
+    }
+
+    setInviteDraft((current) =>
+      current.markets.length > 0
+        ? current
+        : { ...current, markets: marketCatalog.merchantSupportedMarkets }
+    );
+  }, [marketCatalog]);
 
   const metrics = useMemo(
     () => ({
@@ -135,16 +165,13 @@ export function TeamsSurface() {
         name: inviteDraft.name.trim(),
         email: inviteDraft.email.trim(),
         role: inviteDraft.role,
-        markets: inviteDraft.markets
-          .split(",")
-          .map((value) => value.trim().toUpperCase())
-          .filter(Boolean),
+        markets: inviteDraft.markets,
       });
       setInviteDraft({
         name: "",
         email: "",
         role: "support",
-        markets: "NGN,GHS",
+        markets: marketCatalog?.merchantSupportedMarkets ?? [],
       });
       setMessage("Invite sent.");
     });
@@ -301,9 +328,28 @@ export function TeamsSurface() {
                   </option>
                 ))}
               </Select>
-              <Input placeholder="Markets comma-separated" value={inviteDraft.markets} onChange={(event) => setInviteDraft((current) => ({ ...current, markets: event.target.value }))} />
+              <div className="space-y-3 md:col-span-2">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--muted)]">
+                  Market access
+                </p>
+                <MarketMultiSelect
+                  options={supportedMarkets}
+                  value={inviteDraft.markets}
+                  onChange={(markets) => setInviteDraft((current) => ({ ...current, markets }))}
+                  allLabel="All merchant markets"
+                />
+              </div>
               <div className="md:col-span-2">
-                <Button tone="brand" disabled={isBusy === "invite-member"} onClick={() => void handleInvite()}>
+                <Button
+                  tone="brand"
+                  disabled={
+                    isBusy === "invite-member" ||
+                    !inviteDraft.name.trim() ||
+                    !inviteDraft.email.trim() ||
+                    inviteDraft.markets.length === 0
+                  }
+                  onClick={() => void handleInvite()}
+                >
                   {isBusy === "invite-member" ? "Sending..." : "Send invite"}
                 </Button>
               </div>
@@ -333,27 +379,56 @@ export function TeamsSurface() {
           </div>
         </Card>
 
-        <Card title={selectedMember?.name ?? "Member profile"} description={selectedMember?.email ?? "Select a member to manage role and access."}>
+        <DarkCard
+          title={selectedMember?.name ?? "Member profile"}
+          description={selectedMember?.email ?? "Select a member to manage role and access."}
+        >
           {selectedMember ? (
             <div className="space-y-4">
               <div className="grid gap-3 sm:grid-cols-2">
-                <Field label="Role" value={selectedMember.role} />
-                <Field label="Status" value={<StatusBadge value={selectedMember.status} />} />
-                <Field label="Access" value={selectedMember.access} />
-                <Field label="Markets" value={selectedMember.markets.join(", ") || "Global"} />
-                <Field label="Last active" value={formatDateTime(selectedMember.lastActiveAt)} />
-                <Field label="Invite sent" value={formatDateTime(selectedMember.inviteSentAt)} />
+                <DarkField label="Role" value={selectedMember.role} />
+                <DarkField
+                  label="Status"
+                  value={<StatusBadge value={selectedMember.status} />}
+                />
+                <DarkField label="Access" value={selectedMember.access} />
+                <DarkField
+                  label="Markets"
+                  value={selectedMember.markets.join(", ") || "Global"}
+                />
+                <DarkField
+                  label="Last active"
+                  value={formatDateTime(selectedMember.lastActiveAt)}
+                />
+                <DarkField
+                  label="Invite sent"
+                  value={formatDateTime(selectedMember.inviteSentAt)}
+                />
               </div>
 
               <div className="grid gap-3 md:grid-cols-2">
-                <Select value={selectedMember.role} onChange={(event) => void handleRoleChange(event.target.value as TeamRole)}>
+                <Select
+                  value={selectedMember.role}
+                  className="border-white/12 bg-white/6 text-white focus:border-[#d9f6bc]"
+                  onChange={(event) =>
+                    void handleRoleChange(event.target.value as TeamRole)
+                  }
+                >
                   {roleOptions.map((option) => (
                     <option key={option} value={option}>
                       {option}
                     </option>
                   ))}
                 </Select>
-                <Select value={selectedMember.status} onChange={(event) => void handleStatusChange(event.target.value as TeamMemberRecord["status"])}>
+                <Select
+                  value={selectedMember.status}
+                  className="border-white/12 bg-white/6 text-white focus:border-[#d9f6bc]"
+                  onChange={(event) =>
+                    void handleStatusChange(
+                      event.target.value as TeamMemberRecord["status"]
+                    )
+                  }
+                >
                   <option value="active">Active</option>
                   <option value="invited">Invited</option>
                   <option value="suspended">Suspended</option>
@@ -361,28 +436,44 @@ export function TeamsSurface() {
               </div>
 
               <div className="flex flex-wrap gap-3">
-                <Button tone="brand" disabled={isBusy === "sync-role"} onClick={() => void handleSyncRole()}>
+                <Button
+                  tone="darkBrand"
+                  disabled={isBusy === "sync-role"}
+                  onClick={() => void handleSyncRole()}
+                >
                   Sync role
                 </Button>
                 {selectedMember.status === "invited" ? (
                   <>
-                    <Button disabled={isBusy === "resend-invite"} onClick={() => void handleResendInvite()}>
+                    <Button
+                      tone="darkNeutral"
+                      disabled={isBusy === "resend-invite"}
+                      onClick={() => void handleResendInvite()}
+                    >
                       Resend invite
                     </Button>
-                    <Button tone="danger" disabled={isBusy === "revoke-invite"} onClick={() => void handleRevokeInvite()}>
+                    <Button
+                      tone="darkDanger"
+                      disabled={isBusy === "revoke-invite"}
+                      onClick={() => void handleRevokeInvite()}
+                    >
                       Revoke invite
                     </Button>
                   </>
                 ) : null}
                 {selectedMember.role !== "owner" ? (
-                  <Button tone="danger" disabled={isBusy === "delete-member"} onClick={() => void handleDeleteMember()}>
+                  <Button
+                    tone="darkDanger"
+                    disabled={isBusy === "delete-member"}
+                    onClick={() => void handleDeleteMember()}
+                  >
                     Remove member
                   </Button>
                 ) : null}
               </div>
 
-              <div className="rounded-2xl border border-[color:var(--line)] bg-white px-4 py-4">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--muted)]">
+              <div className="rounded-2xl border border-white/10 bg-white/6 px-4 py-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/46">
                   Permissions
                 </p>
                 <div className="mt-3 flex flex-wrap gap-2">
@@ -395,11 +486,11 @@ export function TeamsSurface() {
               </div>
             </div>
           ) : (
-            <p className="text-sm leading-7 text-[color:var(--muted)]">
+            <p className="text-sm leading-7 text-white/66">
               No team member matches the current filter.
             </p>
           )}
-        </Card>
+        </DarkCard>
       </div>
     </div>
   );

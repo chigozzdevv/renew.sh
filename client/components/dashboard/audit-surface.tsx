@@ -6,6 +6,8 @@ import { formatDateTime, StatusBadge } from "@/components/dashboard/surface-util
 import { useAuthedResource } from "@/components/dashboard/use-authed-resource";
 import {
   Card,
+  DarkCard,
+  DarkField,
   MetricCard,
   PageState,
   Select,
@@ -37,6 +39,12 @@ export function AuditSurface() {
   );
 
   const items = data?.items ?? [];
+  const pagination = data?.pagination ?? {
+    page,
+    limit: 20,
+    total: items.length,
+    totalPages: 1,
+  };
   const selectedItem = items.find((item) => item.id === selectedId) ?? items[0] ?? null;
 
   useEffect(() => {
@@ -54,12 +62,12 @@ export function AuditSurface() {
     const treasury = items.filter((item) => item.category === "treasury").length;
 
     return {
-      total: data?.pagination.total ?? 0,
+      total: pagination.total,
       warning,
       error: errorCount,
       treasury,
     };
-  }, [data?.pagination.total, items]);
+  }, [items, pagination.total]);
 
   if (isLoading && !data) {
     return <PageState title="Loading audit log" message="Fetching real audit events." />;
@@ -135,13 +143,13 @@ export function AuditSurface() {
                 Previous
               </button>
               <p className="text-sm text-[color:var(--muted)]">
-                Page {data.pagination.page} of {data.pagination.totalPages}
+                Page {pagination.page} of {pagination.totalPages}
               </p>
               <button
                 className="text-sm font-semibold text-[color:var(--ink)] disabled:opacity-40"
-                disabled={page >= data.pagination.totalPages}
+                disabled={page >= pagination.totalPages}
                 onClick={() =>
-                  setPage((current) => Math.min(data.pagination.totalPages, current + 1))
+                  setPage((current) => Math.min(pagination.totalPages, current + 1))
                 }
               >
                 Next
@@ -150,48 +158,51 @@ export function AuditSurface() {
           </div>
         </Card>
 
-        <Card title={selectedItem?.action ?? "Audit detail"} description={selectedItem?.detail ?? "Select an audit event to inspect it."}>
+        <DarkCard
+          title={selectedItem?.action ?? "Audit detail"}
+          description={selectedItem?.detail ?? "Select an audit event to inspect it."}
+        >
           {selectedItem ? (
             <div className="space-y-4">
               <div className="grid gap-3 sm:grid-cols-2">
-                <div className="rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--muted)]">Actor</p>
-                  <p className="mt-2 text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)]">{selectedItem.actor}</p>
-                </div>
-                <div className="rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--muted)]">Status</p>
-                  <div className="mt-2"><StatusBadge value={selectedItem.status} /></div>
-                </div>
-                <div className="rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--muted)]">Category</p>
-                  <p className="mt-2 text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)]">{selectedItem.category}</p>
-                </div>
-                <div className="rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--muted)]">Time</p>
-                  <p className="mt-2 text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)]">{formatDateTime(selectedItem.createdAt)}</p>
-                </div>
+                <DarkField label="Actor" value={selectedItem.actor} />
+                <DarkField
+                  label="Status"
+                  value={<StatusBadge value={selectedItem.status} />}
+                />
+                <DarkField label="Category" value={selectedItem.category} />
+                <DarkField
+                  label="Time"
+                  value={formatDateTime(selectedItem.createdAt)}
+                />
               </div>
 
               {selectedItem.target ? (
-                <div className="rounded-2xl border border-[color:var(--line)] bg-white px-4 py-4">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--muted)]">Target</p>
-                  <p className="mt-2 text-sm leading-7 text-[color:var(--ink)]">{selectedItem.target}</p>
+                <div className="rounded-2xl border border-white/10 bg-white/6 px-4 py-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/46">
+                    Target
+                  </p>
+                  <p className="mt-2 text-sm leading-7 text-white/82">
+                    {selectedItem.target}
+                  </p>
                 </div>
               ) : null}
 
-              <div className="rounded-2xl border border-[color:var(--line)] bg-white px-4 py-4">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--muted)]">Metadata</p>
-                <pre className="mt-3 overflow-x-auto rounded-xl bg-[#f7faf6] p-3 text-xs leading-6 text-[color:var(--ink)]">
+              <div className="rounded-2xl border border-white/10 bg-white/6 px-4 py-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/46">
+                  Metadata
+                </p>
+                <pre className="mt-3 overflow-x-auto rounded-xl border border-white/10 bg-black/20 p-3 text-xs leading-6 text-white/80">
                   {JSON.stringify(selectedItem.metadata, null, 2)}
                 </pre>
               </div>
             </div>
           ) : (
-            <p className="text-sm leading-7 text-[color:var(--muted)]">
+            <p className="text-sm leading-7 text-white/66">
               No audit event matches the current filter.
             </p>
           )}
-        </Card>
+        </DarkCard>
       </div>
     </div>
   );

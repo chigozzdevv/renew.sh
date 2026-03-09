@@ -3,6 +3,7 @@ import type {
   CreateCheckoutSessionResult,
   RenewEnvironment,
   RenewCheckoutPlan,
+  RenewCheckoutMarketQuote,
   RenewCheckoutSession,
   SubmitCheckoutCustomerInput,
 } from "../types/checkout.js";
@@ -121,6 +122,11 @@ export type RenewCheckoutClient = {
     options: SecretKeyOptions
   ): Promise<CreateCheckoutSessionResult>;
   getSession(sessionId: string, options: ClientSecretOptions): Promise<RenewCheckoutSession>;
+  quoteMarket(
+    sessionId: string,
+    market: string,
+    options: ClientSecretOptions
+  ): Promise<RenewCheckoutMarketQuote>;
   submitCustomer(
     sessionId: string,
     input: SubmitCheckoutCustomerInput,
@@ -163,6 +169,20 @@ export function createRenewCheckoutClient(
     async getSession(sessionId, options) {
       return request<RenewCheckoutSession>(fetchImplementation, {
         url: `${apiOrigin}/v1/checkout/sessions/${sessionId}`,
+        method: "GET",
+        headers: {
+          "x-renew-client-secret": resolveClientSecret(options),
+        },
+      });
+    },
+
+    async quoteMarket(sessionId, market, options) {
+      const searchParams = new URLSearchParams({
+        market,
+      });
+
+      return request<RenewCheckoutMarketQuote>(fetchImplementation, {
+        url: `${apiOrigin}/v1/checkout/sessions/${sessionId}/quote?${searchParams.toString()}`,
         method: "GET",
         headers: {
           "x-renew-client-secret": resolveClientSecret(options),

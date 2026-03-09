@@ -13,7 +13,8 @@ import { useAuthedResource } from "@/components/dashboard/use-authed-resource";
 import {
   Button,
   Card,
-  Field,
+  DarkCard,
+  DarkField,
   Input,
   MetricCard,
   PageState,
@@ -62,10 +63,12 @@ function createWebhookDraft(webhook: WebhookRecord): WebhookDraft {
 function EventSelector({
   selected,
   disabled = false,
+  surface = "light",
   onToggle,
 }: {
   selected: readonly SupportedWebhookEvent[];
   disabled?: boolean;
+  surface?: "light" | "dark";
   onToggle: (eventType: SupportedWebhookEvent) => void;
 }) {
   return (
@@ -76,14 +79,22 @@ function EventSelector({
         return (
           <label
             key={eventType}
-            className="flex items-center gap-3 rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm font-medium tracking-[-0.02em] text-[color:var(--ink)]"
+            className={
+              surface === "dark"
+                ? "flex items-center gap-3 rounded-2xl border border-white/10 bg-white/6 px-4 py-3 text-sm font-medium tracking-[-0.02em] text-white"
+                : "flex items-center gap-3 rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm font-medium tracking-[-0.02em] text-[color:var(--ink)]"
+            }
           >
             <input
               type="checkbox"
               checked={isChecked}
               disabled={disabled}
               onChange={() => onToggle(eventType)}
-              className="h-4 w-4 rounded border-[color:var(--line)] text-[#0c4a27] focus:ring-[#0c4a27]"
+              className={
+                surface === "dark"
+                  ? "h-4 w-4 rounded border-white/16 bg-transparent text-[#d9f6bc] focus:ring-[#d9f6bc]"
+                  : "h-4 w-4 rounded border-[color:var(--line)] text-[#0c4a27] focus:ring-[#0c4a27]"
+              }
             />
             <span>{eventType}</span>
           </label>
@@ -519,7 +530,7 @@ export function DevelopersSurface() {
           </div>
         </Card>
 
-        <Card
+        <DarkCard
           title={selectedWebhook?.label ?? "Webhook details"}
           description={
             selectedWebhook?.endpointUrl ?? "Select a webhook endpoint to edit, rotate, and test."
@@ -528,11 +539,18 @@ export function DevelopersSurface() {
           {selectedWebhook && editingWebhook ? (
             <div className="space-y-4">
               <div className="grid gap-3 sm:grid-cols-2">
-                <Field label="Last delivery" value={formatDateTime(selectedWebhook.lastDeliveryAt)} />
-                <Field label="Current status" value={<StatusBadge value={selectedWebhook.status} />} />
+                <DarkField
+                  label="Last delivery"
+                  value={formatDateTime(selectedWebhook.lastDeliveryAt)}
+                />
+                <DarkField
+                  label="Current status"
+                  value={<StatusBadge value={selectedWebhook.status} />}
+                />
               </div>
 
               <Input
+                className="border-white/12 bg-white/6 text-white placeholder:text-white/40 focus:border-[#d9f6bc]"
                 value={editingWebhook.label}
                 onChange={(event) =>
                   setEditingWebhook((current) =>
@@ -546,6 +564,7 @@ export function DevelopersSurface() {
                 }
               />
               <Input
+                className="border-white/12 bg-white/6 text-white placeholder:text-white/40 focus:border-[#d9f6bc]"
                 value={editingWebhook.endpointUrl}
                 onChange={(event) =>
                   setEditingWebhook((current) =>
@@ -560,6 +579,7 @@ export function DevelopersSurface() {
               />
               <EventSelector
                 selected={editingWebhook.eventTypes}
+                surface="dark"
                 onToggle={(eventType) =>
                   setEditingWebhook((current) =>
                     current
@@ -573,6 +593,7 @@ export function DevelopersSurface() {
               />
               <div className="grid gap-3 sm:grid-cols-2">
                 <Select
+                  className="border-white/12 bg-white/6 text-white focus:border-[#d9f6bc]"
                   value={editingWebhook.retryPolicy}
                   onChange={(event) =>
                     setEditingWebhook((current) =>
@@ -590,6 +611,7 @@ export function DevelopersSurface() {
                   <option value="exponential">Exponential retries</option>
                 </Select>
                 <Select
+                  className="border-white/12 bg-white/6 text-white focus:border-[#d9f6bc]"
                   value={editingWebhook.status}
                   onChange={(event) =>
                     setEditingWebhook((current) =>
@@ -609,7 +631,7 @@ export function DevelopersSurface() {
 
               <div className="flex flex-wrap gap-3">
                 <Button
-                  tone="brand"
+                  tone="darkBrand"
                   disabled={
                     isBusy === `save-webhook:${selectedWebhook.id}` ||
                     !editingWebhook.label.trim() ||
@@ -623,6 +645,7 @@ export function DevelopersSurface() {
                     : "Save changes"}
                 </Button>
                 <Button
+                  tone="darkNeutral"
                   disabled={isBusy === `rotate-secret:${selectedWebhook.id}`}
                   onClick={() => void handleRotateSecret()}
                 >
@@ -634,6 +657,7 @@ export function DevelopersSurface() {
 
               <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
                 <Select
+                  className="border-white/12 bg-white/6 text-white focus:border-[#d9f6bc]"
                   value={testEventType}
                   onChange={(event) =>
                     setTestEventType(event.target.value as SupportedWebhookEvent)
@@ -646,7 +670,7 @@ export function DevelopersSurface() {
                   ))}
                 </Select>
                 <Button
-                  tone="brand"
+                  tone="darkBrand"
                   disabled={isBusy === `send-test:${selectedWebhook.id}`}
                   onClick={() => void handleSendTest()}
                 >
@@ -657,11 +681,11 @@ export function DevelopersSurface() {
               </div>
             </div>
           ) : (
-            <div className="rounded-2xl border border-[color:var(--line)] bg-white px-4 py-10 text-center text-sm text-[color:var(--muted)]">
+            <div className="rounded-2xl border border-white/10 bg-white/6 px-4 py-10 text-center text-sm text-white/66">
               Select a webhook endpoint to manage it.
             </div>
           )}
-        </Card>
+        </DarkCard>
       </div>
 
       <Card

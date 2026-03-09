@@ -1,6 +1,7 @@
 import type Redis from "ioredis";
 import type { Queue, Worker } from "bullmq";
 
+import { env } from "@/config/env.config";
 import { getRedisConfig } from "@/config/redis.config";
 import { queueNames, type QueueName } from "@/shared/workers/queue-names";
 
@@ -13,6 +14,22 @@ let workers: Array<Worker<unknown>> = [];
 let queueLibrariesAvailable = false;
 let missingDependencyLogged = false;
 const queueProcessors = new Map<QueueName, QueueProcessor>();
+
+function canInlineOnQueueFailure(error: unknown) {
+  if (env.NODE_ENV === "production" || !(error instanceof Error)) {
+    return false;
+  }
+
+  const redisError = error as Error & { code?: string };
+
+  return (
+    redisError.code === "ECONNREFUSED" ||
+    redisError.code === "ETIMEDOUT" ||
+    redisError.message.includes("Connection is closed") ||
+    redisError.message.includes("max retries per request") ||
+    redisError.message.includes("Connection is in connecting state")
+  );
+}
 
 async function loadQueueLibraries() {
   try {
@@ -87,6 +104,10 @@ export async function enqueueQueueJob<T>(
     jobId?: string;
   }
 ) {
+  if (!getRedisConfig().enabled) {
+    return null;
+  }
+
   const resources = await getQueueResources();
 
   if (!resources) {
@@ -99,13 +120,24 @@ export async function enqueueQueueJob<T>(
     throw new Error(`Queue ${queueName} is not registered.`);
   }
 
-  return queue.add(jobName, data, {
-    delay: options?.delayMs,
-    attempts: options?.attempts ?? 3,
-    jobId: options?.jobId,
-    removeOnComplete: 100,
-    removeOnFail: 200,
-  });
+  try {
+    return await queue.add(jobName, data, {
+      delay: options?.delayMs,
+      attempts: options?.attempts ?? 3,
+      jobId: options?.jobId,
+      removeOnComplete: 100,
+      removeOnFail: 200,
+    });
+  } catch (error) {
+    if (canInlineOnQueueFailure(error)) {
+      console.warn(
+        `Queue ${queueName} is unavailable. Falling back to inline processing.`
+      );
+      return null;
+    }
+
+    throw error;
+  }
 }
 
 export async function startWorkerRuntime() {

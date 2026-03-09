@@ -18,11 +18,51 @@ import type {
   YellowCardWebhookInput,
 } from "@/features/payment-rails/payment-rails.validation";
 import { getYellowCardProvider } from "@/features/payment-rails/providers/yellow-card/yellow-card.factory";
+import {
+  getSimulatedYellowCardCurrencyMetadata,
+  listSimulatedYellowCardMarkets,
+} from "@/features/payment-rails/providers/yellow-card/yellow-card.simulated-catalog";
 import type { RuntimeMode } from "@/shared/constants/runtime-mode";
 import {
   createRuntimeModeCondition,
   toStoredRuntimeMode,
 } from "@/shared/utils/runtime-environment";
+
+function toSafeNumber(value: unknown, fallback = 0) {
+  const numeric = Number(value);
+
+  return Number.isFinite(numeric) ? numeric : fallback;
+}
+
+async function ensureSandboxPaymentRailsSeeded(environment: RuntimeMode) {
+  if (environment !== "test") {
+    return;
+  }
+
+  const activeChannelFilter = {
+    ...createRuntimeModeCondition("environment", environment),
+    status: "active",
+    widgetStatus: "active",
+    apiStatus: "active",
+  };
+  const activeNetworkFilter = {
+    ...createRuntimeModeCondition("environment", environment),
+    status: "active",
+  };
+
+  const [activeChannelCount, activeNetworkCount] = await Promise.all([
+    ChannelModel.countDocuments(activeChannelFilter).exec(),
+    NetworkModel.countDocuments(activeNetworkFilter).exec(),
+  ]);
+
+  if (activeChannelCount === 0) {
+    await syncChannels({ environment });
+  }
+
+  if (activeNetworkCount === 0) {
+    await syncNetworks({ environment });
+  }
+}
 
 function toChannelResponse(document: {
   _id: { toString(): string };
@@ -107,6 +147,7 @@ function toNetworkResponse(document: {
 }
 
 export async function listChannels(query: ListChannelsQuery) {
+  await ensureSandboxPaymentRailsSeeded(query.environment);
   const mongoQuery: Record<string, unknown> = {};
 
   if (query.environment) {
@@ -143,6 +184,7 @@ export async function listChannels(query: ListChannelsQuery) {
 }
 
 export async function listNetworks(query: ListNetworksQuery) {
+  await ensureSandboxPaymentRailsSeeded(query.environment);
   const mongoQuery: Record<string, unknown> = {};
 
   if (query.environment) {
@@ -250,6 +292,7 @@ export async function syncNetworks(input: SyncPaymentRailInput) {
 }
 
 export async function createWidgetQuote(input: CreateWidgetQuoteInput) {
+  await ensureSandboxPaymentRailsSeeded(input.environment);
   const yellowCardProvider = getYellowCardProvider(input.environment);
   const activeChannel = await ChannelModel.findOne({
     externalId: input.channelId,
@@ -273,6 +316,86 @@ export async function createWidgetQuote(input: CreateWidgetQuoteInput) {
     settlementAsset: "USDC",
     settlementNetwork: "AVALANCHE",
   };
+}
+
+export async function listBillingMarketCatalog(environment: RuntimeMode = "test") {
+  await ensureSandboxPaymentRailsSeeded(environment);
+
+  const countryNameByCode = new Map(
+    listSimulatedYellowCardMarkets().map((entry) => [entry.countryCode, entry.countryName])
+  );
+  const channels = await ChannelModel.find({
+    ...createRuntimeModeCondition("environment", environment),
+    status: "active",
+    widgetStatus: "active",
+    apiStatus: "active",
+  })
+    .sort({ currency: 1, country: 1, estimatedSettlementTime: 1, feeUSD: 1 })
+    .lean()
+    .exec();
+
+  const marketsByCurrency = new Map<
+    string,
+    {
+      currency: string;
+      currencyName: string;
+      symbol: string;
+      countryCodes: Set<string>;
+      countries: Set<string>;
+      channelTypes: Set<string>;
+      min: number | null;
+      max: number | null;
+      estimatedSettlementTime: number | null;
+    }
+  >();
+
+  for (const channel of channels) {
+    const metadata = getSimulatedYellowCardCurrencyMetadata(channel.currency);
+    const existing = marketsByCurrency.get(channel.currency) ?? {
+      currency: channel.currency,
+      currencyName: metadata?.currencyName ?? channel.currency,
+      symbol: metadata?.symbol ?? channel.currency,
+      countryCodes: new Set<string>(),
+      countries: new Set<string>(),
+      channelTypes: new Set<string>(),
+      min: null as number | null,
+      max: null as number | null,
+      estimatedSettlementTime: null as number | null,
+    };
+
+    existing.countryCodes.add(channel.country);
+    existing.countries.add(countryNameByCode.get(channel.country) ?? channel.country);
+    existing.channelTypes.add(channel.channelType);
+    existing.min =
+      existing.min === null
+        ? (channel.widgetMin ?? channel.min ?? null)
+        : Math.min(existing.min, channel.widgetMin ?? channel.min ?? existing.min);
+    existing.max =
+      existing.max === null
+        ? (channel.widgetMax ?? channel.max ?? null)
+        : Math.max(existing.max, channel.widgetMax ?? channel.max ?? existing.max);
+    existing.estimatedSettlementTime =
+      existing.estimatedSettlementTime === null
+        ? (channel.estimatedSettlementTime ?? null)
+        : Math.min(
+            existing.estimatedSettlementTime,
+            channel.estimatedSettlementTime ?? existing.estimatedSettlementTime
+          );
+
+    marketsByCurrency.set(channel.currency, existing);
+  }
+
+  return [...marketsByCurrency.values()].map((entry) => ({
+    currency: entry.currency,
+    currencyName: entry.currencyName,
+    symbol: entry.symbol,
+    countryCodes: [...entry.countryCodes].sort(),
+    countries: [...entry.countries].sort(),
+    channelTypes: [...entry.channelTypes].sort(),
+    min: entry.min,
+    max: entry.max,
+    estimatedSettlementTime: entry.estimatedSettlementTime,
+  }));
 }
 
 export async function resolveBankAccount(input: ResolveBankAccountInput) {
@@ -301,7 +424,7 @@ export async function enqueuePaymentRailSync(input: SyncPaymentRailInput) {
     "sync-payment-rails",
     input,
     {
-      jobId: `payment-rail-sync:${input.environment}:${input.country ?? "all"}:${Math.floor(
+      jobId: `payment-rail-sync-${input.environment}-${input.country ?? "all"}-${Math.floor(
         Date.now() / 60000
       )}`,
     }
@@ -341,6 +464,7 @@ export async function getPreferredCollectionChannel(
   currency: string,
   environment: RuntimeMode = "test"
 ) {
+  await ensureSandboxPaymentRailsSeeded(environment);
   const channel = await ChannelModel.findOne({
     ...createRuntimeModeCondition("environment", environment),
     currency,
@@ -366,6 +490,7 @@ export async function getPreferredCollectionNetwork(
   country?: string,
   environment: RuntimeMode = "test"
 ) {
+  await ensureSandboxPaymentRailsSeeded(environment);
   const mongoQuery: Record<string, unknown> = {
     ...createRuntimeModeCondition("environment", environment),
     status: "active",
@@ -379,6 +504,81 @@ export async function getPreferredCollectionNetwork(
   const network = await NetworkModel.findOne(mongoQuery).sort({ name: 1 }).exec();
 
   return network;
+}
+
+export async function quoteUsdAmountInBillingCurrency(input: {
+  environment: RuntimeMode;
+  currency: string;
+  usdAmount: number;
+}) {
+  const channel = await getPreferredCollectionChannel(input.currency, input.environment);
+  const network = await getPreferredCollectionNetwork(
+    channel.externalId,
+    channel.country,
+    input.environment
+  ).catch(() => null);
+  const quote = (await createWidgetQuote({
+    environment: input.environment,
+    currency: input.currency,
+    cryptoAmount: input.usdAmount,
+    channelId: channel.externalId,
+    coin: "USDC",
+    network: "AVALANCHE",
+    transactionType: "Buy",
+  })) as Record<string, unknown>;
+
+  const localAmount = toSafeNumber(
+    quote.convertedAmount,
+    Number((input.usdAmount * 1).toFixed(2))
+  );
+  const usdcAmount = Number(
+    Math.max(0.01, toSafeNumber(quote.cryptoAmount, input.usdAmount)).toFixed(4)
+  );
+  const fxRate = Number(
+    Math.max(
+      0.0001,
+      toSafeNumber(quote.rateLocal, localAmount > 0 ? localAmount / usdcAmount : input.usdAmount)
+    ).toFixed(4)
+  );
+  const feeAmount = Number(
+    (
+      toSafeNumber(quote.serviceFeeUSD) + toSafeNumber(quote.partnerFeeUSD)
+    ).toFixed(2)
+  );
+  const expiresAt =
+    typeof quote.expireAt === "string" || quote.expireAt instanceof Date
+      ? new Date(quote.expireAt)
+      : typeof quote.expiresAt === "string" || quote.expiresAt instanceof Date
+        ? new Date(quote.expiresAt)
+        : null;
+
+  return {
+    currency: input.currency,
+    localAmount,
+    usdcAmount,
+    fxRate,
+    feeAmount,
+    expiresAt,
+    settlementAsset: "USDC" as const,
+    settlementNetwork: "AVALANCHE" as const,
+    channel: {
+      externalId: channel.externalId,
+      country: channel.country,
+      channelType: channel.channelType,
+      estimatedSettlementTime: channel.estimatedSettlementTime,
+      min: channel.widgetMin ?? channel.min,
+      max: channel.widgetMax ?? channel.max,
+    },
+    network: network
+      ? {
+          externalId: network.externalId,
+          name: network.name,
+          country: network.country,
+          accountNumberType: network.accountNumberType,
+        }
+      : null,
+    raw: quote,
+  };
 }
 
 export async function createCollectionRequest(input: {

@@ -12,4 +12,18 @@ export const dashboardOverviewQuerySchema = z.object({
   environment: environmentInputSchema.default("test"),
 });
 
+export const dashboardMarketCatalogQuerySchema = z.object({
+  merchantId: objectIdSchema,
+  environment: environmentInputSchema.default("test"),
+});
+
+export const dashboardMarketQuoteQuerySchema = z.object({
+  merchantId: objectIdSchema,
+  planId: objectIdSchema,
+  currency: z.string().trim().min(2).max(8).toUpperCase(),
+  environment: environmentInputSchema.default("test"),
+});
+
 export type DashboardOverviewQuery = z.infer<typeof dashboardOverviewQuerySchema>;
+export type DashboardMarketCatalogQuery = z.infer<typeof dashboardMarketCatalogQuerySchema>;
+export type DashboardMarketQuoteQuery = z.infer<typeof dashboardMarketQuoteQuerySchema>;
