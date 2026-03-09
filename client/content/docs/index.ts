@@ -990,7 +990,7 @@ SERVER_KEY_PREFIX=rw_live_`,
           code: `import {
   renewWebhookHeaderNames,
   verifyRenewWebhookSignature,
-} from "@renew/sdk/server";
+} from "@renew.sh/sdk/server";
 
 const isValid = verifyRenewWebhookSignature({
   payload: rawBody,
@@ -1129,9 +1129,9 @@ const isValid = verifyRenewWebhookSignature({
           "The platform API is enough for most integrations. Add the SDK when you want typed checkout helpers, webhook verification helpers, or contract clients.",
         ],
         bullets: [
-          "`@renew/sdk` exports checkout clients, contract clients, events, and shared types.",
-          "`@renew/sdk/server` adds server helpers and webhook utilities.",
-          "`@renew/sdk/react` adds the checkout modal and session hook.",
+          "`@renew.sh/sdk` exports checkout clients, contract clients, events, and shared types.",
+          "`@renew.sh/sdk/server` adds server helpers and webhook utilities.",
+          "`@renew.sh/sdk/react` adds the checkout modal and session hook.",
         ],
       },
       {
@@ -1144,7 +1144,7 @@ const isValid = verifyRenewWebhookSignature({
           label: "Create a sandbox checkout session",
           language: "ts",
           filename: "renew-server.ts",
-          code: `import { createRenewServerClient } from "@renew/sdk/server";
+          code: `import { createRenewServerClient } from "@renew.sh/sdk/server";
 
 const renew = createRenewServerClient({
   environment: "sandbox",
@@ -1584,17 +1584,17 @@ const { session, clientSecret } = await renew.createCheckoutSession({
         references: [
           {
             label: "Package",
-            value: "@renew/sdk",
+            value: "@renew.sh/sdk",
             detail: "Checkout client, contract clients, events, and shared types.",
           },
           {
             label: "Package",
-            value: "@renew/sdk/server",
+            value: "@renew.sh/sdk/server",
             detail: "Server checkout helpers and webhook utilities.",
           },
           {
             label: "Package",
-            value: "@renew/sdk/react",
+            value: "@renew.sh/sdk/react",
             detail: "React checkout modal and session hook.",
           },
         ],
@@ -1621,7 +1621,7 @@ const { session, clientSecret } = await renew.createCheckoutSession({
           label: "Server checkout helper",
           language: "ts",
           filename: "renew-server.ts",
-          code: `import { createRenewServerClient } from "@renew/sdk/server";
+          code: `import { createRenewServerClient } from "@renew.sh/sdk/server";
 
 const renew = createRenewServerClient({
   environment: "sandbox",
@@ -1712,7 +1712,7 @@ const { clientSecret, session } = await renew.createCheckoutSession({
   createRenewVaultClient,
   type ContractTransport,
   type RenewProtocolConfig,
-} from "@renew/sdk";
+} from "@renew.sh/sdk";
 
 async function getRuntimeConfig(apiOrigin: string): Promise<RenewProtocolConfig> {
   const response = await fetch(\`\${apiOrigin}/v1/protocol\`);

@@ -33,7 +33,7 @@ const modalStyles = `
 }
 
 .renew-modal__dialog {
-  width: min(100%, 960px);
+  width: min(100%, 540px);
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.82);
   border-radius: 32px;
@@ -103,18 +103,11 @@ const modalStyles = `
 }
 
 .renew-modal__body {
-  display: grid;
+  display: block;
 }
 
 .renew-modal__primary {
   padding: 24px;
-  border-bottom: 1px solid #dce4dc;
-}
-
-.renew-modal__secondary {
-  padding: 24px;
-  background: #101211;
-  color: #ffffff;
 }
 
 .renew-modal__section-title {
@@ -325,15 +318,6 @@ const modalStyles = `
   .renew-modal__overlay {
     align-items: center;
   }
-
-  .renew-modal__body {
-    grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
-  }
-
-  .renew-modal__primary {
-    border-right: 1px solid #dce4dc;
-    border-bottom: 0;
-  }
 }
 `;
 
@@ -473,6 +457,20 @@ export function RenewCheckoutModal({
   }, [isOpen]);
 
   useEffect(() => {
+    if (!isOpen || !currentSession || currentSession.status !== "settled") {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      onClose();
+    }, 2500);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [isOpen, currentSession?.status]);
+
+  useEffect(() => {
     if (
       !isOpen ||
       !clientSecret ||
@@ -597,7 +595,45 @@ export function RenewCheckoutModal({
 
         <div className="renew-modal__body">
           <div className="renew-modal__primary">
-            {currentSession.nextAction === "submit_customer" ? (
+            {currentSession.status === "settled" ? (
+              <div className="renew-modal__stack" style={{ textAlign: "center", padding: "40px 0" }}>
+                <div style={{
+                  width: 64,
+                  height: 64,
+                  borderRadius: "50%",
+                  background: "#0c4a27",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  margin: "0 auto",
+                }}>
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#d9f6bc" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M20 6L9 17l-5-5" />
+                  </svg>
+                </div>
+                <h3 className="renew-modal__section-title" style={{ marginTop: 20 }}>Payment complete</h3>
+                <p className="renew-modal__copy" style={{ margin: "8px auto 0" }}>
+                  The sandbox payment has been settled successfully. This modal will close shortly.
+                </p>
+              </div>
+            ) : currentSession.status === "failed" ? (
+              <div className="renew-modal__stack" style={{ textAlign: "center", padding: "40px 0" }}>
+                <h3 className="renew-modal__section-title">Payment failed</h3>
+                <p className="renew-modal__copy" style={{ margin: "8px auto 0" }}>
+                  {currentSession.failureReason
+                    ? `Reason: ${currentSession.failureReason}`
+                    : "The payment could not be completed."}
+                </p>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="renew-modal__button renew-modal__button--brand"
+                  style={{ ...hiddenButtonStyle, marginTop: 16 }}
+                >
+                  Close
+                </button>
+              </div>
+            ) : currentSession.nextAction === "submit_customer" ? (
               <div className="renew-modal__stack">
                 <div>
                   <h3 className="renew-modal__section-title">Start the checkout</h3>
@@ -791,36 +827,6 @@ export function RenewCheckoutModal({
             ) : null}
           </div>
 
-          <div className="renew-modal__secondary">
-            <p className="renew-modal__secondary-title">Session state</p>
-            <div className="renew-modal__secondary-stack">
-              <div className="renew-modal__state-card">
-                <p className="renew-modal__state-label">Status</p>
-                <p className="renew-modal__card-value renew-modal__card-value--lg" style={{ color: "#ffffff", marginTop: "8px" }}>
-                  {humanizeValue(currentSession.status)}
-                </p>
-              </div>
-
-              <div className="renew-modal__state-card">
-                <p className="renew-modal__state-label">Next action</p>
-                <p className="renew-modal__state-value">
-                  {humanizeValue(currentSession.nextAction)}
-                </p>
-              </div>
-
-              <div className="renew-modal__state-card">
-                <p className="renew-modal__state-label">Customer</p>
-                <p className="renew-modal__state-value">
-                  {currentSession.customer?.email ?? "Pending customer details"}
-                </p>
-              </div>
-
-              <div className="renew-modal__state-card">
-                <p className="renew-modal__state-label">Session ID</p>
-                <p className="renew-modal__session-id">{currentSession.id}</p>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
     </div>

@@ -6,8 +6,8 @@ import { useEffect, useMemo, useState } from "react";
 import {
   type RenewCheckoutPlan,
   type RenewCheckoutSession,
-} from "@renew/sdk/core";
-import { RenewCheckoutModal } from "@renew/sdk/react";
+} from "@renew.sh/sdk/core";
+import { RenewCheckoutModal } from "@renew.sh/sdk/react";
 
 import { Container } from "@/components/ui/container";
 import {

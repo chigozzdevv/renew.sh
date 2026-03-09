@@ -1,5 +1,4 @@
 "use client";
-
 import {
   createRenewCheckoutClient,
   type RenewCheckoutClient,
@@ -7,7 +6,7 @@ import {
   type RenewCheckoutPlan,
   type RenewCheckoutSession,
   type SubmitCheckoutCustomerInput,
-} from "@renew/sdk/core";
+} from "@renew.sh/sdk/core";
 
 import { ApiError, fetchApi, getApiOrigin, readAccessToken, type WorkspaceMode } from "@/lib/api";
 

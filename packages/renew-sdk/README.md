@@ -1,4 +1,4 @@
-# `@renew/sdk`
+# `@renew.sh/sdk`
 
 Renew SDK for:
 
@@ -11,7 +11,7 @@ Renew SDK for:
 ## Install
 
 ```bash
-npm install @renew/sdk
+npm install @renew.sh/sdk
 ```
 
 ## Environments
@@ -34,7 +34,7 @@ Server keys must use:
 ## Server Usage
 
 ```ts
-import { createRenewServerClient } from "@renew/sdk/server";
+import { createRenewServerClient } from "@renew.sh/sdk/server";
 
 const renew = createRenewServerClient({
   environment: "sandbox",
@@ -57,7 +57,7 @@ import { useState } from "react";
 import {
   RenewCheckoutModal,
   createRenewCheckoutClient,
-} from "@renew/sdk";
+} from "@renew.sh/sdk";
 
 const client = createRenewCheckoutClient({
   environment: "sandbox",
@@ -91,7 +91,7 @@ The modal is self-contained. It does not require Tailwind or Renew app theme tok
 import {
   renewWebhookHeaderNames,
   verifyRenewWebhookSignature,
-} from "@renew/sdk/server";
+} from "@renew.sh/sdk/server";
 
 const isValid = verifyRenewWebhookSignature({
   payload: rawBody,
@@ -103,14 +103,14 @@ const isValid = verifyRenewWebhookSignature({
 
 ## Package Surfaces
 
-- `@renew/sdk`
+- `@renew.sh/sdk`
   - core exports
   - checkout client
   - contract clients
-- `@renew/sdk/server`
+- `@renew.sh/sdk/server`
   - server integration helpers
   - webhook signing and verification
-- `@renew/sdk/react`
+- `@renew.sh/sdk/react`
   - React checkout modal
   - checkout session hook
 
