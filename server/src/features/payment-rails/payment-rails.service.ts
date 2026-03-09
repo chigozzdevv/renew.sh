@@ -3,6 +3,7 @@ import { enqueueQueueJob } from "@/shared/workers/queue-runtime";
 import { queueNames } from "@/shared/workers/queue-names";
 
 import { ChargeModel } from "@/features/charges/charge.model";
+import { CustomerModel } from "@/features/customers/customer.model";
 import { emitChargeWebhookEventForStatusChange } from "@/features/developers/developer-webhook-delivery.service";
 import { PaymentRailEventModel } from "@/features/payment-rails/payment-rail-event.model";
 import { ChannelModel } from "@/features/payment-rails/channel.model";
@@ -391,9 +392,9 @@ export async function listBillingMarketCatalog(environment: RuntimeMode = "test"
       existing.estimatedSettlementTime === null
         ? (channel.estimatedSettlementTime ?? null)
         : Math.min(
-            existing.estimatedSettlementTime,
-            channel.estimatedSettlementTime ?? existing.estimatedSettlementTime
-          );
+          existing.estimatedSettlementTime,
+          channel.estimatedSettlementTime ?? existing.estimatedSettlementTime
+        );
 
     marketsByCurrency.set(channel.currency, existing);
   }
@@ -584,11 +585,11 @@ export async function quoteUsdAmountInBillingCurrency(input: {
     },
     network: network
       ? {
-          externalId: network.externalId,
-          name: network.name,
-          country: network.country,
-          accountNumberType: network.accountNumberType,
-        }
+        externalId: network.externalId,
+        name: network.name,
+        country: network.country,
+        accountNumberType: network.accountNumberType,
+      }
       : null,
     raw: quote,
   };
@@ -791,15 +792,15 @@ export async function processYellowCardWebhook(
   const charge =
     (sequenceId
       ? await ChargeModel.findOne({
-          externalChargeId: sequenceId,
-          ...createRuntimeModeCondition("environment", environment),
-        }).exec()
+        externalChargeId: sequenceId,
+        ...createRuntimeModeCondition("environment", environment),
+      }).exec()
       : null) ??
     (externalId
       ? await ChargeModel.findOne({
-          externalChargeId: externalId,
-          ...createRuntimeModeCondition("environment", environment),
-        }).exec()
+        externalChargeId: externalId,
+        ...createRuntimeModeCondition("environment", environment),
+      }).exec()
       : null);
 
   if (!charge) {
@@ -900,6 +901,24 @@ export async function processYellowCardWebhook(
         merchantId: linkedSettlement.merchantId.toString(),
         environment,
       });
+    }
+
+    if (previousChargeStatus !== "settled" && previousChargeStatus !== "awaiting_settlement") {
+      const chargeSubscription = await SubscriptionModel.findById(charge.subscriptionId)
+        .select({ customerRef: 1, merchantId: 1 })
+        .exec();
+
+      if (chargeSubscription) {
+        await CustomerModel.findOneAndUpdate(
+          {
+            merchantId: chargeSubscription.merchantId,
+            customerRef: chargeSubscription.customerRef,
+          },
+          {
+            $inc: { monthlyVolumeUsdc: charge.usdcAmount },
+          }
+        ).exec();
+      }
     }
   } else if (
     state.includes("processing") ||

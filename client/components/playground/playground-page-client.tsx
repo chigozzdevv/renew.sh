@@ -194,12 +194,12 @@ export function PlaygroundPageClient() {
                     {workspaceMode === "live" ? "live" : "test"} mode.
                   </p>
                 </div>
-                <div className="rounded-full border border-[color:var(--line)] bg-white px-4 py-2 text-sm font-semibold text-[color:var(--ink)]">
+                <div className="whitespace-nowrap rounded-full border border-[color:var(--line)] bg-white px-4 py-2 text-sm font-semibold text-[color:var(--ink)]">
                   {plans.length} available
                 </div>
               </div>
 
-              <div className="mt-6 grid gap-4">
+              <div className="mt-6 grid gap-5">
                 {isLoadingPlans ? (
                   <div className="rounded-[1.6rem] border border-[color:var(--line)] bg-white px-5 py-12 text-center text-sm text-[color:var(--muted)]">
                     Loading active plans...
@@ -212,55 +212,77 @@ export function PlaygroundPageClient() {
                   </div>
                 ) : null}
 
-                {plans.map((plan) => (
-                  <div
-                    key={plan.id}
-                    className="rounded-[1.75rem] border border-[color:var(--line)] bg-white px-5 py-5"
-                  >
-                    <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-                      <div className="space-y-3">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="rounded-full bg-[color:var(--brand)]/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-[color:var(--brand)]">
-                            {plan.planCode}
-                          </span>
-                          <span className="rounded-full border border-[color:var(--line)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-[color:var(--muted)]">
-                            {plan.billingMode}
-                          </span>
-                        </div>
-                        <div>
-                          <h3 className="text-2xl font-semibold tracking-[-0.05em] text-[color:var(--ink)]">
-                            {plan.name}
-                          </h3>
-                          <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">
-                            ${plan.usdAmount.toFixed(2)} every {formatInterval(plan.billingIntervalDays)}
-                            {plan.trialDays > 0 ? ` with ${plan.trialDays} trial days` : ""}
-                          </p>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          {plan.supportedMarkets.map((market) => (
-                            <span
-                              key={market}
-                              className="rounded-full border border-[color:var(--line)] bg-[#f8fbf8] px-3 py-1 text-xs font-semibold tracking-[0.18em] text-[color:var(--muted)]"
-                            >
-                              {market}
-                            </span>
-                          ))}
+                {!isLoadingPlans && hasPlans ? (
+                  <>
+                    <label className="grid gap-2">
+                      <span className="text-sm font-semibold text-[color:var(--ink)]">
+                        Select a plan
+                      </span>
+                      <select
+                        value={selectedPlan?.id ?? ""}
+                        onChange={(event) => {
+                          const plan = plans.find((p) => p.id === event.target.value);
+                          setSelectedPlan(plan ?? null);
+                        }}
+                        className="h-12 w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 text-sm font-semibold text-[color:var(--ink)] outline-none transition-colors focus:border-[#0c4a27]"
+                      >
+                        <option value="" disabled>
+                          Choose a plan...
+                        </option>
+                        {plans.map((plan) => (
+                          <option key={plan.id} value={plan.id}>
+                            {plan.name} — ${plan.usdAmount.toFixed(2)} / {formatInterval(plan.billingIntervalDays)} ({plan.planCode})
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    {selectedPlan ? (
+                      <div className="rounded-[1.75rem] border border-[color:var(--line)] bg-white px-5 py-5">
+                        <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="space-y-3">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="rounded-full bg-[color:var(--brand)]/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-[color:var(--brand)]">
+                                {selectedPlan.planCode}
+                              </span>
+                              <span className="rounded-full border border-[color:var(--line)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-[color:var(--muted)]">
+                                {selectedPlan.billingMode}
+                              </span>
+                            </div>
+                            <div>
+                              <h3 className="text-2xl font-semibold tracking-[-0.05em] text-[color:var(--ink)]">
+                                {selectedPlan.name}
+                              </h3>
+                              <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">
+                                ${selectedPlan.usdAmount.toFixed(2)} every {formatInterval(selectedPlan.billingIntervalDays)}
+                                {selectedPlan.trialDays > 0 ? ` with ${selectedPlan.trialDays} trial days` : ""}
+                              </p>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              {selectedPlan.supportedMarkets.map((market: string) => (
+                                <span
+                                  key={market}
+                                  className="rounded-full border border-[color:var(--line)] bg-[#f8fbf8] px-3 py-1 text-xs font-semibold tracking-[0.18em] text-[color:var(--muted)]"
+                                >
+                                  {market}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => void openCheckout(selectedPlan)}
+                            disabled={isCreatingSession}
+                            className="inline-flex h-12 shrink-0 items-center justify-center rounded-full bg-[#0c4a27] px-6 text-sm font-semibold tracking-[-0.02em] text-[#d9f6bc] transition-colors hover:bg-[#093a1e] disabled:cursor-not-allowed disabled:opacity-70"
+                          >
+                            {isCreatingSession ? "Opening..." : "Open checkout"}
+                          </button>
                         </div>
                       </div>
-
-                      <button
-                        type="button"
-                        onClick={() => void openCheckout(plan)}
-                        disabled={isCreatingSession}
-                        className="inline-flex h-12 shrink-0 items-center justify-center rounded-full bg-[#0c4a27] px-6 text-sm font-semibold tracking-[-0.02em] text-[#d9f6bc] transition-colors hover:bg-[#093a1e] disabled:cursor-not-allowed disabled:opacity-70"
-                      >
-                        {isCreatingSession && selectedPlan?.id === plan.id
-                          ? "Opening..."
-                          : "Open checkout"}
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                    ) : null}
+                  </>
+                ) : null}
               </div>
             </div>
           </div>
