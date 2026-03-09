@@ -3,8 +3,9 @@ import { enqueueQueueJob } from "@/shared/workers/queue-runtime";
 import { queueNames } from "@/shared/workers/queue-names";
 
 import { ChargeModel } from "@/features/charges/charge.model";
+import { emitChargeWebhookEventForStatusChange } from "@/features/developers/developer-webhook-delivery.service";
 import { assertMerchantKybApprovedForLive } from "@/features/kyc/kyc.service";
-import { createSettlement, queueSettlementSweep } from "@/features/settlements/settlement.service";
+import { createSettlement } from "@/features/settlements/settlement.service";
 import { getTreasuryByMerchantId } from "@/features/treasury/treasury.service";
 import type {
   CreateChargeInput,
@@ -15,6 +16,12 @@ import { MerchantModel } from "@/features/merchants/merchant.model";
 import { getPreferredCollectionChannel, getPreferredCollectionNetwork, createCollectionRequest, createWidgetQuote } from "@/features/payment-rails/payment-rails.service";
 import { PlanModel } from "@/features/plans/plan.model";
 import { SubscriptionModel } from "@/features/subscriptions/subscription.model";
+import type { RuntimeMode } from "@/shared/constants/runtime-mode";
+import {
+  createRuntimeModeCondition,
+  matchesRuntimeMode,
+  toStoredRuntimeMode,
+} from "@/shared/utils/runtime-environment";
 
 function toChargeResponse(document: {
   _id: { toString(): string };
@@ -81,15 +88,36 @@ function addDays(date: Date, days: number) {
   return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
 }
 
-async function ensureChargeScope(chargeId: string, merchantId?: string) {
-  const charge = await ChargeModel.findById(chargeId).exec();
+function toNullableString(value: unknown) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
+async function ensureChargeScope(
+  chargeId: string,
+  merchantId?: string,
+  environment?: RuntimeMode
+) {
+  const mongoQuery: Record<string, unknown> = {
+    _id: chargeId,
+  };
+
+  if (merchantId) {
+    mongoQuery.merchantId = merchantId;
+  }
+
+  if (environment) {
+    Object.assign(mongoQuery, createRuntimeModeCondition("environment", environment));
+  }
+
+  const charge = await ChargeModel.findOne(mongoQuery).exec();
 
   if (!charge) {
     throw new HttpError(404, "Charge was not found.");
-  }
-
-  if (merchantId && charge.merchantId.toString() !== merchantId) {
-    throw new HttpError(403, "Charge does not belong to this merchant.");
   }
 
   return charge;
@@ -98,7 +126,11 @@ async function ensureChargeScope(chargeId: string, merchantId?: string) {
 export async function createCharge(input: CreateChargeInput) {
   const [merchantExists, subscriptionExists] = await Promise.all([
     MerchantModel.exists({ _id: input.merchantId }),
-    SubscriptionModel.exists({ _id: input.subscriptionId }),
+    SubscriptionModel.exists({
+      _id: input.subscriptionId,
+      merchantId: input.merchantId,
+      ...createRuntimeModeCondition("environment", input.environment),
+    }),
   ]);
 
   if (!merchantExists) {
@@ -111,11 +143,13 @@ export async function createCharge(input: CreateChargeInput) {
 
   await assertMerchantKybApprovedForLive(
     input.merchantId,
-    "creating charges"
+    "creating charges",
+    input.environment
   );
 
   const charge = await ChargeModel.create({
     merchantId: input.merchantId,
+    environment: input.environment,
     subscriptionId: input.subscriptionId,
     externalChargeId: input.externalChargeId,
     settlementSource: input.settlementSource?.toLowerCase() ?? null,
@@ -128,28 +162,53 @@ export async function createCharge(input: CreateChargeInput) {
     processedAt: input.processedAt ?? new Date(),
   });
 
+  await emitChargeWebhookEventForStatusChange({
+    previousStatus: null,
+    chargeId: charge._id.toString(),
+    nextStatus: charge.status,
+  });
+
   return toChargeResponse(charge);
 }
 
 export async function listCharges(query: ListChargesQuery) {
-  const mongoQuery: Record<string, unknown> = {};
+  const filters: Record<string, unknown>[] = [];
 
   if (query.merchantId) {
-    mongoQuery.merchantId = query.merchantId;
+    filters.push({
+      merchantId: query.merchantId,
+    });
+  }
+
+  if (query.environment) {
+    filters.push(createRuntimeModeCondition("environment", query.environment));
   }
 
   if (query.subscriptionId) {
-    mongoQuery.subscriptionId = query.subscriptionId;
+    filters.push({
+      subscriptionId: query.subscriptionId,
+    });
   }
 
   if (query.status) {
-    mongoQuery.status = query.status;
+    filters.push({
+      status: query.status,
+    });
   }
 
   if (query.search) {
     const pattern = new RegExp(query.search, "i");
-    mongoQuery.externalChargeId = pattern;
+    filters.push({
+      externalChargeId: pattern,
+    });
   }
+
+  const mongoQuery =
+    filters.length === 0
+      ? {}
+      : filters.length === 1
+        ? filters[0]
+        : { $and: filters };
 
   const charges = await ChargeModel.find(mongoQuery)
     .sort({ processedAt: -1 })
@@ -158,8 +217,12 @@ export async function listCharges(query: ListChargesQuery) {
   return charges.map(toChargeResponse);
 }
 
-export async function getChargeById(chargeId: string, merchantId?: string) {
-  const charge = await ensureChargeScope(chargeId, merchantId);
+export async function getChargeById(
+  chargeId: string,
+  merchantId?: string,
+  environment?: RuntimeMode
+) {
+  const charge = await ensureChargeScope(chargeId, merchantId, environment);
 
   return toChargeResponse(charge);
 }
@@ -167,9 +230,11 @@ export async function getChargeById(chargeId: string, merchantId?: string) {
 export async function updateCharge(
   chargeId: string,
   input: UpdateChargeInput,
-  merchantId?: string
+  merchantId?: string,
+  environment?: RuntimeMode
 ) {
-  const charge = await ensureChargeScope(chargeId, merchantId);
+  const charge = await ensureChargeScope(chargeId, merchantId, environment);
+  const previousStatus = charge.status;
 
   if (input.status !== undefined) {
     charge.status = input.status;
@@ -184,16 +249,26 @@ export async function updateCharge(
   }
 
   await charge.save();
+  await emitChargeWebhookEventForStatusChange({
+    previousStatus,
+    chargeId: charge._id.toString(),
+    nextStatus: charge.status,
+  });
 
   return toChargeResponse(charge);
 }
 
-export async function queueChargeRetry(chargeId: string, merchantId?: string) {
-  const charge = await ensureChargeScope(chargeId, merchantId);
+export async function queueChargeRetry(
+  chargeId: string,
+  merchantId?: string,
+  environment?: RuntimeMode
+) {
+  const charge = await ensureChargeScope(chargeId, merchantId, environment);
 
   await assertMerchantKybApprovedForLive(
     charge.merchantId.toString(),
-    "retrying charges"
+    "retrying charges",
+    toStoredRuntimeMode(charge.environment)
   );
 
   if (charge.status === "settled") {
@@ -236,6 +311,8 @@ export async function runSubscriptionChargeJob(input: { subscriptionId: string }
     throw new HttpError(404, "Subscription was not found.");
   }
 
+  const environment = toStoredRuntimeMode(subscription.environment);
+
   const [merchant, plan] = await Promise.all([
     MerchantModel.findById(subscription.merchantId).exec(),
     PlanModel.findById(subscription.planId).exec(),
@@ -247,11 +324,16 @@ export async function runSubscriptionChargeJob(input: { subscriptionId: string }
 
   await assertMerchantKybApprovedForLive(
     merchant._id.toString(),
-    "running subscription charges"
+    "running subscription charges",
+    environment
   );
 
   if (!plan) {
     throw new HttpError(404, "Plan was not found.");
+  }
+
+  if (!matchesRuntimeMode(plan.environment, environment)) {
+    throw new HttpError(409, "Plan environment does not match this subscription.");
   }
 
   if (merchant.status !== "active") {
@@ -290,23 +372,32 @@ export async function runSubscriptionChargeJob(input: { subscriptionId: string }
     };
   }
 
-  const channel = await getPreferredCollectionChannel(subscription.billingCurrency);
+  const channel = await getPreferredCollectionChannel(
+    subscription.billingCurrency,
+    environment
+  );
   const network =
     subscription.paymentNetworkId
       ? await getPreferredCollectionNetwork(
           channel.externalId,
-          channel.country
+          channel.country,
+          environment
         ).catch(() => null)
-      : await getPreferredCollectionNetwork(channel.externalId, channel.country);
+      : await getPreferredCollectionNetwork(
+          channel.externalId,
+          channel.country,
+          environment
+        );
 
   const quote = (await createWidgetQuote({
+    environment,
     currency: subscription.billingCurrency,
     cryptoAmount: plan.usdAmount,
     channelId: channel.externalId,
     coin: "USDC",
     network: "AVALANCHE",
     transactionType: "Buy",
-  }, merchant._id.toString())) as Record<string, unknown>;
+  })) as Record<string, unknown>;
 
   const localAmount = toSafeNumber(
     quote.convertedAmount,
@@ -333,6 +424,7 @@ export async function runSubscriptionChargeJob(input: { subscriptionId: string }
 
   const collection = (await createCollectionRequest({
     merchantId: merchant._id.toString(),
+    environment,
     channelId: channel.externalId,
     customerRef: subscription.customerRef,
     customerName: subscription.customerName,
@@ -355,13 +447,45 @@ export async function runSubscriptionChargeJob(input: { subscriptionId: string }
   const externalChargeId = String(
     collection.sequenceId ?? collection.id ?? `renew-charge-${Date.now()}`
   );
+  const collectionSnapshot = {
+    id: toNullableString(collection.id),
+    sequenceId: toNullableString(collection.sequenceId) ?? externalChargeId,
+    status: collectionStatus,
+    reference: toNullableString(collection.reference),
+    depositId: toNullableString(collection.depositId),
+    expiresAt:
+      typeof collection.expiresAt === "string" || collection.expiresAt instanceof Date
+        ? new Date(collection.expiresAt)
+        : null,
+    bankInfo:
+      typeof collection.bankInfo === "object" && collection.bankInfo !== null
+        ? {
+            name: toNullableString((collection.bankInfo as Record<string, unknown>).name),
+            accountNumber: toNullableString(
+              (collection.bankInfo as Record<string, unknown>).accountNumber
+            ),
+            accountName: toNullableString(
+              (collection.bankInfo as Record<string, unknown>).accountName
+            ),
+          }
+        : null,
+  };
+
+  const treasury = await getTreasuryByMerchantId(
+    merchant._id.toString(),
+    environment
+  ).catch(() => ({
+    account: null,
+  }));
 
   if (collectionStatus === "failed") {
     const failedCharge = await ChargeModel.create({
       merchantId: merchant._id,
+      environment,
       subscriptionId: subscription._id,
       externalChargeId,
-      settlementSource: merchant.merchantAccount,
+      settlementSource:
+        treasury.account?.safeAddress ?? merchant.merchantAccount,
       localAmount,
       fxRate,
       usdcAmount,
@@ -376,20 +500,28 @@ export async function runSubscriptionChargeJob(input: { subscriptionId: string }
       now.getTime() + plan.retryWindowHours * 60 * 60 * 1000
     );
     await subscription.save();
+    await emitChargeWebhookEventForStatusChange({
+      previousStatus: null,
+      chargeId: failedCharge._id.toString(),
+      nextStatus: failedCharge.status,
+    });
 
     return {
       subscriptionId: subscription._id.toString(),
       chargeId: failedCharge._id.toString(),
       status: "failed",
       retryAvailableAt: subscription.retryAvailableAt,
+      collection: collectionSnapshot,
     };
   }
 
   const charge = await ChargeModel.create({
     merchantId: merchant._id,
+    environment,
     subscriptionId: subscription._id,
     externalChargeId,
-    settlementSource: merchant.merchantAccount,
+    settlementSource:
+      treasury.account?.safeAddress ?? merchant.merchantAccount,
     localAmount,
     fxRate,
     usdcAmount,
@@ -399,12 +531,9 @@ export async function runSubscriptionChargeJob(input: { subscriptionId: string }
     processedAt: now,
   });
 
-  const treasury = await getTreasuryByMerchantId(merchant._id.toString()).catch(() => ({
-    account: null,
-  }));
-
   const settlement = await createSettlement({
     merchantId: merchant._id.toString(),
+    environment,
     sourceChargeId: charge._id.toString(),
     batchRef: `settlement-${externalChargeId}`,
     grossUsdc: Number(usdcAmount.toFixed(2)),
@@ -422,13 +551,13 @@ export async function runSubscriptionChargeJob(input: { subscriptionId: string }
   subscription.nextChargeAt = addDays(now, plan.billingIntervalDays);
   await subscription.save();
 
-  const settlementDispatch = await queueSettlementSweep(settlement.id);
-
   return {
     subscriptionId: subscription._id.toString(),
     chargeId: charge._id.toString(),
+    externalChargeId,
     settlementId: settlement.id,
     collectionStatus,
-    settlementDispatch,
+    settlementStatus: settlement.status,
+    collection: collectionSnapshot,
   };
 }

@@ -1,5 +1,10 @@
 import { z } from "zod";
 
+import {
+  environmentInputSchema,
+  optionalEnvironmentInputSchema,
+} from "@/shared/utils/runtime-environment";
+
 const objectIdSchema = z
   .string()
   .trim()
@@ -22,6 +27,7 @@ export const teamMemberKycParamSchema = z.object({
 export const startMerchantKybSchema = z.object({
   merchantId: objectIdSchema,
   actor: z.string().trim().min(2).max(120).default("system"),
+  environment: environmentInputSchema.default("test"),
   levelName: z.string().trim().min(2).max(120).optional(),
   companyName: z.string().trim().min(2).max(180).optional(),
   registrationNumber: z.string().trim().min(2).max(120).optional(),
@@ -33,12 +39,14 @@ export const startMerchantKybSchema = z.object({
 export const syncMerchantKybSchema = z.object({
   merchantId: objectIdSchema,
   actor: z.string().trim().min(2).max(120).default("system"),
+  environment: environmentInputSchema.default("test"),
 });
 
 export const startTeamMemberKycSchema = z.object({
   merchantId: objectIdSchema,
   teamMemberId: objectIdSchema,
   actor: z.string().trim().min(2).max(120).default("system"),
+  environment: environmentInputSchema.default("test"),
   levelName: z.string().trim().min(2).max(120).optional(),
   country: countrySchema.optional(),
   lang: z.string().trim().min(2).max(10).optional(),
@@ -48,19 +56,23 @@ export const syncTeamMemberKycSchema = z.object({
   merchantId: objectIdSchema,
   teamMemberId: objectIdSchema,
   actor: z.string().trim().min(2).max(120).default("system"),
+  environment: environmentInputSchema.default("test"),
 });
 
 export const merchantKybStatusQuerySchema = z.object({
   merchantId: objectIdSchema,
+  environment: optionalEnvironmentInputSchema,
 });
 
 export const teamMemberKycStatusQuerySchema = z.object({
   merchantId: objectIdSchema,
   teamMemberId: objectIdSchema,
+  environment: optionalEnvironmentInputSchema,
 });
 
 export const sumsubWebhookSchema = z
   .object({
+    environment: optionalEnvironmentInputSchema,
     type: z.string().trim().min(1).default("unknown"),
     applicantId: z.string().trim().min(1).optional(),
     externalUserId: z.string().trim().min(1).optional(),

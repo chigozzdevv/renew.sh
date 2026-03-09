@@ -31,11 +31,13 @@ export type DashboardOverview = {
 export async function loadDashboardOverview(input: {
   token: string;
   merchantId: string;
+  environment: "test" | "live";
 }) {
   const response = await fetchApi<DashboardOverview>("/dashboard/overview", {
     token: input.token,
     query: {
       merchantId: input.merchantId,
+      environment: input.environment,
     },
   });
 

@@ -136,10 +136,14 @@ export type TreasurySigningPayload = {
 export async function loadTreasuryWorkspace(input: {
   token: string;
   merchantId: string;
+  environment: "test" | "live";
 }) {
   const [treasury, teams, settlements] = await Promise.all([
     fetchApi<TreasuryOverview>(`/treasury/${input.merchantId}`, {
       token: input.token,
+      query: {
+        environment: input.environment,
+      },
     }),
     fetchApi<TeamMember[]>("/teams", {
       token: input.token,
@@ -147,7 +151,10 @@ export async function loadTreasuryWorkspace(input: {
     }),
     fetchApi<Settlement[]>("/settlements", {
       token: input.token,
-      query: { merchantId: input.merchantId },
+      query: {
+        merchantId: input.merchantId,
+        environment: input.environment,
+      },
     }),
   ]);
 
@@ -199,6 +206,7 @@ export async function verifyTreasurySigner(input: {
 export async function bootstrapTreasuryAccount(input: {
   token: string;
   merchantId: string;
+  environment: "test" | "live";
   payload:
     | {
         mode: "create";
@@ -215,7 +223,10 @@ export async function bootstrapTreasuryAccount(input: {
     {
       method: "POST",
       token: input.token,
-      body: JSON.stringify(input.payload),
+      body: JSON.stringify({
+        ...input.payload,
+        environment: input.environment,
+      }),
     }
   );
 
@@ -225,6 +236,7 @@ export async function bootstrapTreasuryAccount(input: {
 export async function addTreasuryOwner(input: {
   token: string;
   merchantId: string;
+  environment: "test" | "live";
   teamMemberId: string;
   threshold?: number;
 }) {
@@ -234,6 +246,7 @@ export async function addTreasuryOwner(input: {
       method: "POST",
       token: input.token,
       body: JSON.stringify({
+        environment: input.environment,
         teamMemberId: input.teamMemberId,
         threshold: input.threshold,
       }),
@@ -246,6 +259,7 @@ export async function addTreasuryOwner(input: {
 export async function removeTreasuryOwner(input: {
   token: string;
   merchantId: string;
+  environment: "test" | "live";
   teamMemberId: string;
   threshold?: number;
 }) {
@@ -255,6 +269,7 @@ export async function removeTreasuryOwner(input: {
       method: "POST",
       token: input.token,
       body: JSON.stringify({
+        environment: input.environment,
         threshold: input.threshold,
       }),
     }
@@ -266,6 +281,7 @@ export async function removeTreasuryOwner(input: {
 export async function updateTreasuryThreshold(input: {
   token: string;
   merchantId: string;
+  environment: "test" | "live";
   threshold: number;
 }) {
   const response = await fetchApi<TreasuryOperation>(
@@ -274,6 +290,7 @@ export async function updateTreasuryThreshold(input: {
       method: "POST",
       token: input.token,
       body: JSON.stringify({
+        environment: input.environment,
         threshold: input.threshold,
       }),
     }
@@ -352,6 +369,7 @@ export async function executeTreasuryOperation(input: {
 export async function queueSettlementSweep(input: {
   token: string;
   merchantId: string;
+  environment: "test" | "live";
   settlementId: string;
 }) {
   const response = await fetchApi<{
@@ -366,6 +384,7 @@ export async function queueSettlementSweep(input: {
     token: input.token,
     body: JSON.stringify({
       merchantId: input.merchantId,
+      environment: input.environment,
     }),
   });
 

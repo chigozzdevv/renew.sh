@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { environmentInputSchema } from "@/shared/utils/runtime-environment";
+
 const objectIdSchema = z
   .string()
   .trim()
@@ -33,6 +35,7 @@ export const verifyTreasurySignerSchema = z.object({
 
 export const bootstrapTreasurySchema = z
   .object({
+    environment: environmentInputSchema.default("test"),
     mode: z.enum(["create", "import"]),
     threshold: z.coerce.number().int().min(1).max(5).optional(),
     ownerTeamMemberIds: z.array(objectIdSchema).default([]),
@@ -79,15 +82,18 @@ export const rejectTreasuryOperationSchema = z.object({
 });
 
 export const addTreasuryOwnerSchema = z.object({
+  environment: environmentInputSchema.default("test"),
   teamMemberId: objectIdSchema,
   threshold: z.coerce.number().int().min(1).max(10).optional(),
 });
 
 export const removeTreasuryOwnerSchema = z.object({
+  environment: environmentInputSchema.default("test"),
   threshold: z.coerce.number().int().min(1).max(10).optional(),
 });
 
 export const updateTreasuryThresholdSchema = z.object({
+  environment: environmentInputSchema.default("test"),
   threshold: z.coerce.number().int().min(1).max(10),
 });
 

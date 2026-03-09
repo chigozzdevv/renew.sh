@@ -60,11 +60,15 @@ export type WorkspaceSettings = {
 export async function loadWorkspaceSettings(input: {
   token: string;
   merchantId: string;
+  environment: "test" | "live";
 }) {
   const response = await fetchApi<WorkspaceSettings>(
     `/settings/${input.merchantId}`,
     {
       token: input.token,
+      query: {
+        environment: input.environment,
+      },
     }
   );
 
@@ -74,6 +78,7 @@ export async function loadWorkspaceSettings(input: {
 export async function updateWorkspaceSettings(input: {
   token: string;
   merchantId: string;
+  environment: "test" | "live";
   payload: Partial<Pick<WorkspaceSettings, "profile" | "billing" | "notifications" | "security">>;
 }) {
   const response = await fetchApi<WorkspaceSettings>(
@@ -81,7 +86,10 @@ export async function updateWorkspaceSettings(input: {
     {
       method: "PATCH",
       token: input.token,
-      body: JSON.stringify(input.payload),
+      body: JSON.stringify({
+        ...input.payload,
+        environment: input.environment,
+      }),
     }
   );
 
@@ -91,6 +99,7 @@ export async function updateWorkspaceSettings(input: {
 export async function saveWalletSettings(input: {
   token: string;
   merchantId: string;
+  environment: "test" | "live";
   primaryWallet: string;
   reserveWallet: string | null;
   walletAlerts: boolean;
@@ -102,6 +111,7 @@ export async function saveWalletSettings(input: {
     method: "POST",
     token: input.token,
     body: JSON.stringify({
+      environment: input.environment,
       primaryWallet: input.primaryWallet,
       reserveWallet: input.reserveWallet,
       walletAlerts: input.walletAlerts,
@@ -114,6 +124,7 @@ export async function saveWalletSettings(input: {
 export async function confirmPrimaryWalletChange(input: {
   token: string;
   merchantId: string;
+  environment: "test" | "live";
 }) {
   const response = await fetchApi<{
     settings: WorkspaceSettings;
@@ -121,6 +132,9 @@ export async function confirmPrimaryWalletChange(input: {
   }>(`/settings/${input.merchantId}/wallets/confirm-primary`, {
     method: "POST",
     token: input.token,
+    body: JSON.stringify({
+      environment: input.environment,
+    }),
   });
 
   return response.data;
@@ -129,6 +143,7 @@ export async function confirmPrimaryWalletChange(input: {
 export async function promoteReserveWallet(input: {
   token: string;
   merchantId: string;
+  environment: "test" | "live";
 }) {
   const response = await fetchApi<{
     settings: WorkspaceSettings;
@@ -136,6 +151,9 @@ export async function promoteReserveWallet(input: {
   }>(`/settings/${input.merchantId}/wallets/promote-reserve`, {
     method: "POST",
     token: input.token,
+    body: JSON.stringify({
+      environment: input.environment,
+    }),
   });
 
   return response.data;
@@ -144,6 +162,7 @@ export async function promoteReserveWallet(input: {
 export async function removeReserveWallet(input: {
   token: string;
   merchantId: string;
+  environment: "test" | "live";
 }) {
   const response = await fetchApi<{
     settings: WorkspaceSettings;
@@ -151,6 +170,9 @@ export async function removeReserveWallet(input: {
   }>(`/settings/${input.merchantId}/wallets/remove-reserve`, {
     method: "POST",
     token: input.token,
+    body: JSON.stringify({
+      environment: input.environment,
+    }),
   });
 
   return response.data;

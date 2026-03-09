@@ -4,7 +4,6 @@ import {
   createDeveloperKey,
   createTestDelivery,
   createWebhook,
-  getDeveloperIntegrationStatus,
   listDeliveries,
   listDeveloperKeys,
   listWebhooks,
@@ -25,6 +24,7 @@ import {
   webhookActionSchema,
   webhookParamSchema,
 } from "@/features/developers/developer.validation";
+import { optionalEnvironmentInputSchema } from "@/shared/utils/runtime-environment";
 import { asyncHandler } from "@/shared/utils/async-handler";
 
 function resolveActor(request: Request) {
@@ -33,6 +33,14 @@ function resolveActor(request: Request) {
 
 function resolveMerchantScope(request: Request, fallback?: string) {
   return request.platformAuthUser?.merchantId ?? fallback;
+}
+
+function resolveEnvironmentScope(request: Request) {
+  return optionalEnvironmentInputSchema.parse(
+    typeof request.query.environment === "string"
+      ? request.query.environment
+      : request.body?.environment
+  );
 }
 
 export const listDeveloperKeysController = asyncHandler(
@@ -45,6 +53,7 @@ export const listDeveloperKeysController = asyncHandler(
           ? request.query.merchantId
           : undefined
       ),
+      environment: resolveEnvironmentScope(request),
     });
     const keys = await listDeveloperKeys(query);
 
@@ -55,37 +64,12 @@ export const listDeveloperKeysController = asyncHandler(
   }
 );
 
-export const getDeveloperIntegrationStatusController = asyncHandler(
-  async (request: Request, response: Response) => {
-    const merchantId = resolveMerchantScope(
-      request,
-      typeof request.query.merchantId === "string"
-        ? request.query.merchantId
-        : undefined
-    );
-
-    if (!merchantId) {
-      response.status(400).json({
-        success: false,
-        message: "merchantId is required.",
-      });
-      return;
-    }
-
-    const status = await getDeveloperIntegrationStatus(merchantId);
-
-    response.status(200).json({
-      success: true,
-      data: status,
-    });
-  }
-);
-
 export const createDeveloperKeyController = asyncHandler(
   async (request: Request, response: Response) => {
     const input = createDeveloperKeySchema.parse({
       ...request.body,
       merchantId: resolveMerchantScope(request, request.body?.merchantId),
+      environment: resolveEnvironmentScope(request),
       actor: resolveActor(request),
     });
     const result = await createDeveloperKey(input);
@@ -126,6 +110,7 @@ export const listWebhooksController = asyncHandler(
           ? request.query.merchantId
           : undefined
       ),
+      environment: resolveEnvironmentScope(request),
     });
     const webhooks = await listWebhooks(query);
 
@@ -141,6 +126,7 @@ export const createWebhookController = asyncHandler(
     const input = createWebhookSchema.parse({
       ...request.body,
       merchantId: resolveMerchantScope(request, request.body?.merchantId),
+      environment: resolveEnvironmentScope(request),
       actor: resolveActor(request),
     });
     const result = await createWebhook(input);
@@ -164,13 +150,19 @@ export const updateWebhookController = asyncHandler(
           ? request.query.merchantId
           : undefined
       ),
+      environment: resolveEnvironmentScope(request),
       actor: resolveActor(request),
     });
     const input = updateWebhookSchema.parse({
       ...request.body,
       actor: resolveActor(request),
     });
-    const webhook = await updateWebhook(params.webhookId, action.merchantId, input);
+    const webhook = await updateWebhook(
+      params.webhookId,
+      action.merchantId,
+      action.environment,
+      input
+    );
 
     response.status(200).json({
       success: true,
@@ -186,6 +178,7 @@ export const rotateWebhookSecretController = asyncHandler(
     const input = webhookActionSchema.parse({
       ...request.body,
       merchantId: resolveMerchantScope(request, request.body?.merchantId),
+      environment: resolveEnvironmentScope(request),
       actor: resolveActor(request),
     });
     const result = await rotateWebhookSecret(params.webhookId, input);
@@ -208,6 +201,7 @@ export const listDeliveriesController = asyncHandler(
           ? request.query.merchantId
           : undefined
       ),
+      environment: resolveEnvironmentScope(request),
     });
     const deliveries = await listDeliveries(query);
 
@@ -224,13 +218,14 @@ export const createTestDeliveryController = asyncHandler(
     const input = createTestDeliverySchema.parse({
       ...request.body,
       merchantId: resolveMerchantScope(request, request.body?.merchantId),
+      environment: resolveEnvironmentScope(request),
       actor: resolveActor(request),
     });
     const delivery = await createTestDelivery(params.webhookId, input);
 
     response.status(201).json({
       success: true,
-      message: "Webhook test delivery created.",
+      message: "Webhook test delivery triggered.",
       data: delivery,
     });
   }

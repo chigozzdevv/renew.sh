@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import { useWorkspaceMode } from "@/components/dashboard/mode-provider";
 import { useDashboardSession } from "@/components/dashboard/session-provider";
 import {
   StatusBadge,
@@ -28,6 +29,7 @@ type PaymentStatusFilter = PaymentRecord["status"] | "all";
 
 export function PaymentsSurface() {
   const { token } = useDashboardSession();
+  const { mode } = useWorkspaceMode();
   const [status, setStatus] = useState<PaymentStatusFilter>("all");
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -40,10 +42,11 @@ export function PaymentsSurface() {
       loadPaymentWorkspace({
         token,
         merchantId,
+        environment: mode,
         status,
         search,
       }),
-    [status, search]
+    [mode, status, search]
   );
 
   const payments = data?.payments ?? [];
@@ -104,6 +107,7 @@ export function PaymentsSurface() {
       await retryCharge({
         token,
         chargeId: selectedPayment.id,
+        environment: mode,
       });
       setMessage("Retry queued.");
       await reload();
@@ -115,7 +119,7 @@ export function PaymentsSurface() {
   }
 
   if (isLoading && !data) {
-    return <PageState title="Loading payments" message="Fetching real charge and settlement state." />;
+    return <PageState title="Loading payments" message="Fetching charge and settlement state for the selected environment." />;
   }
 
   if (error || !data) {
@@ -139,7 +143,7 @@ export function PaymentsSurface() {
       </StatGrid>
 
       <div className="grid gap-4 xl:grid-cols-[1.08fr_0.92fr]">
-        <Card title="Charge ledger" description="Live charges and settlement state from the backend.">
+        <Card title="Charge ledger" description="Charges and settlement state for the selected environment.">
           <div className="space-y-4">
             <div className="grid gap-3 md:grid-cols-[180px_minmax(0,1fr)]">
               <Select value={status} onChange={(event) => setStatus(event.target.value as PaymentStatusFilter)}>

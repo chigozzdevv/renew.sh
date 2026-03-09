@@ -1,7 +1,5 @@
 import { z } from "zod";
 
-import { runtimeModes } from "@/shared/constants/runtime-mode";
-
 const addressSchema = z
   .string()
   .trim()
@@ -19,7 +17,6 @@ export const createMerchantSchema = z.object({
   supportedMarkets: z.array(marketSchema).min(1),
   metadataHash: z.string().trim().min(1).default("0x0"),
   status: z.enum(["active", "paused"]).default("active"),
-  environmentMode: z.enum(runtimeModes).default("test"),
 });
 
 export const listMerchantsQuerySchema = z.object({

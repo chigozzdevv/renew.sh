@@ -38,6 +38,8 @@ const envSchema = z
       .string()
       .trim()
       .default("https://safe-transaction-avalanche.safe.global"),
+    DEPLOYER_PRIVATE_KEY_TEST: z.string().trim().default(""),
+    DEPLOYER_PRIVATE_KEY_LIVE: z.string().trim().default(""),
     SAFE_EXECUTOR_PRIVATE_KEY_TEST: z.string().trim().default(""),
     SAFE_EXECUTOR_PRIVATE_KEY_LIVE: z.string().trim().default(""),
     RENEW_PROTOCOL_ADDRESS_TEST: z
@@ -64,12 +66,73 @@ const envSchema = z
       .string()
       .trim()
       .min(1)
-      .default("0x0000000000000000000000000000000000000000"),
+      .default("0x5425890298aed601595a70AB815c96711a31Bc65"),
     USDC_TOKEN_ADDRESS_LIVE: z
       .string()
       .trim()
       .min(1)
       .default("0x0000000000000000000000000000000000000000"),
+    CCTP_SOURCE_CHAIN_ID_TEST: z.coerce.number().int().positive().default(11155111),
+    CCTP_SOURCE_CHAIN_ID_LIVE: z.coerce.number().int().positive().default(1),
+    CCTP_SOURCE_RPC_URL_TEST: z
+      .string()
+      .trim()
+      .min(1)
+      .default("https://ethereum-sepolia-rpc.publicnode.com"),
+    CCTP_SOURCE_RPC_URL_LIVE: z.string().trim().default(""),
+    CCTP_SOURCE_PRIVATE_KEY_TEST: z.string().trim().default(""),
+    CCTP_SOURCE_PRIVATE_KEY_LIVE: z.string().trim().default(""),
+    CCTP_SOURCE_DOMAIN_TEST: z.coerce.number().int().nonnegative().default(0),
+    CCTP_SOURCE_DOMAIN_LIVE: z.coerce.number().int().nonnegative().default(0),
+    CCTP_DEST_DOMAIN_TEST: z.coerce.number().int().nonnegative().default(1),
+    CCTP_DEST_DOMAIN_LIVE: z.coerce.number().int().nonnegative().default(1),
+    CCTP_SOURCE_USDC_ADDRESS_TEST: z
+      .string()
+      .trim()
+      .min(1)
+      .default("0x1c7d4b196cb0c7b01d743fbc6116a902379c7238"),
+    CCTP_SOURCE_USDC_ADDRESS_LIVE: z
+      .string()
+      .trim()
+      .min(1)
+      .default("0x0000000000000000000000000000000000000000"),
+    CCTP_TOKEN_MESSENGER_ADDRESS_TEST: z
+      .string()
+      .trim()
+      .min(1)
+      .default("0x9f3B8679d8d7a735A6fA14618F2Fa3012fD52d2C"),
+    CCTP_TOKEN_MESSENGER_ADDRESS_LIVE: z
+      .string()
+      .trim()
+      .min(1)
+      .default("0x0000000000000000000000000000000000000000"),
+    CCTP_MESSAGE_TRANSMITTER_ADDRESS_TEST: z
+      .string()
+      .trim()
+      .min(1)
+      .default("0xa9fb1b3009dcb79e2fe346c16a604b8fa8ae0a79"),
+    CCTP_MESSAGE_TRANSMITTER_ADDRESS_LIVE: z
+      .string()
+      .trim()
+      .min(1)
+      .default("0x0000000000000000000000000000000000000000"),
+    CCTP_ATTESTATION_API_URL_TEST: z
+      .string()
+      .trim()
+      .min(1)
+      .default("https://iris-api-sandbox.circle.com"),
+    CCTP_ATTESTATION_API_URL_LIVE: z
+      .string()
+      .trim()
+      .min(1)
+      .default("https://iris-api.circle.com"),
+    CCTP_ATTESTATION_POLL_INTERVAL_MS: z
+      .coerce
+      .number()
+      .int()
+      .positive()
+      .default(2000),
+    CCTP_ATTESTATION_TIMEOUT_MS: z.coerce.number().int().positive().default(300000),
     ENABLE_WORKERS: booleanEnv.default(true),
     REDIS_URL: z.string().trim().min(1).default("redis://127.0.0.1:6379"),
     REDIS_QUEUE_PREFIX: z.string().trim().min(1).default("renew"),
@@ -116,6 +179,7 @@ const envSchema = z
     SUMSUB_WEBHOOK_SECRET_LIVE: z.string().trim().default(""),
     SUMSUB_SDK_TOKEN_TTL_SECONDS: z.coerce.number().int().positive().default(900),
     SUMSUB_TIMEOUT_MS: z.coerce.number().int().positive().default(10000),
+    DEVELOPER_WEBHOOK_SECRET_ENCRYPTION_KEY: z.string().trim().min(32),
     PLATFORM_AUTH_ENABLED: booleanEnv.default(true),
     PLATFORM_AUTH_JWT_SECRET: z
       .string()

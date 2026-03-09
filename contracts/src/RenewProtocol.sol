@@ -152,6 +152,14 @@ contract RenewProtocol {
         uint64 billingPeriodAt,
         uint64 nextChargeAt
     );
+    event SettlementCredited(
+        uint256 indexed chargeId,
+        address indexed merchant,
+        bytes32 indexed externalChargeId,
+        address settlementSource,
+        uint128 usdcAmount,
+        uint128 feeAmount
+    );
     event ChargeFailed(
         uint256 indexed chargeId,
         uint256 indexed subscriptionId,
@@ -559,6 +567,55 @@ contract RenewProtocol {
             usageUnits,
             billingPeriodAt,
             subscription.nextChargeAt
+        );
+    }
+
+    function creditSettlement(
+        address merchant,
+        bytes32 externalChargeId,
+        address settlementSource,
+        uint128 usdcAmount
+    ) external onlyChargeOperator returns (uint256 chargeId) {
+        if (merchant == address(0) || settlementSource == address(0)) revert InvalidAddress();
+        if (!merchantExists[merchant]) revert MerchantNotRegistered();
+        if (!merchants[merchant].active) revert MerchantInactive();
+        if (externalChargeId == bytes32(0) || usdcAmount == 0) revert InvalidInput();
+        if (merchantExternalChargeIds[merchant][externalChargeId]) {
+            revert DuplicateExternalChargeId();
+        }
+
+        if (!settlementAsset.transferFrom(settlementSource, address(vault), usdcAmount)) {
+            revert TransferFailed();
+        }
+
+        uint128 feeAmount = uint128((uint256(usdcAmount) * protocolFeeBps) / 10_000);
+        vault.creditMerchantBalance(merchant, usdcAmount, feeAmount);
+        merchantExternalChargeIds[merchant][externalChargeId] = true;
+
+        chargeId = nextChargeId++;
+        charges[chargeId] = Charge({
+            subscriptionId: 0,
+            merchant: merchant,
+            settlementSource: settlementSource,
+            externalChargeId: externalChargeId,
+            failureCode: bytes32(0),
+            localAmount: 0,
+            fxRate: 0,
+            usdcAmount: usdcAmount,
+            feeAmount: feeAmount,
+            usageUnits: 0,
+            billingPeriodAt: uint64(block.timestamp),
+            processedAt: uint64(block.timestamp),
+            status: ChargeStatus.Executed
+        });
+
+        emit SettlementCredited(
+            chargeId,
+            merchant,
+            externalChargeId,
+            settlementSource,
+            usdcAmount,
+            feeAmount
         );
     }
 

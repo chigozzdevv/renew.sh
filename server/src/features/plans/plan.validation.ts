@@ -1,9 +1,12 @@
 import { z } from "zod";
 
+import { environmentInputSchema } from "@/shared/utils/runtime-environment";
+
 const marketSchema = z.string().trim().min(2).max(8).toUpperCase();
 
 export const createPlanSchema = z.object({
   merchantId: z.string().trim().min(1),
+  environment: environmentInputSchema.default("test"),
   planCode: z.string().trim().min(2).max(48).toUpperCase(),
   name: z.string().trim().min(2).max(120),
   usdAmount: z.coerce.number().positive(),
@@ -18,12 +21,13 @@ export const createPlanSchema = z.object({
 
 export const listPlansQuerySchema = z.object({
   merchantId: z.string().trim().min(1).optional(),
+  environment: environmentInputSchema.optional(),
   status: z.enum(["draft", "active", "archived"]).optional(),
   search: z.string().trim().min(1).optional(),
 });
 
 export const updatePlanSchema = createPlanSchema
-  .omit({ merchantId: true })
+  .omit({ merchantId: true, environment: true })
   .partial();
 
 export type CreatePlanInput = z.infer<typeof createPlanSchema>;

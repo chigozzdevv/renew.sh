@@ -30,6 +30,7 @@ export type SubscriptionWorkspace = {
 export async function loadSubscriptionWorkspace(input: {
   token: string;
   merchantId: string;
+  environment: "test" | "live";
   status?: SubscriptionRecord["status"] | "all";
   search?: string;
 }) {
@@ -38,6 +39,7 @@ export async function loadSubscriptionWorkspace(input: {
       token: input.token,
       query: {
         merchantId: input.merchantId,
+        environment: input.environment,
         status: input.status && input.status !== "all" ? input.status : undefined,
         search: input.search?.trim() || undefined,
       },
@@ -45,6 +47,7 @@ export async function loadSubscriptionWorkspace(input: {
     loadPlans({
       token: input.token,
       merchantId: input.merchantId,
+      environment: input.environment,
       status: "all",
     }),
   ]);
@@ -58,6 +61,7 @@ export async function loadSubscriptionWorkspace(input: {
 export async function createSubscription(input: {
   token: string;
   merchantId: string;
+  environment: "test" | "live";
   planId: string;
   customerRef: string;
   customerName: string;
@@ -78,6 +82,7 @@ export async function createSubscription(input: {
 export async function updateSubscription(input: {
   token: string;
   subscriptionId: string;
+  environment: "test" | "live";
   payload: Partial<{
     status: SubscriptionRecord["status"];
     nextChargeAt: string;
@@ -88,6 +93,9 @@ export async function updateSubscription(input: {
   const response = await fetchApi<SubscriptionRecord>(`/subscriptions/${input.subscriptionId}`, {
     method: "PATCH",
     token: input.token,
+    query: {
+      environment: input.environment,
+    },
     body: JSON.stringify(input.payload),
   });
 
@@ -97,6 +105,7 @@ export async function updateSubscription(input: {
 export async function queueSubscriptionCharge(input: {
   token: string;
   subscriptionId: string;
+  environment: "test" | "live";
 }) {
   const response = await fetchApi<{
     queued: boolean;
@@ -105,6 +114,9 @@ export async function queueSubscriptionCharge(input: {
   }>(`/subscriptions/${input.subscriptionId}/queue-charge`, {
     method: "POST",
     token: input.token,
+    query: {
+      environment: input.environment,
+    },
   });
 
   return response.data;

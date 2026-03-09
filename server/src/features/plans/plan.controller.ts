@@ -11,10 +11,19 @@ import {
   listPlansQuerySchema,
   updatePlanSchema,
 } from "@/features/plans/plan.validation";
+import { optionalEnvironmentInputSchema } from "@/shared/utils/runtime-environment";
 import { asyncHandler } from "@/shared/utils/async-handler";
 
 function resolveMerchantScope(request: Request, fallback?: string) {
   return request.platformAuthUser?.merchantId ?? fallback;
+}
+
+function resolveEnvironmentScope(request: Request) {
+  return optionalEnvironmentInputSchema.parse(
+    typeof request.query.environment === "string"
+      ? request.query.environment
+      : request.body?.environment
+  );
 }
 
 export const createPlanController = asyncHandler(
@@ -22,6 +31,7 @@ export const createPlanController = asyncHandler(
     const input = createPlanSchema.parse({
       ...request.body,
       merchantId: resolveMerchantScope(request, request.body?.merchantId),
+      environment: resolveEnvironmentScope(request),
     });
     const plan = await createPlan(input);
 
@@ -43,6 +53,7 @@ export const listPlansController = asyncHandler(
           ? request.query.merchantId
           : undefined
       ),
+      environment: resolveEnvironmentScope(request),
     });
     const plans = await listPlans(query);
 
@@ -57,7 +68,8 @@ export const getPlanController = asyncHandler(
   async (request: Request, response: Response) => {
     const plan = await getPlanById(
       String(request.params.planId),
-      resolveMerchantScope(request)
+      resolveMerchantScope(request),
+      resolveEnvironmentScope(request)
     );
 
     response.status(200).json({
@@ -73,7 +85,8 @@ export const updatePlanController = asyncHandler(
     const plan = await updatePlan(
       String(request.params.planId),
       input,
-      resolveMerchantScope(request)
+      resolveMerchantScope(request),
+      resolveEnvironmentScope(request)
     );
 
     response.status(200).json({

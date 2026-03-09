@@ -1,17 +1,22 @@
 import { Types } from "mongoose";
 
 import { HttpError } from "@/shared/errors/http-error";
+import { enqueueQueueJob } from "@/shared/workers/queue-runtime";
+import { queueNames } from "@/shared/workers/queue-names";
 
 import { appendAuditLog } from "@/features/audit/audit.service";
 import { ChargeModel } from "@/features/charges/charge.model";
+import { emitChargeWebhookEventForStatusChange } from "@/features/developers/developer-webhook-delivery.service";
 import { assertMerchantKybApprovedForLive } from "@/features/kyc/kyc.service";
 import { MerchantModel } from "@/features/merchants/merchant.model";
 import { SettingModel } from "@/features/settings/setting.model";
+import { bridgeSettlementToAvalanche } from "@/features/settlements/cctp.service";
 import { SettlementModel } from "@/features/settlements/settlement.model";
 import {
   approveTreasuryOperation,
   createSettlementSweepOperation,
   executeTreasuryOperation,
+  getTreasuryByMerchantId,
   getSettlementSweepOperation,
   listSettlementSweepOperations,
   rejectTreasuryOperation,
@@ -26,6 +31,11 @@ import type {
   SettlementActionInput,
   UpdateSettlementInput,
 } from "@/features/settlements/settlement.validation";
+import type { RuntimeMode } from "@/shared/constants/runtime-mode";
+import {
+  createRuntimeModeCondition,
+  toStoredRuntimeMode,
+} from "@/shared/utils/runtime-environment";
 
 type SweepApprover = {
   teamMemberId: string;
@@ -45,7 +55,11 @@ function toSettlementResponse(document: {
   destinationWallet: string;
   status: string;
   txHash?: string | null;
+  bridgeSourceTxHash?: string | null;
+  bridgeReceiveTxHash?: string | null;
+  creditTxHash?: string | null;
   submittedAt?: Date | null;
+  bridgeAttestedAt?: Date | null;
   scheduledFor: Date;
   settledAt?: Date | null;
   reversedAt?: Date | null;
@@ -64,7 +78,11 @@ function toSettlementResponse(document: {
     destinationWallet: document.destinationWallet,
     status: document.status,
     txHash: document.txHash ?? null,
+    bridgeSourceTxHash: document.bridgeSourceTxHash ?? null,
+    bridgeReceiveTxHash: document.bridgeReceiveTxHash ?? null,
+    creditTxHash: document.creditTxHash ?? null,
     submittedAt: document.submittedAt ?? null,
+    bridgeAttestedAt: document.bridgeAttestedAt ?? null,
     scheduledFor: document.scheduledFor,
     settledAt: document.settledAt ?? null,
     reversedAt: document.reversedAt ?? null,
@@ -148,6 +166,12 @@ async function syncLinkedChargeFromSettlement(settlement: {
     return;
   }
 
+  const charge = await ChargeModel.findById(settlement.sourceChargeId).exec();
+
+  if (!charge) {
+    return;
+  }
+
   const nextStatus = resolveChargeStatusFromSettlement(settlement.status);
   const failureCode =
     nextStatus === "failed"
@@ -156,11 +180,18 @@ async function syncLinkedChargeFromSettlement(settlement: {
         ? "settlement_reversed"
         : null;
 
-  await ChargeModel.findByIdAndUpdate(settlement.sourceChargeId, {
-    status: nextStatus,
-    failureCode,
-    processedAt: new Date(),
-  }).exec();
+  const previousStatus = charge.status;
+
+  charge.status = nextStatus;
+  charge.failureCode = failureCode;
+  charge.processedAt = new Date();
+  await charge.save();
+
+  await emitChargeWebhookEventForStatusChange({
+    previousStatus,
+    chargeId: charge._id.toString(),
+    nextStatus: charge.status,
+  });
 }
 
 async function getSweepApprovalThreshold(merchantId: string) {
@@ -182,15 +213,27 @@ async function getSweepApprovalThreshold(merchantId: string) {
   return Math.min(5, Math.max(1, Math.trunc(rawThreshold)));
 }
 
-async function ensureSettlementScope(settlementId: string, merchantId?: string) {
-  const settlement = await SettlementModel.findById(settlementId).exec();
+async function ensureSettlementScope(
+  settlementId: string,
+  merchantId?: string,
+  environment?: RuntimeMode
+) {
+  const mongoQuery: Record<string, unknown> = {
+    _id: settlementId,
+  };
+
+  if (merchantId) {
+    mongoQuery.merchantId = merchantId;
+  }
+
+  if (environment) {
+    Object.assign(mongoQuery, createRuntimeModeCondition("environment", environment));
+  }
+
+  const settlement = await SettlementModel.findOne(mongoQuery).exec();
 
   if (!settlement) {
     throw new HttpError(404, "Settlement was not found.");
-  }
-
-  if (merchantId && settlement.merchantId.toString() !== merchantId) {
-    throw new HttpError(403, "Settlement does not belong to this merchant.");
   }
 
   return settlement;
@@ -203,13 +246,27 @@ export async function createSettlement(input: CreateSettlementInput) {
     throw new HttpError(404, "Merchant was not found.");
   }
 
+  if (input.sourceChargeId) {
+    const sourceChargeExists = await ChargeModel.exists({
+      _id: input.sourceChargeId,
+      merchantId: input.merchantId,
+      ...createRuntimeModeCondition("environment", input.environment),
+    });
+
+    if (!sourceChargeExists) {
+      throw new HttpError(404, "Source charge was not found.");
+    }
+  }
+
   await assertMerchantKybApprovedForLive(
     input.merchantId,
-    "creating settlements"
+    "creating settlements",
+    input.environment
   );
 
   const settlement = await SettlementModel.create({
     merchantId: input.merchantId,
+    environment: input.environment,
     sourceChargeId: input.sourceChargeId ?? null,
     batchRef: input.batchRef,
     grossUsdc: input.grossUsdc,
@@ -231,20 +288,37 @@ export async function createSettlement(input: CreateSettlementInput) {
 }
 
 export async function listSettlements(query: ListSettlementsQuery) {
-  const mongoQuery: Record<string, unknown> = {};
+  const filters: Record<string, unknown>[] = [];
 
   if (query.merchantId) {
-    mongoQuery.merchantId = query.merchantId;
+    filters.push({
+      merchantId: query.merchantId,
+    });
+  }
+
+  if (query.environment) {
+    filters.push(createRuntimeModeCondition("environment", query.environment));
   }
 
   if (query.status) {
-    mongoQuery.status = query.status;
+    filters.push({
+      status: query.status,
+    });
   }
 
   if (query.search) {
     const pattern = new RegExp(query.search, "i");
-    mongoQuery.batchRef = pattern;
+    filters.push({
+      batchRef: pattern,
+    });
   }
+
+  const mongoQuery =
+    filters.length === 0
+      ? {}
+      : filters.length === 1
+        ? filters[0]
+        : { $and: filters };
 
   const settlements = await SettlementModel.find(mongoQuery)
     .sort({ scheduledFor: -1 })
@@ -253,8 +327,16 @@ export async function listSettlements(query: ListSettlementsQuery) {
   return settlements.map(toSettlementResponse);
 }
 
-export async function getSettlementById(settlementId: string, merchantId?: string) {
-  const settlement = await ensureSettlementScope(settlementId, merchantId);
+export async function getSettlementById(
+  settlementId: string,
+  merchantId?: string,
+  environment?: RuntimeMode
+) {
+  const settlement = await ensureSettlementScope(
+    settlementId,
+    merchantId,
+    environment
+  );
 
   return toSettlementResponse(settlement);
 }
@@ -262,13 +344,19 @@ export async function getSettlementById(settlementId: string, merchantId?: strin
 export async function updateSettlement(
   settlementId: string,
   input: UpdateSettlementInput,
-  merchantId?: string
+  merchantId?: string,
+  environment?: RuntimeMode
 ) {
-  const settlement = await ensureSettlementScope(settlementId, merchantId);
+  const settlement = await ensureSettlementScope(
+    settlementId,
+    merchantId,
+    environment
+  );
 
   await assertMerchantKybApprovedForLive(
     settlement.merchantId.toString(),
-    "updating settlements"
+    "updating settlements",
+    toStoredRuntimeMode(settlement.environment)
   );
 
   if (input.status !== undefined) {
@@ -279,8 +367,24 @@ export async function updateSettlement(
     settlement.txHash = input.txHash ?? null;
   }
 
+  if (input.bridgeSourceTxHash !== undefined) {
+    settlement.bridgeSourceTxHash = input.bridgeSourceTxHash ?? null;
+  }
+
+  if (input.bridgeReceiveTxHash !== undefined) {
+    settlement.bridgeReceiveTxHash = input.bridgeReceiveTxHash ?? null;
+  }
+
+  if (input.creditTxHash !== undefined) {
+    settlement.creditTxHash = input.creditTxHash ?? null;
+  }
+
   if (input.submittedAt !== undefined) {
     settlement.submittedAt = input.submittedAt ?? null;
+  }
+
+  if (input.bridgeAttestedAt !== undefined) {
+    settlement.bridgeAttestedAt = input.bridgeAttestedAt ?? null;
   }
 
   if (input.sourceChargeId !== undefined) {
@@ -328,11 +432,16 @@ export async function requestSweepApproval(
   settlementId: string,
   input: RequestSweepApprovalInput
 ) {
-  const settlement = await ensureSettlementScope(settlementId, input.merchantId);
+  const settlement = await ensureSettlementScope(
+    settlementId,
+    input.merchantId,
+    input.environment
+  );
   const approval = await createSettlementSweepOperation({
     merchantId: input.merchantId,
     settlementId,
     actor: input.actor,
+    environment: input.environment,
   });
 
   await appendAuditLog({
@@ -358,11 +467,12 @@ export async function approveSweep(
   settlementId: string,
   input: ApproveSweepApprovalInput & { approver: SweepApprover }
 ) {
-  await ensureSettlementScope(settlementId, input.merchantId);
+  await ensureSettlementScope(settlementId, input.merchantId, input.environment);
   const operation = await createSettlementSweepOperation({
     merchantId: input.merchantId,
     settlementId,
     actor: input.actor,
+    environment: input.environment,
   });
   const approval = await approveTreasuryOperation({
     merchantId: input.merchantId,
@@ -396,11 +506,12 @@ export async function rejectSweep(
   settlementId: string,
   input: RejectSweepApprovalInput
 ) {
-  await ensureSettlementScope(settlementId, input.merchantId);
+  await ensureSettlementScope(settlementId, input.merchantId, input.environment);
   const operation = await createSettlementSweepOperation({
     merchantId: input.merchantId,
     settlementId,
     actor: input.actor,
+    environment: input.environment,
   });
   const approval = await rejectTreasuryOperation({
     merchantId: input.merchantId,
@@ -433,6 +544,7 @@ export async function rejectSweep(
 export async function listSweepApprovals(query: ListSweepApprovalsQuery) {
   const approvals = await listSettlementSweepOperations({
     merchantId: query.merchantId,
+    environment: query.environment,
     status: query.status,
     limit: query.limit,
   });
@@ -445,13 +557,19 @@ export async function queueSettlementSweep(
   options?: {
     merchantId?: string;
     actor?: SweepApprover;
+    environment?: RuntimeMode;
   }
 ) {
-  const settlement = await ensureSettlementScope(settlementId, options?.merchantId);
+  const settlement = await ensureSettlementScope(
+    settlementId,
+    options?.merchantId,
+    options?.environment
+  );
 
   await assertMerchantKybApprovedForLive(
     settlement.merchantId.toString(),
-    "queueing settlement sweeps"
+    "queueing settlement sweeps",
+    toStoredRuntimeMode(settlement.environment)
   );
 
   if (settlement.status === "settled") {
@@ -475,6 +593,7 @@ export async function queueSettlementSweep(
       options?.actor?.email ??
       options?.merchantId ??
       "system",
+    environment: toStoredRuntimeMode(settlement.environment),
   });
 
   return {
@@ -486,11 +605,78 @@ export async function queueSettlementSweep(
   };
 }
 
+export async function queueSettlementBridge(
+  settlementId: string,
+  options?: {
+    merchantId?: string;
+    environment?: RuntimeMode;
+  }
+) {
+  const settlement = await ensureSettlementScope(
+    settlementId,
+    options?.merchantId,
+    options?.environment
+  );
+
+  await assertMerchantKybApprovedForLive(
+    settlement.merchantId.toString(),
+    "bridging settlements",
+    toStoredRuntimeMode(settlement.environment)
+  );
+
+  if (
+    settlement.status === "settled" ||
+    settlement.status === "reversed" ||
+    settlement.creditTxHash
+  ) {
+    return {
+      queued: false,
+      processedInline: false,
+      settlementId,
+      result: {
+        skipped: true,
+        status: settlement.status,
+      },
+    };
+  }
+
+  const queuedJob = await enqueueQueueJob(
+    queueNames.settlementBridge,
+    "settlement-bridge",
+    { settlementId },
+    {
+      jobId: `settlement-bridge:${settlementId}`,
+      attempts: 3,
+    }
+  );
+
+  if (!queuedJob) {
+    const inlineResult = await runSettlementBridgeJob({ settlementId });
+
+    return {
+      queued: false,
+      processedInline: true,
+      settlementId,
+      result: inlineResult,
+    };
+  }
+
+  return {
+    queued: true,
+    settlementId,
+  };
+}
+
 export async function executeApprovedSweep(
   settlementId: string,
   input: SettlementActionInput & { approver?: SweepApprover }
 ) {
-  const operation = await getSettlementSweepOperation(settlementId, input.merchantId);
+  await ensureSettlementScope(settlementId, input.merchantId, input.environment);
+  const operation = await getSettlementSweepOperation(
+    settlementId,
+    input.merchantId,
+    input.environment
+  );
   const executed = await executeTreasuryOperation({
     merchantId: input.merchantId,
     operationId: operation.id,
@@ -507,7 +693,7 @@ export async function executeApprovedSweep(
 
 export async function runSettlementSweepJob(input: { settlementId: string }) {
   const settlement = await SettlementModel.findById(input.settlementId)
-    .select({ merchantId: 1 })
+    .select({ merchantId: 1, environment: 1 })
     .lean()
     .exec();
 
@@ -517,7 +703,8 @@ export async function runSettlementSweepJob(input: { settlementId: string }) {
 
   const operation = await getSettlementSweepOperation(
     input.settlementId,
-    settlement.merchantId.toString()
+    settlement.merchantId.toString(),
+    toStoredRuntimeMode(settlement.environment)
   );
   const executed = await executeTreasuryOperation({
     merchantId: settlement.merchantId.toString(),
@@ -529,5 +716,92 @@ export async function runSettlementSweepJob(input: { settlementId: string }) {
     settlementId: input.settlementId,
     status: executed.status,
     txHash: executed.txHash,
+  };
+}
+
+export async function runSettlementBridgeJob(input: { settlementId: string }) {
+  const settlement = await SettlementModel.findById(input.settlementId).exec();
+
+  if (!settlement) {
+    throw new HttpError(404, "Settlement was not found.");
+  }
+
+  if (settlement.creditTxHash) {
+    const sweepApproval = await queueSettlementSweep(input.settlementId, {
+      merchantId: settlement.merchantId.toString(),
+      environment: toStoredRuntimeMode(settlement.environment),
+    });
+
+    return {
+      settlementId: input.settlementId,
+      status: settlement.status,
+      bridgeSourceTxHash: settlement.bridgeSourceTxHash ?? null,
+      bridgeReceiveTxHash: settlement.bridgeReceiveTxHash ?? null,
+      creditTxHash: settlement.creditTxHash ?? null,
+      sweepApproval,
+    };
+  }
+
+  const [merchant, sourceCharge, treasury] = await Promise.all([
+    MerchantModel.findById(settlement.merchantId).exec(),
+    settlement.sourceChargeId
+      ? ChargeModel.findById(settlement.sourceChargeId).exec()
+      : Promise.resolve(null),
+    getTreasuryByMerchantId(
+      settlement.merchantId.toString(),
+      toStoredRuntimeMode(settlement.environment)
+    ).catch(() => ({
+      account: null,
+    })),
+  ]);
+
+  if (!merchant) {
+    throw new HttpError(404, "Merchant was not found.");
+  }
+
+  const treasurySafeAddress = treasury.account?.safeAddress ?? merchant.merchantAccount;
+
+  if (!treasurySafeAddress) {
+    throw new HttpError(
+      409,
+      "Merchant treasury Safe is not configured for on-chain settlement."
+    );
+  }
+
+  if (!sourceCharge) {
+    throw new HttpError(
+      409,
+      "Settlement is missing its source charge and cannot be bridged."
+    );
+  }
+
+  const bridgeResult = await bridgeSettlementToAvalanche({
+    merchantAddress: treasurySafeAddress,
+    externalChargeId: sourceCharge.externalChargeId,
+    netUsdc: settlement.netUsdc,
+  });
+
+  settlement.status = "confirming";
+  settlement.bridgeSourceTxHash = bridgeResult.bridgeSourceTxHash;
+  settlement.bridgeReceiveTxHash = bridgeResult.bridgeReceiveTxHash;
+  settlement.creditTxHash = bridgeResult.creditTxHash;
+  settlement.bridgeAttestedAt = bridgeResult.attestedAt;
+  settlement.submittedAt = settlement.submittedAt ?? new Date();
+  await settlement.save();
+
+  await syncLinkedChargeFromSettlement(settlement);
+
+  const sweepApproval = await queueSettlementSweep(input.settlementId, {
+    merchantId: settlement.merchantId.toString(),
+    environment: toStoredRuntimeMode(settlement.environment),
+  });
+
+  return {
+    settlementId: input.settlementId,
+    status: settlement.status,
+    bridgeSourceTxHash: settlement.bridgeSourceTxHash,
+    bridgeReceiveTxHash: settlement.bridgeReceiveTxHash,
+    creditTxHash: settlement.creditTxHash,
+    sweepApproval,
   };
 }

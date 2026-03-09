@@ -8,6 +8,12 @@ const kycEventSchema = new Schema(
       trim: true,
       default: "sumsub",
     },
+    environment: {
+      type: String,
+      required: true,
+      enum: ["test", "live"],
+      default: "test",
+    },
     eventKey: {
       type: String,
       required: true,
@@ -47,9 +53,9 @@ const kycEventSchema = new Schema(
   }
 );
 
-kycEventSchema.index({ provider: 1, eventKey: 1 }, { unique: true });
-kycEventSchema.index({ applicantId: 1, createdAt: -1 });
-kycEventSchema.index({ externalUserId: 1, createdAt: -1 });
+kycEventSchema.index({ provider: 1, environment: 1, eventKey: 1 }, { unique: true });
+kycEventSchema.index({ applicantId: 1, environment: 1, createdAt: -1 });
+kycEventSchema.index({ externalUserId: 1, environment: 1, createdAt: -1 });
 
 type KycEventEntry = InferSchemaType<typeof kycEventSchema> & {
   _id: Types.ObjectId;

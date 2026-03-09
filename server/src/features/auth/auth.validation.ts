@@ -1,19 +1,27 @@
 import { z } from "zod";
 
-import { runtimeModes } from "@/shared/constants/runtime-mode";
-
 const objectIdSchema = z
   .string()
   .trim()
   .regex(/^[a-fA-F0-9]{24}$/, "Must be a valid Mongo ObjectId.");
+const marketSchema = z.string().trim().min(2).max(8).toUpperCase();
 
 const passwordSchema = z
   .string()
   .min(10, "Password must be at least 10 characters.")
   .max(160, "Password must be at most 160 characters.");
 
+export const signupSchema = z.object({
+  name: z.string().trim().min(2).max(120),
+  company: z.string().trim().min(2).max(120),
+  email: z.email().trim().toLowerCase(),
+  password: passwordSchema,
+  billingTimezone: z.string().trim().min(2).max(80).default("UTC"),
+  supportedMarkets: z.array(marketSchema).min(1).default(["NGN"]),
+});
+
 export const loginSchema = z.object({
-  merchantId: objectIdSchema,
+  merchantId: objectIdSchema.optional(),
   email: z.email().trim().toLowerCase(),
   password: passwordSchema,
 });
@@ -29,11 +37,7 @@ export const authTokenPayloadSchema = z.object({
   merchantId: objectIdSchema,
 });
 
-export const updateWorkspaceModeSchema = z.object({
-  mode: z.enum(runtimeModes),
-});
-
+export type SignupInput = z.infer<typeof signupSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
 export type ActivateInviteInput = z.infer<typeof activateInviteSchema>;
 export type AuthTokenPayload = z.infer<typeof authTokenPayloadSchema>;
-export type UpdateWorkspaceModeInput = z.infer<typeof updateWorkspaceModeSchema>;

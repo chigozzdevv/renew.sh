@@ -118,6 +118,43 @@ contract RenewProtocolTest {
         assert(subscription.retryAvailableAt == 0);
     }
 
+    function testCreditsOffchainSettlementIntoMerchantVault() public {
+        vm.prank(SETTLEMENT_SOURCE);
+        token.approve(address(protocol), 3_500e6);
+
+        vm.prank(OPERATOR);
+        uint256 chargeId = protocol.creditSettlement(
+            MERCHANT,
+            bytes32("settlement_1"),
+            SETTLEMENT_SOURCE,
+            3_500e6
+        );
+
+        RenewProtocol.Charge memory charge = protocol.getCharge(chargeId);
+
+        assert(charge.subscriptionId == 0);
+        assert(charge.merchant == MERCHANT);
+        assert(charge.usdcAmount == 3_500e6);
+        assert(vault.merchantBalances(MERCHANT) == 3_412_500_000);
+        assert(vault.protocolFeeBalance() == 87_500_000);
+
+        vm.prank(SETTLEMENT_SOURCE);
+        token.approve(address(protocol), 3_500e6);
+
+        vm.prank(OPERATOR);
+        (bool success,) = address(protocol).call(
+            abi.encodeWithSelector(
+                RenewProtocol.creditSettlement.selector,
+                MERCHANT,
+                bytes32("settlement_1"),
+                SETTLEMENT_SOURCE,
+                uint128(3_500e6)
+            )
+        );
+
+        assert(!success);
+    }
+
     function testLateSettlementDoesNotShiftBillingCadence() public {
         vm.prank(MERCHANT);
         uint256 planId = protocol.createPlan(

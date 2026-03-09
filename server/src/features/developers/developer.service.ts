@@ -1,13 +1,15 @@
 import { createHash, randomBytes } from "crypto";
 
-import { getSafeConfig } from "@/config/safe.config";
-import { getSumsubConfig } from "@/config/sumsub.config";
-import { getYellowCardConfig } from "@/config/yellow-card.config";
 import { HttpError } from "@/shared/errors/http-error";
 
 import { appendAuditLog } from "@/features/audit/audit.service";
 import { DeveloperDeliveryModel } from "@/features/developers/developer-delivery.model";
 import { DeveloperKeyModel } from "@/features/developers/developer-key.model";
+import {
+  createWebhookSecret,
+  encryptWebhookSecret,
+} from "@/features/developers/developer-webhook-crypto";
+import { sendDeveloperWebhookTest } from "@/features/developers/developer-webhook-delivery.service";
 import { DeveloperWebhookModel } from "@/features/developers/developer-webhook.model";
 import type {
   CreateDeveloperKeyInput,
@@ -22,19 +24,10 @@ import type {
 } from "@/features/developers/developer.validation";
 import { MerchantModel } from "@/features/merchants/merchant.model";
 import type { RuntimeMode } from "@/shared/constants/runtime-mode";
-
-type IntegrationModeStatus = {
-  mode: RuntimeMode;
-  implementation: string;
-  state: "ready" | "simulated" | "credentials_pending";
-  detail: string;
-};
-
-type IntegrationStatusRecord = {
-  key: "safe" | "yellow_card" | "sumsub";
-  label: string;
-  modes: IntegrationModeStatus[];
-};
+import {
+  createRuntimeModeCondition,
+  toPublicEnvironment,
+} from "@/shared/utils/runtime-environment";
 
 function hashSecret(value: string) {
   return createHash("sha256").update(value).digest("hex");
@@ -42,7 +35,7 @@ function hashSecret(value: string) {
 
 function createApiKeyToken(environment: "test" | "live") {
   const suffix = randomBytes(24).toString("hex");
-  const prefix = environment === "live" ? "rk_live" : "rk_test";
+  const prefix = environment === "live" ? "rw_live" : "rw_test";
   const token = `${prefix}_${suffix}`;
 
   return {
@@ -50,15 +43,6 @@ function createApiKeyToken(environment: "test" | "live") {
     token,
     hash: hashSecret(token),
     lastFour: token.slice(-4),
-  };
-}
-
-function createWebhookSecret() {
-  const secret = `whsec_${randomBytes(24).toString("hex")}`;
-
-  return {
-    secret,
-    hash: hashSecret(secret),
   };
 }
 
@@ -79,7 +63,9 @@ function toDeveloperKeyResponse(document: {
     id: document._id.toString(),
     merchantId: document.merchantId.toString(),
     label: document.label,
-    environment: document.environment,
+    environment: toPublicEnvironment(
+      document.environment === "live" ? "live" : "test"
+    ),
     maskedToken: `${document.prefix}••••${document.lastFour}`,
     status: document.status,
     lastUsedAt: document.lastUsedAt ?? null,
@@ -93,6 +79,7 @@ function toWebhookResponse(document: {
   _id: { toString(): string };
   merchantId: { toString(): string };
   label: string;
+  environment: string;
   endpointUrl: string;
   status: string;
   eventTypes: string[];
@@ -106,6 +93,9 @@ function toWebhookResponse(document: {
     id: document._id.toString(),
     merchantId: document.merchantId.toString(),
     label: document.label,
+    environment: toPublicEnvironment(
+      document.environment === "live" ? "live" : "test"
+    ),
     endpointUrl: document.endpointUrl,
     status: document.status,
     eventTypes: document.eventTypes,
@@ -121,6 +111,8 @@ function toDeliveryResponse(document: {
   _id: { toString(): string };
   merchantId: { toString(): string };
   webhookId: { toString(): string };
+  eventId: string;
+  environment: string;
   eventType: string;
   status: string;
   httpStatus?: number | null;
@@ -135,6 +127,10 @@ function toDeliveryResponse(document: {
     id: document._id.toString(),
     merchantId: document.merchantId.toString(),
     webhookId: document.webhookId.toString(),
+    eventId: document.eventId,
+    environment: toPublicEnvironment(
+      document.environment === "live" ? "live" : "test"
+    ),
     eventType: document.eventType,
     status: document.status,
     httpStatus: document.httpStatus ?? null,
@@ -157,77 +153,6 @@ async function ensureMerchant(merchantId: string) {
   return merchant;
 }
 
-function hasConfiguredAddress(value: string) {
-  const normalized = value.trim().toLowerCase();
-  return normalized.length > 0 && normalized !== "0x0000000000000000000000000000000000000000";
-}
-
-function resolveSafeModeStatus(mode: RuntimeMode): IntegrationModeStatus {
-  const config = getSafeConfig(mode);
-  const isReady =
-    config.rpcUrl.trim().length > 0 &&
-    config.txServiceUrl.trim().length > 0 &&
-    config.executorPrivateKey.trim().length > 0 &&
-    hasConfiguredAddress(config.protocolAddress);
-
-  return {
-    mode,
-    implementation: mode === "live" ? "live" : "testnet",
-    state: isReady ? "ready" : "credentials_pending",
-    detail: isReady
-      ? mode === "live"
-        ? "Mainnet Safe treasury is configured."
-        : "Fuji Safe treasury is configured."
-      : "Safe RPC, transaction service, executor key, or protocol address is missing.",
-  };
-}
-
-function resolveYellowCardModeStatus(mode: RuntimeMode): IntegrationModeStatus {
-  if (mode === "test") {
-    return {
-      mode,
-      implementation: "simulated",
-      state: "simulated",
-      detail: "Fiat collection is simulated in the MVP runtime.",
-    };
-  }
-
-  const config = getYellowCardConfig(mode);
-  const isReady = config.apiKey.length > 0;
-
-  return {
-    mode,
-    implementation: "live",
-    state: isReady ? "ready" : "credentials_pending",
-    detail: isReady
-      ? "Live Yellow Card credentials are configured."
-      : "Waiting for Yellow Card live credentials.",
-  };
-}
-
-function resolveSumsubModeStatus(mode: RuntimeMode): IntegrationModeStatus {
-  if (mode === "test") {
-    return {
-      mode,
-      implementation: "simulated",
-      state: "simulated",
-      detail: "KYB/KYC is simulated in the MVP runtime.",
-    };
-  }
-
-  const config = getSumsubConfig(mode);
-  const isReady = config.appToken.length > 0 && config.secretKey.length > 0;
-
-  return {
-    mode,
-    implementation: "live",
-    state: isReady ? "ready" : "credentials_pending",
-    detail: isReady
-      ? "Live Sumsub credentials are configured."
-      : "Waiting for Sumsub live credentials.",
-  };
-}
-
 async function ensureDeveloperKey(developerKeyId: string, merchantId: string) {
   const key = await DeveloperKeyModel.findOne({
     _id: developerKeyId,
@@ -241,11 +166,21 @@ async function ensureDeveloperKey(developerKeyId: string, merchantId: string) {
   return key;
 }
 
-async function ensureWebhook(webhookId: string, merchantId: string) {
-  const webhook = await DeveloperWebhookModel.findOne({
+async function ensureWebhook(
+  webhookId: string,
+  merchantId: string,
+  environment?: RuntimeMode
+) {
+  const mongoQuery: Record<string, unknown> = {
     _id: webhookId,
     merchantId,
-  }).exec();
+  };
+
+  if (environment) {
+    Object.assign(mongoQuery, createRuntimeModeCondition("environment", environment));
+  }
+
+  const webhook = await DeveloperWebhookModel.findOne(mongoQuery).exec();
 
   if (!webhook) {
     throw new HttpError(404, "Webhook endpoint was not found.");
@@ -276,34 +211,6 @@ export async function listDeveloperKeys(query: ListDeveloperKeysQuery) {
   return keys.map(toDeveloperKeyResponse);
 }
 
-export async function getDeveloperIntegrationStatus(merchantId: string) {
-  const merchant = await ensureMerchant(merchantId);
-
-  return {
-    workspaceMode: merchant.environmentMode === "live" ? "live" : "test",
-    providers: [
-      {
-        key: "safe",
-        label: "Safe treasury",
-        modes: [resolveSafeModeStatus("test"), resolveSafeModeStatus("live")],
-      },
-      {
-        key: "yellow_card",
-        label: "Yellow Card",
-        modes: [
-          resolveYellowCardModeStatus("test"),
-          resolveYellowCardModeStatus("live"),
-        ],
-      },
-      {
-        key: "sumsub",
-        label: "Sumsub",
-        modes: [resolveSumsubModeStatus("test"), resolveSumsubModeStatus("live")],
-      },
-    ] satisfies IntegrationStatusRecord[],
-  };
-}
-
 export async function createDeveloperKey(input: CreateDeveloperKeyInput) {
   await ensureMerchant(input.merchantId);
 
@@ -327,10 +234,10 @@ export async function createDeveloperKey(input: CreateDeveloperKeyInput) {
     category: "developer",
     status: "ok",
     target: input.label,
-    detail: `API key ${input.label} created for ${input.environment} environment.`,
+    detail: `API key ${input.label} created for ${toPublicEnvironment(input.environment)} environment.`,
     metadata: {
       keyId: key._id.toString(),
-      environment: input.environment,
+      environment: toPublicEnvironment(input.environment),
     },
     ipAddress: null,
     userAgent: null,
@@ -367,7 +274,7 @@ export async function revokeDeveloperKey(
     detail: `API key ${key.label} was revoked.`,
     metadata: {
       keyId: key._id.toString(),
-      environment: key.environment,
+      environment: toPublicEnvironment(key.environment === "live" ? "live" : "test"),
     },
     ipAddress: null,
     userAgent: null,
@@ -379,13 +286,28 @@ export async function revokeDeveloperKey(
 export async function listWebhooks(query: ListWebhooksQuery) {
   await ensureMerchant(query.merchantId);
 
-  const mongoQuery: Record<string, unknown> = {
-    merchantId: query.merchantId,
-  };
+  const filters: Record<string, unknown>[] = [
+    {
+      merchantId: query.merchantId,
+    },
+  ];
+
+  if (query.environment) {
+    filters.push(createRuntimeModeCondition("environment", query.environment));
+  }
 
   if (query.status) {
-    mongoQuery.status = query.status;
+    filters.push({
+      status: query.status,
+    });
   }
+
+  const mongoQuery =
+    filters.length === 1
+      ? filters[0]
+      : {
+          $and: filters,
+        };
 
   const webhooks = await DeveloperWebhookModel.find(mongoQuery)
     .sort({ createdAt: -1 })
@@ -400,12 +322,13 @@ export async function createWebhook(input: CreateWebhookInput) {
 
   const webhook = await DeveloperWebhookModel.create({
     merchantId: input.merchantId,
+    environment: input.environment,
     label: input.label,
     endpointUrl: input.endpointUrl,
     eventTypes: input.eventTypes,
     retryPolicy: input.retryPolicy,
     status: "active",
-    secretHash: secret.hash,
+    secretCiphertext: encryptWebhookSecret(secret),
     lastDeliveryAt: null,
     disabledAt: null,
   });
@@ -420,6 +343,7 @@ export async function createWebhook(input: CreateWebhookInput) {
     detail: `Webhook ${input.label} created.`,
     metadata: {
       webhookId: webhook._id.toString(),
+      environment: toPublicEnvironment(input.environment),
       events: input.eventTypes,
     },
     ipAddress: null,
@@ -428,17 +352,18 @@ export async function createWebhook(input: CreateWebhookInput) {
 
   return {
     webhook: toWebhookResponse(webhook),
-    secret: secret.secret,
+    secret,
   };
 }
 
 export async function updateWebhook(
   webhookId: string,
   merchantId: string,
+  environment: RuntimeMode,
   input: UpdateWebhookInput
 ) {
   await ensureMerchant(merchantId);
-  const webhook = await ensureWebhook(webhookId, merchantId);
+  const webhook = await ensureWebhook(webhookId, merchantId, environment);
 
   if (input.label !== undefined) {
     webhook.label = input.label;
@@ -488,10 +413,14 @@ export async function rotateWebhookSecret(
   input: WebhookActionInput
 ) {
   await ensureMerchant(input.merchantId);
-  const webhook = await ensureWebhook(webhookId, input.merchantId);
+  const webhook = await ensureWebhook(
+    webhookId,
+    input.merchantId,
+    input.environment
+  );
   const secret = createWebhookSecret();
 
-  webhook.secretHash = secret.hash;
+  webhook.secretCiphertext = encryptWebhookSecret(secret);
   await webhook.save();
 
   await appendAuditLog({
@@ -511,28 +440,47 @@ export async function rotateWebhookSecret(
 
   return {
     webhook: toWebhookResponse(webhook),
-    secret: secret.secret,
+    secret,
   };
 }
 
 export async function listDeliveries(query: ListDeliveriesQuery) {
   await ensureMerchant(query.merchantId);
 
-  const mongoQuery: Record<string, unknown> = {
-    merchantId: query.merchantId,
-  };
+  const filters: Record<string, unknown>[] = [
+    {
+      merchantId: query.merchantId,
+    },
+  ];
+
+  if (query.environment) {
+    filters.push(createRuntimeModeCondition("environment", query.environment));
+  }
 
   if (query.webhookId) {
-    mongoQuery.webhookId = query.webhookId;
+    filters.push({
+      webhookId: query.webhookId,
+    });
   }
 
   if (query.status) {
-    mongoQuery.status = query.status;
+    filters.push({
+      status: query.status,
+    });
   }
 
   if (query.eventType) {
-    mongoQuery.eventType = query.eventType;
+    filters.push({
+      eventType: query.eventType,
+    });
   }
+
+  const mongoQuery =
+    filters.length === 1
+      ? filters[0]
+      : {
+          $and: filters,
+        };
 
   const deliveries = await DeveloperDeliveryModel.find(mongoQuery)
     .sort({ createdAt: -1 })
@@ -547,33 +495,18 @@ export async function createTestDelivery(
   input: CreateTestDeliveryInput
 ) {
   await ensureMerchant(input.merchantId);
-  const webhook = await ensureWebhook(webhookId, input.merchantId);
+  const webhook = await ensureWebhook(webhookId, input.merchantId, input.environment);
 
   if (webhook.status !== "active") {
     throw new HttpError(409, "Webhook must be active to send a test delivery.");
   }
 
-  const payload = {
-    id: `evt_${randomBytes(8).toString("hex")}`,
-    eventType: input.eventType,
+  const delivery = await sendDeveloperWebhookTest({
     merchantId: input.merchantId,
-    generatedAt: new Date().toISOString(),
-  };
-
-  const delivery = await DeveloperDeliveryModel.create({
-    merchantId: input.merchantId,
-    webhookId: webhook._id,
+    environment: input.environment,
+    webhookId,
     eventType: input.eventType,
-    status: "delivered",
-    attempts: 1,
-    httpStatus: 200,
-    payload,
-    errorMessage: null,
-    deliveredAt: new Date(),
   });
-
-  webhook.lastDeliveryAt = delivery.deliveredAt;
-  await webhook.save();
 
   await appendAuditLog({
     merchantId: input.merchantId,
@@ -582,7 +515,7 @@ export async function createTestDelivery(
     category: "developer",
     status: "ok",
     target: webhook.endpointUrl,
-    detail: `Test delivery sent to ${webhook.label}.`,
+    detail: `Test delivery triggered for ${webhook.label}.`,
     metadata: {
       webhookId: webhook._id.toString(),
       deliveryId: delivery._id.toString(),

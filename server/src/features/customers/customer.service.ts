@@ -10,6 +10,8 @@ import type {
   ListCustomersQuery,
   UpdateCustomerInput,
 } from "@/features/customers/customer.validation";
+import type { RuntimeMode } from "@/shared/constants/runtime-mode";
+import { createRuntimeModeCondition } from "@/shared/utils/runtime-environment";
 
 function toCustomerResponse(document: {
   _id: { toString(): string };
@@ -63,11 +65,18 @@ async function ensureMerchant(merchantId: string) {
   }
 }
 
-async function ensureCustomer(customerId: string, merchantId: string) {
-  const customer = await CustomerModel.findOne({
+async function ensureCustomer(
+  customerId: string,
+  merchantId: string,
+  environment: RuntimeMode
+) {
+  const mongoQuery: Record<string, unknown> = {
     _id: customerId,
     merchantId,
-  }).exec();
+    ...createRuntimeModeCondition("environment", environment),
+  };
+
+  const customer = await CustomerModel.findOne(mongoQuery).exec();
 
   if (!customer) {
     throw new HttpError(404, "Customer was not found.");
@@ -79,37 +88,56 @@ async function ensureCustomer(customerId: string, merchantId: string) {
 export async function listCustomers(query: ListCustomersQuery) {
   await ensureMerchant(query.merchantId);
 
-  const mongoQuery: Record<string, unknown> = {
-    merchantId: query.merchantId,
-  };
+  const filters: Record<string, unknown>[] = [
+    {
+      merchantId: query.merchantId,
+    },
+  ];
+
+  if (query.environment) {
+    filters.push(createRuntimeModeCondition("environment", query.environment));
+  }
 
   if (query.status) {
-    mongoQuery.status = query.status;
+    filters.push({
+      status: query.status,
+    });
   }
 
   if (query.market) {
-    mongoQuery.market = query.market;
+    filters.push({
+      market: query.market,
+    });
   }
 
   if (query.search) {
     const pattern = new RegExp(query.search, "i");
-    mongoQuery.$or = [
-      { name: pattern },
-      { email: pattern },
-      { customerRef: pattern },
-    ];
+    filters.push({
+      $or: [{ name: pattern }, { email: pattern }, { customerRef: pattern }],
+    });
   }
 
-  const customers = await CustomerModel.find(mongoQuery)
+  const scopedQuery =
+    filters.length === 1
+      ? filters[0]
+      : {
+          $and: filters,
+        };
+
+  const customers = await CustomerModel.find(scopedQuery)
     .sort({ updatedAt: -1 })
     .exec();
 
   return customers.map(toCustomerResponse);
 }
 
-export async function getCustomerById(customerId: string, merchantId: string) {
+export async function getCustomerById(
+  customerId: string,
+  merchantId: string,
+  environment: RuntimeMode
+) {
   await ensureMerchant(merchantId);
-  const customer = await ensureCustomer(customerId, merchantId);
+  const customer = await ensureCustomer(customerId, merchantId, environment);
 
   return toCustomerResponse(customer);
 }
@@ -118,8 +146,15 @@ export async function createCustomer(input: CreateCustomerInput) {
   await ensureMerchant(input.merchantId);
 
   const existing = await CustomerModel.findOne({
-    merchantId: input.merchantId,
-    $or: [{ customerRef: input.customerRef }, { email: input.email }],
+    $and: [
+      {
+        merchantId: input.merchantId,
+        ...createRuntimeModeCondition("environment", input.environment),
+      },
+      {
+        $or: [{ customerRef: input.customerRef }, { email: input.email }],
+      },
+    ],
   }).exec();
 
   if (existing) {
@@ -128,6 +163,7 @@ export async function createCustomer(input: CreateCustomerInput) {
 
   const created = await CustomerModel.create({
     merchantId: input.merchantId,
+    environment: input.environment,
     customerRef: input.customerRef,
     name: input.name,
     email: input.email,
@@ -168,10 +204,11 @@ export async function createCustomer(input: CreateCustomerInput) {
 export async function updateCustomer(
   customerId: string,
   merchantId: string,
+  environment: RuntimeMode,
   input: UpdateCustomerInput
 ) {
   await ensureMerchant(merchantId);
-  const customer = await ensureCustomer(customerId, merchantId);
+  const customer = await ensureCustomer(customerId, merchantId, environment);
 
   if (input.name !== undefined) {
     customer.name = input.name;
@@ -256,7 +293,11 @@ export async function pauseCustomerBilling(
   input: CustomerActionInput
 ) {
   await ensureMerchant(input.merchantId);
-  const customer = await ensureCustomer(customerId, input.merchantId);
+  const customer = await ensureCustomer(
+    customerId,
+    input.merchantId,
+    input.environment
+  );
 
   customer.status = "paused";
   customer.billingState = "paused";
@@ -283,7 +324,11 @@ export async function resumeCustomerBilling(
   input: CustomerActionInput
 ) {
   await ensureMerchant(input.merchantId);
-  const customer = await ensureCustomer(customerId, input.merchantId);
+  const customer = await ensureCustomer(
+    customerId,
+    input.merchantId,
+    input.environment
+  );
 
   if (customer.status === "blacklisted") {
     throw new HttpError(409, "Blacklisted customer cannot be resumed.");
@@ -314,7 +359,11 @@ export async function blacklistCustomer(
   input: BlacklistCustomerInput
 ) {
   await ensureMerchant(input.merchantId);
-  const customer = await ensureCustomer(customerId, input.merchantId);
+  const customer = await ensureCustomer(
+    customerId,
+    input.merchantId,
+    input.environment
+  );
 
   customer.status = "blacklisted";
   customer.billingState = "paused";

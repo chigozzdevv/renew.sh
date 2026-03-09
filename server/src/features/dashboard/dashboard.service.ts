@@ -7,6 +7,7 @@ import { SettlementModel } from "@/features/settlements/settlement.model";
 import { SubscriptionModel } from "@/features/subscriptions/subscription.model";
 import type { DashboardOverviewQuery } from "@/features/dashboard/dashboard.validation";
 import { HttpError } from "@/shared/errors/http-error";
+import { createRuntimeModeCondition } from "@/shared/utils/runtime-environment";
 
 async function ensureMerchant(merchantId: string) {
   const merchant = await MerchantModel.findById(merchantId).exec();
@@ -31,6 +32,11 @@ function endOfDay(date: Date) {
 export async function getDashboardOverview(query: DashboardOverviewQuery) {
   await ensureMerchant(query.merchantId);
   const merchantObjectId = new Types.ObjectId(query.merchantId);
+  const environmentMatch = createRuntimeModeCondition("environment", query.environment);
+  const scopedMerchantMatch = {
+    merchantId: query.merchantId,
+    ...environmentMatch,
+  };
 
   const now = new Date();
   const nextTwoDays = new Date(now.getTime() + 2 * 24 * 60 * 60 * 1000);
@@ -48,29 +54,41 @@ export async function getDashboardOverview(query: DashboardOverviewQuery) {
     marketMixAggregation,
     upcomingSubscriptions,
   ] = await Promise.all([
-    CustomerModel.countDocuments({ merchantId: query.merchantId }).exec(),
+    CustomerModel.countDocuments(scopedMerchantMatch).exec(),
     CustomerModel.countDocuments({
-      merchantId: query.merchantId,
-      $or: [{ status: "at_risk" }, { billingState: "at_risk" }, { paymentMethodState: "update_needed" }],
+      $and: [
+        scopedMerchantMatch,
+        {
+          $or: [
+            { status: "at_risk" },
+            { billingState: "at_risk" },
+            { paymentMethodState: "update_needed" },
+          ],
+        },
+      ],
     }).exec(),
-    PlanModel.countDocuments({ merchantId: query.merchantId, status: "active" }).exec(),
+    PlanModel.countDocuments({
+      ...scopedMerchantMatch,
+      status: "active",
+    }).exec(),
     SubscriptionModel.countDocuments({
-      merchantId: query.merchantId,
+      ...scopedMerchantMatch,
       status: { $in: ["active", "trialing"] },
     }).exec(),
     PlanModel.countDocuments({
-      merchantId: query.merchantId,
+      ...scopedMerchantMatch,
       billingMode: "metered",
       status: { $ne: "archived" },
     }).exec(),
     SettlementModel.countDocuments({
-      merchantId: query.merchantId,
+      ...scopedMerchantMatch,
       status: { $in: ["queued", "confirming", "pending"] },
     }).exec(),
     SettlementModel.aggregate<{ total: number }>([
       {
         $match: {
           merchantId: merchantObjectId,
+          ...environmentMatch,
           status: { $in: ["queued", "confirming", "pending"] },
         },
       },
@@ -85,6 +103,7 @@ export async function getDashboardOverview(query: DashboardOverviewQuery) {
       {
         $match: {
           merchantId: merchantObjectId,
+          ...environmentMatch,
           status: "settled",
           settledAt: { $gte: settledWindowStart },
         },
@@ -103,6 +122,7 @@ export async function getDashboardOverview(query: DashboardOverviewQuery) {
       {
         $match: {
           merchantId: merchantObjectId,
+          ...environmentMatch,
         },
       },
       {
@@ -115,7 +135,7 @@ export async function getDashboardOverview(query: DashboardOverviewQuery) {
       { $limit: 8 },
     ]).exec(),
     SubscriptionModel.find({
-      merchantId: query.merchantId,
+      ...scopedMerchantMatch,
       status: { $in: ["active", "trialing"] },
       nextChargeAt: { $gte: startOfDay(now), $lte: endOfDay(nextTwoDays) },
     })
@@ -134,7 +154,10 @@ export async function getDashboardOverview(query: DashboardOverviewQuery) {
 
   const planIds = [...new Set(upcomingSubscriptions.map((subscription) => String(subscription.planId)))];
   const plans = planIds.length
-    ? await PlanModel.find({ _id: { $in: planIds } })
+    ? await PlanModel.find({
+        _id: { $in: planIds },
+        ...environmentMatch,
+      })
         .select({ _id: 1, name: 1 })
         .lean()
         .exec()

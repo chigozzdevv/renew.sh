@@ -1,32 +1,29 @@
 import { z } from "zod";
 
+import { developerWebhookEventNames } from "@/features/developers/developer-webhook-events";
+import { environmentInputSchema } from "@/shared/utils/runtime-environment";
+
 const objectIdSchema = z
   .string()
   .trim()
   .regex(/^[a-fA-F0-9]{24}$/, "Must be a valid Mongo ObjectId.");
 
-const environmentSchema = z.enum(["test", "live"]);
 const keyStatusSchema = z.enum(["active", "revoked"]);
 const webhookStatusSchema = z.enum(["active", "disabled"]);
 const deliveryStatusSchema = z.enum(["queued", "delivered", "failed"]);
 
-const eventTypeSchema = z
-  .string()
-  .trim()
-  .min(3)
-  .max(80)
-  .regex(/^[a-z0-9._-]+$/i, "Event type format is invalid.");
+const eventTypeSchema = z.enum(developerWebhookEventNames);
 
 export const listDeveloperKeysQuerySchema = z.object({
   merchantId: objectIdSchema,
-  environment: environmentSchema.optional(),
+  environment: environmentInputSchema.optional(),
   status: keyStatusSchema.optional(),
 });
 
 export const createDeveloperKeySchema = z.object({
   merchantId: objectIdSchema,
   label: z.string().trim().min(2).max(120),
-  environment: environmentSchema.default("test"),
+  environment: environmentInputSchema.default("test"),
   actor: z.string().trim().min(2).max(120).default("system"),
 });
 
@@ -41,11 +38,13 @@ export const developerKeyActionSchema = z.object({
 
 export const listWebhooksQuerySchema = z.object({
   merchantId: objectIdSchema,
+  environment: environmentInputSchema.optional(),
   status: webhookStatusSchema.optional(),
 });
 
 export const createWebhookSchema = z.object({
   merchantId: objectIdSchema,
+  environment: environmentInputSchema.default("test"),
   label: z.string().trim().min(2).max(120),
   endpointUrl: z.url().trim(),
   eventTypes: z.array(eventTypeSchema).min(1),
@@ -81,17 +80,20 @@ export const updateWebhookSchema = z
 
 export const webhookActionSchema = z.object({
   merchantId: objectIdSchema,
+  environment: environmentInputSchema.default("test"),
   actor: z.string().trim().min(2).max(120).default("system"),
 });
 
 export const createTestDeliverySchema = z.object({
   merchantId: objectIdSchema,
+  environment: environmentInputSchema.default("test"),
   eventType: eventTypeSchema.default("charge.settled"),
   actor: z.string().trim().min(2).max(120).default("system"),
 });
 
 export const listDeliveriesQuerySchema = z.object({
   merchantId: objectIdSchema,
+  environment: environmentInputSchema.optional(),
   webhookId: objectIdSchema.optional(),
   status: deliveryStatusSchema.optional(),
   eventType: eventTypeSchema.optional(),

@@ -21,12 +21,17 @@ export type ApiEnvelope<T> = {
 
 export const accessTokenStorageKey = "renew:platform-access-token";
 export const workspaceModeStorageKey = "renew:workspace-mode";
+export type WorkspaceMode = "test" | "live";
 
 export function getApiBaseUrl() {
   return (
     process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ??
     "https://api.renew.sh/v1"
   );
+}
+
+export function getApiOrigin() {
+  return getApiBaseUrl().replace(/\/v1$/, "");
 }
 
 export function readAccessToken() {
@@ -36,6 +41,16 @@ export function readAccessToken() {
 
   const token = window.localStorage.getItem(accessTokenStorageKey);
   return token?.trim() ? token.trim() : null;
+}
+
+export function readWorkspaceMode(): WorkspaceMode {
+  if (typeof window === "undefined") {
+    return "test";
+  }
+
+  return window.localStorage.getItem(workspaceModeStorageKey) === "live"
+    ? "live"
+    : "test";
 }
 
 export function clearAccessToken() {

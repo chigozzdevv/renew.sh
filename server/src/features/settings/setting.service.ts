@@ -1,4 +1,5 @@
 import { HttpError } from "@/shared/errors/http-error";
+import type { RuntimeMode } from "@/shared/constants/runtime-mode";
 
 import { appendAuditLog } from "@/features/audit/audit.service";
 import { assertMerchantKybApprovedForLive } from "@/features/kyc/kyc.service";
@@ -52,6 +53,8 @@ function toSettingResponse(document: {
 treasury?: {
   account: {
     safeAddress: string;
+    payoutWallet: string;
+    reserveWallet?: string | null;
     threshold: number;
     pendingPayoutWallet?: string | null;
     payoutWalletChangeReadyAt?: Date | null;
@@ -85,8 +88,8 @@ treasury?: {
       meterApproval: document.meterApproval,
     },
     wallets: {
-      primaryWallet: document.primaryWallet,
-      reserveWallet: document.reserveWallet ?? null,
+      primaryWallet: treasury?.account?.payoutWallet ?? document.primaryWallet,
+      reserveWallet: treasury?.account?.reserveWallet ?? document.reserveWallet ?? null,
       walletAlerts: document.walletAlerts,
       safeAddress: treasury?.account?.safeAddress ?? null,
       pendingPayoutWallet: treasury?.account?.pendingPayoutWallet ?? null,
@@ -163,9 +166,12 @@ async function getOrCreateSetting(merchantId: string) {
   return { merchant, setting };
 }
 
-export async function getSettingsByMerchantId(merchantId: string) {
+export async function getSettingsByMerchantId(
+  merchantId: string,
+  environment: RuntimeMode = "test"
+) {
   const { setting } = await getOrCreateSetting(merchantId);
-  const treasury = await getTreasuryByMerchantId(merchantId).catch(() => ({
+  const treasury = await getTreasuryByMerchantId(merchantId, environment).catch(() => ({
     account: null,
     signers: [],
     operations: [],
@@ -175,6 +181,8 @@ export async function getSettingsByMerchantId(merchantId: string) {
     account: treasury.account
       ? {
           safeAddress: treasury.account.safeAddress,
+          payoutWallet: treasury.account.payoutWallet,
+          reserveWallet: treasury.account.reserveWallet,
           threshold: treasury.account.threshold,
           pendingPayoutWallet: treasury.account.pendingPayoutWallet,
           payoutWalletChangeReadyAt: treasury.account.payoutWalletChangeReadyAt,
@@ -202,7 +210,8 @@ export async function updateSettingsByMerchantId(
   if (mutatesWallets) {
     await assertMerchantKybApprovedForLive(
       merchantId,
-      "changing treasury wallets"
+      "changing treasury wallets",
+      input.environment
     );
   }
 
@@ -336,7 +345,7 @@ export async function updateSettingsByMerchantId(
     userAgent: null,
   });
 
-  return getSettingsByMerchantId(merchantId);
+  return getSettingsByMerchantId(merchantId, input.environment);
 }
 
 export async function saveWalletSettings(
@@ -345,7 +354,8 @@ export async function saveWalletSettings(
 ) {
   await assertMerchantKybApprovedForLive(
     merchantId,
-    "changing treasury wallets"
+    "changing treasury wallets",
+    input.environment
   );
 
   const { setting } = await getOrCreateSetting(merchantId);
@@ -358,6 +368,7 @@ export async function saveWalletSettings(
   const operations = await createWalletUpdateOperations({
     merchantId,
     actor: input.actor,
+    environment: input.environment,
     primaryWallet: input.primaryWallet,
     reserveWallet: input.reserveWallet,
   });
@@ -379,7 +390,7 @@ export async function saveWalletSettings(
     userAgent: null,
   });
 
-  const settings = await getSettingsByMerchantId(merchantId);
+  const settings = await getSettingsByMerchantId(merchantId, input.environment);
 
   return {
     settings,
@@ -393,12 +404,14 @@ export async function promoteReserveWallet(
 ) {
   await assertMerchantKybApprovedForLive(
     merchantId,
-    "promoting treasury reserve wallets"
+    "promoting treasury reserve wallets",
+    input.environment
   );
 
   const operation = await createReservePromoteOperation({
     merchantId,
     actor: input.actor,
+    environment: input.environment,
   });
 
   await appendAuditLog({
@@ -417,7 +430,7 @@ export async function promoteReserveWallet(
   });
 
   return {
-    settings: await getSettingsByMerchantId(merchantId),
+    settings: await getSettingsByMerchantId(merchantId, input.environment),
     operation,
   };
 }
@@ -428,12 +441,14 @@ export async function removeReserveWallet(
 ) {
   await assertMerchantKybApprovedForLive(
     merchantId,
-    "removing treasury reserve wallets"
+    "removing treasury reserve wallets",
+    input.environment
   );
 
   const operation = await createReserveClearOperation({
     merchantId,
     actor: input.actor,
+    environment: input.environment,
   });
 
   await appendAuditLog({
@@ -452,7 +467,7 @@ export async function removeReserveWallet(
   });
 
   return {
-    settings: await getSettingsByMerchantId(merchantId),
+    settings: await getSettingsByMerchantId(merchantId, input.environment),
     operation,
   };
 }
@@ -463,12 +478,14 @@ export async function confirmPendingPrimaryWalletChange(
 ) {
   await assertMerchantKybApprovedForLive(
     merchantId,
-    "confirming treasury payout wallet changes"
+    "confirming treasury payout wallet changes",
+    input.environment
   );
 
   const operation = await createPayoutWalletConfirmOperation({
     merchantId,
     actor: input.actor,
+    environment: input.environment,
   });
 
   await appendAuditLog({
@@ -487,7 +504,7 @@ export async function confirmPendingPrimaryWalletChange(
   });
 
   return {
-    settings: await getSettingsByMerchantId(merchantId),
+    settings: await getSettingsByMerchantId(merchantId, input.environment),
     operation,
   };
 }

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import { useWorkspaceMode } from "@/components/dashboard/mode-provider";
 import { useDashboardSession } from "@/components/dashboard/session-provider";
 import { StatusBadge, formatCurrency, toErrorMessage } from "@/components/dashboard/surface-utils";
 import { useAuthedResource } from "@/components/dashboard/use-authed-resource";
@@ -23,6 +24,7 @@ type PlanStatusFilter = PlanRecord["status"] | "all";
 
 export function PlansSurface() {
   const { token, user } = useDashboardSession();
+  const { mode } = useWorkspaceMode();
   const [status, setStatus] = useState<PlanStatusFilter>("all");
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -48,10 +50,11 @@ export function PlansSurface() {
       loadPlans({
         token,
         merchantId,
+        environment: mode,
         status,
         search,
       }),
-    [status, search]
+    [mode, status, search]
   );
 
   const plans = data ?? [];
@@ -116,6 +119,7 @@ export function PlansSurface() {
       await createPlan({
         token,
         merchantId: user.merchantId,
+        environment: mode,
         planCode: draft.planCode.trim().toUpperCase(),
         name: draft.name.trim(),
         usdAmount: Number(draft.usdAmount),
@@ -156,6 +160,7 @@ export function PlansSurface() {
       await updatePlan({
         token,
         planId: selectedPlan.id,
+        environment: mode,
         payload: {
           status: nextStatus,
         },
@@ -168,7 +173,7 @@ export function PlansSurface() {
     return (
       <PageState
         title="Loading plans"
-        message="Fetching live plan configuration."
+        message="Fetching plan configuration for the selected environment."
       />
     );
   }
@@ -188,7 +193,7 @@ export function PlansSurface() {
     <div className="space-y-6">
       <StatGrid>
         <MetricCard label="Plans" value={String(metrics.total)} note="Configured billing plans" tone="brand" />
-        <MetricCard label="Active" value={String(metrics.active)} note="Live for checkout" />
+        <MetricCard label="Active" value={String(metrics.active)} note="Enabled for checkout" />
         <MetricCard label="Metered" value={String(metrics.metered)} note="Usage-based billing" />
         <MetricCard label="Markets" value={String(metrics.markets)} note="Rollout coverage" />
       </StatGrid>
@@ -196,7 +201,7 @@ export function PlansSurface() {
       <div className="grid gap-4 xl:grid-cols-[1.08fr_0.92fr]">
         <Card
           title="Plan catalog"
-          description="Real plan records from the billing backend."
+          description="Plan records for the selected environment."
           action={<Button onClick={() => setShowCreate((current) => !current)}>{showCreate ? "Close" : "Create plan"}</Button>}
         >
           <div className="space-y-4">

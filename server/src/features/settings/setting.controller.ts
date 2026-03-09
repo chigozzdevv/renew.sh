@@ -14,12 +14,24 @@ import {
   updateSettingsSchema,
   walletActionSchema,
 } from "@/features/settings/setting.validation";
+import { optionalEnvironmentInputSchema } from "@/shared/utils/runtime-environment";
 import { asyncHandler } from "@/shared/utils/async-handler";
+
+function resolveEnvironmentScope(request: Request) {
+  return optionalEnvironmentInputSchema.parse(
+    typeof request.query.environment === "string"
+      ? request.query.environment
+      : request.body?.environment
+  );
+}
 
 export const getSettingsController = asyncHandler(
   async (request: Request, response: Response) => {
     const params = merchantParamSchema.parse(request.params);
-    const settings = await getSettingsByMerchantId(params.merchantId);
+    const settings = await getSettingsByMerchantId(
+      params.merchantId,
+      resolveEnvironmentScope(request) ?? "test"
+    );
 
     response.status(200).json({
       success: true,
@@ -36,6 +48,7 @@ export const updateSettingsController = asyncHandler(
     const input = updateSettingsSchema.parse({
       ...request.body,
       actor,
+      environment: resolveEnvironmentScope(request),
     });
     const settings = await updateSettingsByMerchantId(params.merchantId, input);
 
@@ -55,6 +68,7 @@ export const saveWalletsController = asyncHandler(
     const input = saveWalletSchema.parse({
       ...request.body,
       actor,
+      environment: resolveEnvironmentScope(request),
     });
     const result = await saveWalletSettings(params.merchantId, input);
 
@@ -74,6 +88,7 @@ export const promoteReserveWalletController = asyncHandler(
     const input = walletActionSchema.parse({
       ...request.body,
       actor,
+      environment: resolveEnvironmentScope(request),
     });
     const result = await promoteReserveWallet(params.merchantId, input);
 
@@ -93,6 +108,7 @@ export const removeReserveWalletController = asyncHandler(
     const input = walletActionSchema.parse({
       ...request.body,
       actor,
+      environment: resolveEnvironmentScope(request),
     });
     const result = await removeReserveWallet(params.merchantId, input);
 
@@ -112,6 +128,7 @@ export const confirmPendingPrimaryWalletChangeController = asyncHandler(
     const input = walletActionSchema.parse({
       ...request.body,
       actor,
+      environment: resolveEnvironmentScope(request),
     });
     const result = await confirmPendingPrimaryWalletChange(params.merchantId, input);
 

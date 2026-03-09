@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import { useWorkspaceMode } from "@/components/dashboard/mode-provider";
 import { useDashboardSession } from "@/components/dashboard/session-provider";
 import { StatusBadge, formatCurrency, formatDate, toErrorMessage } from "@/components/dashboard/surface-utils";
 import { useAuthedResource } from "@/components/dashboard/use-authed-resource";
@@ -30,6 +31,7 @@ type CustomerStatusFilter = CustomerRecord["status"] | "all";
 
 export function CustomersSurface() {
   const { token, user } = useDashboardSession();
+  const { mode } = useWorkspaceMode();
   const [status, setStatus] = useState<CustomerStatusFilter>("all");
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -49,10 +51,11 @@ export function CustomersSurface() {
       loadCustomers({
         token,
         merchantId,
+        environment: mode,
         status,
         search,
       }),
-    [status, search]
+    [mode, status, search]
   );
 
   const customers = data ?? [];
@@ -123,6 +126,7 @@ export function CustomersSurface() {
       await createCustomer({
         token,
         merchantId: user.merchantId,
+        environment: mode,
         customerRef: draft.customerRef.trim(),
         name: draft.name.trim(),
         email: draft.email.trim(),
@@ -149,12 +153,14 @@ export function CustomersSurface() {
         await pauseCustomer({
           token,
           merchantId: user.merchantId,
+          environment: mode,
           customerId: selectedCustomer.id,
         });
       } else {
         await resumeCustomer({
           token,
           merchantId: user.merchantId,
+          environment: mode,
           customerId: selectedCustomer.id,
         });
       }
@@ -173,6 +179,7 @@ export function CustomersSurface() {
       await blacklistCustomer({
         token,
         merchantId: user.merchantId,
+        environment: mode,
         customerId: selectedCustomer.id,
         reason: "Manual operator block.",
       });
@@ -184,7 +191,7 @@ export function CustomersSurface() {
     return (
       <PageState
         title="Loading customers"
-        message="Fetching customer records from the billing backend."
+        message="Fetching customer records for the selected environment."
       />
     );
   }
@@ -206,13 +213,13 @@ export function CustomersSurface() {
         <MetricCard label="Customers" value={String(metrics.total)} note="Directory records" tone="brand" />
         <MetricCard label="Active" value={String(metrics.active)} note="Billing active" />
         <MetricCard label="At risk" value={String(metrics.atRisk)} note="Need follow-up" />
-        <MetricCard label="Markets" value={String(metrics.markets)} note="Live coverage" />
+        <MetricCard label="Markets" value={String(metrics.markets)} note="Current environment" />
       </StatGrid>
 
       <div className="grid gap-4 xl:grid-cols-[1.12fr_0.88fr]">
         <Card
           title="Customer directory"
-          description="Live customer records with status and renewal state."
+          description="Customer records with status and renewal state for the selected environment."
           action={
             <Button onClick={() => setShowCreate((current) => !current)}>
               {showCreate ? "Close" : "Add customer"}
@@ -326,7 +333,7 @@ export function CustomersSurface() {
           </div>
         </Card>
 
-        <Card title={selectedCustomer?.name ?? "Customer profile"} description={selectedCustomer?.email ?? "Select a customer to inspect live billing state."}>
+        <Card title={selectedCustomer?.name ?? "Customer profile"} description={selectedCustomer?.email ?? "Select a customer to inspect billing state in the selected environment."}>
           {selectedCustomer ? (
             <div className="space-y-4">
               <div className="grid gap-3 sm:grid-cols-2">

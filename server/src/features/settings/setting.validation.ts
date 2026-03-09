@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { environmentInputSchema } from "@/shared/utils/runtime-environment";
+
 const objectIdSchema = z
   .string()
   .trim()
@@ -58,6 +60,7 @@ const securitySettingsSchema = z.object({
 export const updateSettingsSchema = z
   .object({
     actor: z.string().trim().min(2).max(120).default("system"),
+    environment: environmentInputSchema.default("test"),
     profile: profileSettingsSchema.optional(),
     billing: billingSettingsSchema.optional(),
     wallets: walletSettingsSchema.optional(),
@@ -79,10 +82,12 @@ export const updateSettingsSchema = z
 
 export const walletActionSchema = z.object({
   actor: z.string().trim().min(2).max(120).default("system"),
+  environment: environmentInputSchema.default("test"),
 });
 
 export const saveWalletSchema = z.object({
   actor: z.string().trim().min(2).max(120).default("system"),
+  environment: environmentInputSchema.default("test"),
   primaryWallet: addressSchema,
   reserveWallet: addressSchema.nullish().transform((value) => value ?? null),
   walletAlerts: z.boolean().optional(),

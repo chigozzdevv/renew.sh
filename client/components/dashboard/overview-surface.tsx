@@ -1,6 +1,7 @@
 "use client";
 
 import { Card, MetricCard, PageState, StatGrid } from "@/components/dashboard/ui";
+import { useWorkspaceMode } from "@/components/dashboard/mode-provider";
 import { useAuthedResource } from "@/components/dashboard/use-authed-resource";
 import {
   formatCurrency,
@@ -10,7 +11,16 @@ import {
 import { loadDashboardOverview } from "@/lib/overview";
 
 export function OverviewSurface() {
-  const { data, isLoading, error, reload } = useAuthedResource(loadDashboardOverview);
+  const { mode } = useWorkspaceMode();
+  const { data, isLoading, error, reload } = useAuthedResource(
+    async ({ token, merchantId }) =>
+      loadDashboardOverview({
+        token,
+        merchantId,
+        environment: mode,
+      }),
+    [mode]
+  );
 
   if (isLoading && !data) {
     return (
@@ -124,7 +134,7 @@ export function OverviewSurface() {
       </div>
 
       <div className="grid gap-4 xl:grid-cols-2">
-        <Card title="Settlement snapshot" description="Current net pending vs settled volume from the live backend.">
+        <Card title="Settlement snapshot" description="Current net pending vs settled volume in the selected environment.">
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="rounded-2xl border border-[color:var(--line)] bg-white px-4 py-4">
               <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--muted)]">
@@ -145,7 +155,7 @@ export function OverviewSurface() {
           </div>
         </Card>
 
-        <Card title="Risk snapshot" description="Customer and billing risk surfaced from current workspace records.">
+        <Card title="Risk snapshot" description="Customer and billing risk surfaced from the selected environment.">
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="rounded-2xl border border-[color:var(--line)] bg-white px-4 py-4">
               <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--muted)]">

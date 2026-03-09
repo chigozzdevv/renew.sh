@@ -31,8 +31,9 @@ import type {
   UpdateTreasuryThresholdInput,
   VerifyTreasurySignerInput,
 } from "@/features/treasury/treasury.validation";
-import { HttpError } from "@/shared/errors/http-error";
 import type { RuntimeMode } from "@/shared/constants/runtime-mode";
+import { createRuntimeModeCondition, toStoredRuntimeMode } from "@/shared/utils/runtime-environment";
+import { HttpError } from "@/shared/errors/http-error";
 
 import { SettlementModel } from "@/features/settlements/settlement.model";
 
@@ -184,10 +185,6 @@ function toTreasuryAccountResponse(document: {
   };
 }
 
-function resolveMerchantMode(environmentMode: string): RuntimeMode {
-  return environmentMode === "live" ? "live" : "test";
-}
-
 async function getMerchantOrThrow(merchantId: string) {
   const merchant = await MerchantModel.findById(merchantId).exec();
 
@@ -287,6 +284,7 @@ async function syncSettlementChargeState(input: {
 
 async function createTreasuryAccountFromSafe(input: {
   merchantId: string;
+  environment: RuntimeMode;
   safeAddress: string;
   owners: string[];
   threshold: number;
@@ -298,6 +296,7 @@ async function createTreasuryAccountFromSafe(input: {
 
   return TreasuryAccountModel.create({
     merchantId: new Types.ObjectId(input.merchantId),
+    environment: input.environment,
     custodyModel: "safe",
     safeAddress: normalizeAddress(input.safeAddress),
     payoutWallet: normalizeAddress(input.payoutWallet),
@@ -316,47 +315,39 @@ async function createTreasuryAccountFromSafe(input: {
   });
 }
 
-async function ensureTreasuryAccount(merchantId: string) {
-  const existing = await TreasuryAccountModel.findOne({ merchantId }).exec();
+async function ensureTreasuryAccount(
+  merchantId: string,
+  environment: RuntimeMode
+) {
+  const existing = await TreasuryAccountModel.findOne({
+    merchantId,
+    ...createRuntimeModeCondition("environment", environment),
+  }).exec();
 
   if (existing) {
     return existing;
   }
 
-  const merchant = await getMerchantOrThrow(merchantId);
-  const mode = resolveMerchantMode(merchant.environmentMode);
-  const provider = createSafeProvider(mode);
-
-  try {
-    const safeInfo = await provider.getSafeInfo(merchant.merchantAccount);
-
-    return createTreasuryAccountFromSafe({
-      merchantId,
-      safeAddress: safeInfo.safeAddress,
-      owners: safeInfo.owners,
-      threshold: safeInfo.threshold,
-      payoutWallet: merchant.payoutWallet,
-      reserveWallet: merchant.reserveWallet ?? null,
-      mode,
-    });
-  } catch (error) {
-    throw new HttpError(
-      409,
-      "Treasury Safe is not configured for this merchant yet."
-    );
-  }
+  throw new HttpError(
+    409,
+    "Treasury Safe is not configured for this merchant yet."
+  );
 }
 
-async function syncTreasuryAccountOwners(merchantId: string) {
-  const treasuryAccount = await TreasuryAccountModel.findOne({ merchantId }).exec();
+async function syncTreasuryAccountOwners(
+  merchantId: string,
+  environment: RuntimeMode
+) {
+  const treasuryAccount = await TreasuryAccountModel.findOne({
+    merchantId,
+    ...createRuntimeModeCondition("environment", environment),
+  }).exec();
 
   if (!treasuryAccount) {
     return null;
   }
 
-  const merchant = await getMerchantOrThrow(merchantId);
-  const mode = resolveMerchantMode(merchant.environmentMode);
-  const provider = createSafeProvider(mode);
+  const provider = createSafeProvider(environment);
   const safeInfo = await provider.getSafeInfo(treasuryAccount.safeAddress);
 
   treasuryAccount.ownerAddresses = safeInfo.owners.map(normalizeAddress);
@@ -495,7 +486,7 @@ async function applyExecutedOperationEffects(input: {
   if (input.operation.kind === "settlement_sweep" && input.operation.settlementId) {
     await syncSettlementChargeState({
       settlementId: input.operation.settlementId.toString(),
-      status: "confirming",
+      status: "settled",
       txHash: input.operation.txHash ?? null,
     });
     return;
@@ -591,22 +582,37 @@ async function applyExecutedOperationEffects(input: {
     input.operation.kind === "safe_owner_remove" ||
     input.operation.kind === "safe_threshold_change"
   ) {
-    await syncTreasuryAccountOwners(merchantId);
+    await syncTreasuryAccountOwners(
+      merchantId,
+      toStoredRuntimeMode(input.treasuryAccount.environment)
+    );
   }
 }
 
-export async function getTreasuryByMerchantId(merchantId: string) {
+export async function getTreasuryByMerchantId(
+  merchantId: string,
+  environment: RuntimeMode = "test"
+) {
   let treasuryAccount: Awaited<ReturnType<typeof ensureTreasuryAccount>> | null = null;
 
   try {
-    treasuryAccount = await syncTreasuryAccountOwners(merchantId);
+    treasuryAccount = await syncTreasuryAccountOwners(merchantId, environment);
   } catch {
-    treasuryAccount = await TreasuryAccountModel.findOne({ merchantId }).exec();
+    treasuryAccount = await TreasuryAccountModel.findOne({
+      merchantId,
+      ...createRuntimeModeCondition("environment", environment),
+    }).exec();
   }
 
   const [signers, operations] = await Promise.all([
     TreasurySignerModel.find({ merchantId }).sort({ createdAt: -1 }).exec(),
-    TreasuryOperationModel.find({ merchantId }).sort({ createdAt: -1 }).limit(20).exec(),
+    TreasuryOperationModel.find({
+      merchantId,
+      ...createRuntimeModeCondition("environment", environment),
+    })
+      .sort({ createdAt: -1 })
+      .limit(20)
+      .exec(),
   ]);
 
   return {
@@ -707,21 +713,6 @@ export async function verifyTreasurySigner(input: {
     throw new HttpError(401, "Treasury signer signature is invalid.");
   }
 
-  const treasuryAccount = await TreasuryAccountModel.findOne({
-    merchantId: input.merchantId,
-  }).exec();
-
-  if (
-    treasuryAccount &&
-    treasuryAccount.ownerAddresses.length > 0 &&
-    !treasuryAccount.ownerAddresses.includes(signerBinding.walletAddress)
-  ) {
-    throw new HttpError(
-      403,
-      "Verified wallet is not an owner of the configured treasury Safe."
-    );
-  }
-
   signerBinding.status = "active";
   signerBinding.verifiedAt = new Date();
   signerBinding.challengeNonce = null;
@@ -779,12 +770,12 @@ export async function bootstrapTreasuryAccount(input: {
 }) {
   await assertMerchantKybApprovedForLive(
     input.merchantId,
-    "configuring merchant treasury custody"
+    "configuring merchant treasury custody",
+    input.payload.environment
   );
 
   const merchant = await getMerchantOrThrow(input.merchantId);
-  const mode = resolveMerchantMode(merchant.environmentMode);
-  const provider = createSafeProvider(mode);
+  const provider = createSafeProvider(input.payload.environment);
   let safeInfo:
     | {
         safeAddress: string;
@@ -820,15 +811,16 @@ export async function bootstrapTreasuryAccount(input: {
     safeInfo = await provider.getSafeInfo(input.payload.safeAddress!);
   }
 
-  const conflictingMerchant = await MerchantModel.findOne({
-    merchantAccount: safeInfo.safeAddress,
-    _id: { $ne: merchant._id },
+  const conflictingTreasury = await TreasuryAccountModel.findOne({
+    safeAddress: normalizeAddress(safeInfo.safeAddress),
+    ...createRuntimeModeCondition("environment", input.payload.environment),
+    merchantId: { $ne: merchant._id },
   })
     .select({ _id: 1 })
     .lean()
     .exec();
 
-  if (conflictingMerchant) {
+  if (conflictingTreasury) {
     throw new HttpError(
       409,
       "This Safe is already bound to another merchant workspace."
@@ -837,30 +829,29 @@ export async function bootstrapTreasuryAccount(input: {
 
   let treasuryAccount = await TreasuryAccountModel.findOne({
     merchantId: input.merchantId,
+    ...createRuntimeModeCondition("environment", input.payload.environment),
   }).exec();
 
   if (!treasuryAccount) {
     treasuryAccount = await createTreasuryAccountFromSafe({
       merchantId: input.merchantId,
+      environment: input.payload.environment,
       safeAddress: safeInfo.safeAddress,
       owners: safeInfo.owners,
       threshold: safeInfo.threshold,
       payoutWallet: merchant.payoutWallet,
       reserveWallet: merchant.reserveWallet ?? null,
-      mode,
+      mode: input.payload.environment,
     });
   } else {
     treasuryAccount.safeAddress = normalizeAddress(safeInfo.safeAddress);
     treasuryAccount.ownerAddresses = safeInfo.owners.map(normalizeAddress);
     treasuryAccount.threshold = safeInfo.threshold;
-    treasuryAccount.chainId = Number(getSafeConfig(mode).chainId);
-    treasuryAccount.txServiceUrl = getSafeConfig(mode).txServiceUrl;
+    treasuryAccount.chainId = Number(getSafeConfig(input.payload.environment).chainId);
+    treasuryAccount.txServiceUrl = getSafeConfig(input.payload.environment).txServiceUrl;
     treasuryAccount.lastSyncedAt = new Date();
     await treasuryAccount.save();
   }
-
-  merchant.merchantAccount = normalizeAddress(safeInfo.safeAddress);
-  await merchant.save();
 
   await appendAuditLog({
     merchantId: input.merchantId,
@@ -878,6 +869,7 @@ export async function bootstrapTreasuryAccount(input: {
       threshold: safeInfo.threshold,
       ownerCount: safeInfo.owners.length,
       mode: input.payload.mode,
+      environment: input.payload.environment,
     },
     ipAddress: null,
     userAgent: null,
@@ -890,19 +882,21 @@ export async function createSettlementSweepOperation(input: {
   merchantId: string;
   settlementId: string;
   actor: string;
+  environment: RuntimeMode;
 }) {
   await assertMerchantKybApprovedForLive(
     input.merchantId,
-    "requesting settlement sweep approvals"
+    "requesting settlement sweep approvals",
+    input.environment
   );
 
-  const [settlement, treasuryAccount, merchant] = await Promise.all([
+  const [settlement, treasuryAccount] = await Promise.all([
     SettlementModel.findOne({
       _id: input.settlementId,
       merchantId: input.merchantId,
+      ...createRuntimeModeCondition("environment", input.environment),
     }).exec(),
-    ensureTreasuryAccount(input.merchantId),
-    getMerchantOrThrow(input.merchantId),
+    ensureTreasuryAccount(input.merchantId, input.environment),
   ]);
 
   if (!settlement) {
@@ -911,6 +905,7 @@ export async function createSettlementSweepOperation(input: {
 
   const existing = await TreasuryOperationModel.findOne({
     merchantId: input.merchantId,
+    ...createRuntimeModeCondition("environment", input.environment),
     settlementId: input.settlementId,
     kind: "settlement_sweep",
     status: { $in: ["pending_signatures", "approved", "executed"] },
@@ -920,10 +915,10 @@ export async function createSettlementSweepOperation(input: {
     return toTreasuryOperationResponse(existing);
   }
 
-  const mode = resolveMerchantMode(merchant.environmentMode);
-  const protocolAddress = getSafeConfig(mode).protocolAddress;
+  const protocolAddress = getSafeConfig(input.environment).protocolAddress;
   const operation = await TreasuryOperationModel.create({
     merchantId: new Types.ObjectId(input.merchantId),
+    environment: input.environment,
     treasuryAccountId: treasuryAccount._id,
     settlementId: settlement._id,
     kind: "settlement_sweep",
@@ -972,12 +967,12 @@ export async function addTreasuryOwner(input: {
 }) {
   await assertMerchantKybApprovedForLive(
     input.merchantId,
-    "adding treasury Safe owners"
+    "adding treasury Safe owners",
+    input.payload.environment
   );
 
-  const [merchant, treasuryAccount, member, signerBinding] = await Promise.all([
-    getMerchantOrThrow(input.merchantId),
-    ensureTreasuryAccount(input.merchantId),
+  const [treasuryAccount, member, signerBinding] = await Promise.all([
+    ensureTreasuryAccount(input.merchantId, input.payload.environment),
     getTeamMemberOrThrow(input.merchantId, input.payload.teamMemberId),
     findTreasurySignerBinding({
       merchantId: input.merchantId,
@@ -1009,8 +1004,7 @@ export async function addTreasuryOwner(input: {
     throw new HttpError(409, "Threshold cannot exceed the Safe owner count.");
   }
 
-  const mode = resolveMerchantMode(merchant.environmentMode);
-  const provider = createSafeProvider(mode);
+  const provider = createSafeProvider(input.payload.environment);
   const draft = await provider.buildAddOwnerTransaction({
     safeAddress: treasuryAccount.safeAddress,
     ownerAddress: ownerWallet,
@@ -1020,6 +1014,7 @@ export async function addTreasuryOwner(input: {
   return createSafeGovernanceOperation({
     merchantId: input.merchantId,
     actor: input.actor,
+    environment: input.payload.environment,
     kind: "safe_owner_add",
     targetTeamMemberId: input.payload.teamMemberId,
     draft,
@@ -1041,12 +1036,12 @@ export async function removeTreasuryOwner(input: {
 }) {
   await assertMerchantKybApprovedForLive(
     input.merchantId,
-    "removing treasury Safe owners"
+    "removing treasury Safe owners",
+    input.payload.environment
   );
 
-  const [merchant, treasuryAccount, member, signerBinding] = await Promise.all([
-    getMerchantOrThrow(input.merchantId),
-    ensureTreasuryAccount(input.merchantId),
+  const [treasuryAccount, member, signerBinding] = await Promise.all([
+    ensureTreasuryAccount(input.merchantId, input.payload.environment),
     getTeamMemberOrThrow(input.merchantId, input.teamMemberId),
     findTreasurySignerBinding({
       merchantId: input.merchantId,
@@ -1077,8 +1072,7 @@ export async function removeTreasuryOwner(input: {
     throw new HttpError(409, "Threshold cannot exceed the remaining owner count.");
   }
 
-  const mode = resolveMerchantMode(merchant.environmentMode);
-  const provider = createSafeProvider(mode);
+  const provider = createSafeProvider(input.payload.environment);
   const draft = await provider.buildRemoveOwnerTransaction({
     safeAddress: treasuryAccount.safeAddress,
     ownerAddress: ownerWallet,
@@ -1088,6 +1082,7 @@ export async function removeTreasuryOwner(input: {
   return createSafeGovernanceOperation({
     merchantId: input.merchantId,
     actor: input.actor,
+    environment: input.payload.environment,
     kind: "safe_owner_remove",
     targetTeamMemberId: input.teamMemberId,
     draft,
@@ -1108,13 +1103,14 @@ export async function updateTreasuryThreshold(input: {
 }) {
   await assertMerchantKybApprovedForLive(
     input.merchantId,
-    "changing treasury Safe threshold"
+    "changing treasury Safe threshold",
+    input.payload.environment
   );
 
-  const [merchant, treasuryAccount] = await Promise.all([
-    getMerchantOrThrow(input.merchantId),
-    ensureTreasuryAccount(input.merchantId),
-  ]);
+  const treasuryAccount = await ensureTreasuryAccount(
+    input.merchantId,
+    input.payload.environment
+  );
 
   if (
     input.payload.threshold < 1 ||
@@ -1127,8 +1123,7 @@ export async function updateTreasuryThreshold(input: {
     throw new HttpError(409, "Treasury threshold is already set to this value.");
   }
 
-  const mode = resolveMerchantMode(merchant.environmentMode);
-  const provider = createSafeProvider(mode);
+  const provider = createSafeProvider(input.payload.environment);
   const draft = await provider.buildChangeThresholdTransaction({
     safeAddress: treasuryAccount.safeAddress,
     threshold: input.payload.threshold,
@@ -1137,6 +1132,7 @@ export async function updateTreasuryThreshold(input: {
   return createSafeGovernanceOperation({
     merchantId: input.merchantId,
     actor: input.actor,
+    environment: input.payload.environment,
     kind: "safe_threshold_change",
     draft,
     metadata: {
@@ -1149,14 +1145,19 @@ export async function updateTreasuryThreshold(input: {
 async function createWalletOperation(input: {
   merchantId: string;
   actor: string;
+  environment: RuntimeMode;
   kind: string;
   targetAddress: string;
   data: string;
   metadata?: Record<string, unknown>;
 }) {
-  const treasuryAccount = await ensureTreasuryAccount(input.merchantId);
+  const treasuryAccount = await ensureTreasuryAccount(
+    input.merchantId,
+    input.environment
+  );
   const existingOperation = await TreasuryOperationModel.findOne({
     merchantId: input.merchantId,
+    ...createRuntimeModeCondition("environment", input.environment),
     kind: input.kind,
     targetAddress: normalizeAddress(input.targetAddress),
     data: input.data,
@@ -1171,6 +1172,7 @@ async function createWalletOperation(input: {
 
   const operation = await TreasuryOperationModel.create({
     merchantId: new Types.ObjectId(input.merchantId),
+    environment: input.environment,
     treasuryAccountId: treasuryAccount._id,
     settlementId: null,
     kind: input.kind,
@@ -1194,6 +1196,7 @@ async function createWalletOperation(input: {
 async function createSafeGovernanceOperation(input: {
   merchantId: string;
   actor: string;
+  environment: RuntimeMode;
   kind: "safe_owner_add" | "safe_owner_remove" | "safe_threshold_change";
   targetTeamMemberId?: string;
   draft: {
@@ -1207,6 +1210,7 @@ async function createSafeGovernanceOperation(input: {
   const operation = await createWalletOperation({
     merchantId: input.merchantId,
     actor: input.actor,
+    environment: input.environment,
     kind: input.kind,
     targetAddress: input.draft.targetAddress,
     data: input.draft.data,
@@ -1236,20 +1240,21 @@ async function createSafeGovernanceOperation(input: {
 export async function createWalletUpdateOperations(input: {
   merchantId: string;
   actor: string;
+  environment: RuntimeMode;
   primaryWallet: string;
   reserveWallet: string | null;
 }) {
   await assertMerchantKybApprovedForLive(
     input.merchantId,
-    "updating treasury payout wallets"
+    "updating treasury payout wallets",
+    input.environment
   );
 
-  const [merchant, treasuryAccount] = await Promise.all([
-    getMerchantOrThrow(input.merchantId),
-    ensureTreasuryAccount(input.merchantId),
-  ]);
-  const mode = resolveMerchantMode(merchant.environmentMode);
-  const protocolAddress = getSafeConfig(mode).protocolAddress;
+  const treasuryAccount = await ensureTreasuryAccount(
+    input.merchantId,
+    input.environment
+  );
+  const protocolAddress = getSafeConfig(input.environment).protocolAddress;
   const operations: ReturnType<typeof toTreasuryOperationResponse>[] = [];
 
   const nextPrimaryWallet = normalizeAddress(input.primaryWallet);
@@ -1262,6 +1267,7 @@ export async function createWalletUpdateOperations(input: {
       await createWalletOperation({
         merchantId: input.merchantId,
         actor: input.actor,
+        environment: input.environment,
         kind: "payout_wallet_change_request",
         targetAddress: protocolAddress,
         data: encodePayoutWalletChangeRequestCall(nextPrimaryWallet),
@@ -1277,6 +1283,7 @@ export async function createWalletUpdateOperations(input: {
       await createWalletOperation({
         merchantId: input.merchantId,
         actor: input.actor,
+        environment: input.environment,
         kind: "reserve_wallet_clear",
         targetAddress: protocolAddress,
         data: encodeReserveWalletClearCall(),
@@ -1290,6 +1297,7 @@ export async function createWalletUpdateOperations(input: {
       await createWalletOperation({
         merchantId: input.merchantId,
         actor: input.actor,
+        environment: input.environment,
         kind: "reserve_wallet_update",
         targetAddress: protocolAddress,
         data: encodeReserveWalletUpdateCall(nextReserveWallet),
@@ -1310,28 +1318,29 @@ export async function createWalletUpdateOperations(input: {
 export async function createReservePromoteOperation(input: {
   merchantId: string;
   actor: string;
+  environment: RuntimeMode;
 }) {
   await assertMerchantKybApprovedForLive(
     input.merchantId,
-    "promoting the reserve payout wallet"
+    "promoting the reserve payout wallet",
+    input.environment
   );
 
-  const [merchant, treasuryAccount] = await Promise.all([
-    getMerchantOrThrow(input.merchantId),
-    ensureTreasuryAccount(input.merchantId),
-  ]);
+  const treasuryAccount = await ensureTreasuryAccount(
+    input.merchantId,
+    input.environment
+  );
 
   if (!treasuryAccount.reserveWallet) {
     throw new HttpError(409, "Reserve wallet is not configured.");
   }
 
-  const mode = resolveMerchantMode(merchant.environmentMode);
-
   return createWalletOperation({
     merchantId: input.merchantId,
     actor: input.actor,
+    environment: input.environment,
     kind: "reserve_wallet_promote",
-    targetAddress: getSafeConfig(mode).protocolAddress,
+    targetAddress: getSafeConfig(input.environment).protocolAddress,
     data: encodeReserveWalletPromoteCall(),
   });
 }
@@ -1339,28 +1348,29 @@ export async function createReservePromoteOperation(input: {
 export async function createReserveClearOperation(input: {
   merchantId: string;
   actor: string;
+  environment: RuntimeMode;
 }) {
   await assertMerchantKybApprovedForLive(
     input.merchantId,
-    "removing the reserve payout wallet"
+    "removing the reserve payout wallet",
+    input.environment
   );
 
-  const [merchant, treasuryAccount] = await Promise.all([
-    getMerchantOrThrow(input.merchantId),
-    ensureTreasuryAccount(input.merchantId),
-  ]);
+  const treasuryAccount = await ensureTreasuryAccount(
+    input.merchantId,
+    input.environment
+  );
 
   if (!treasuryAccount.reserveWallet) {
     throw new HttpError(409, "Reserve wallet is not configured.");
   }
 
-  const mode = resolveMerchantMode(merchant.environmentMode);
-
   return createWalletOperation({
     merchantId: input.merchantId,
     actor: input.actor,
+    environment: input.environment,
     kind: "reserve_wallet_clear",
-    targetAddress: getSafeConfig(mode).protocolAddress,
+    targetAddress: getSafeConfig(input.environment).protocolAddress,
     data: encodeReserveWalletClearCall(),
   });
 }
@@ -1368,16 +1378,18 @@ export async function createReserveClearOperation(input: {
 export async function createPayoutWalletConfirmOperation(input: {
   merchantId: string;
   actor: string;
+  environment: RuntimeMode;
 }) {
   await assertMerchantKybApprovedForLive(
     input.merchantId,
-    "confirming the payout wallet change"
+    "confirming the payout wallet change",
+    input.environment
   );
 
-  const [merchant, treasuryAccount] = await Promise.all([
-    getMerchantOrThrow(input.merchantId),
-    ensureTreasuryAccount(input.merchantId),
-  ]);
+  const treasuryAccount = await ensureTreasuryAccount(
+    input.merchantId,
+    input.environment
+  );
 
   if (!treasuryAccount.pendingPayoutWallet || !treasuryAccount.payoutWalletChangeReadyAt) {
     throw new HttpError(409, "No payout wallet change is pending confirmation.");
@@ -1390,13 +1402,12 @@ export async function createPayoutWalletConfirmOperation(input: {
     );
   }
 
-  const mode = resolveMerchantMode(merchant.environmentMode);
-
   return createWalletOperation({
     merchantId: input.merchantId,
     actor: input.actor,
+    environment: input.environment,
     kind: "payout_wallet_change_confirm",
-    targetAddress: getSafeConfig(mode).protocolAddress,
+    targetAddress: getSafeConfig(input.environment).protocolAddress,
     data: encodePayoutWalletChangeConfirmCall(),
     metadata: {
       nextWallet: treasuryAccount.pendingPayoutWallet,
@@ -1422,9 +1433,9 @@ export async function getTreasuryOperationSigningPayload(input: {
     treasuryAccount,
   });
 
-  const merchant = await getMerchantOrThrow(input.merchantId);
-  const mode = resolveMerchantMode(merchant.environmentMode);
-  const provider = createSafeProvider(mode);
+  const provider = createSafeProvider(
+    toStoredRuntimeMode(treasuryAccount.environment)
+  );
   const payload = await provider.buildTransactionSigningPayload({
     safeAddress: treasuryAccount.safeAddress,
     targetAddress: operation.targetAddress,
@@ -1477,9 +1488,9 @@ export async function approveTreasuryOperation(input: {
     return toTreasuryOperationResponse(operation);
   }
 
-  const merchant = await getMerchantOrThrow(input.merchantId);
-  const mode = resolveMerchantMode(merchant.environmentMode);
-  const provider = createSafeProvider(mode);
+  const provider = createSafeProvider(
+    toStoredRuntimeMode(treasuryAccount.environment)
+  );
 
   if (operation.signatures.length === 0) {
     const proposed = await provider.proposeTransaction({
@@ -1623,9 +1634,9 @@ export async function executeTreasuryOperation(input: {
     );
   }
 
-  const merchant = await getMerchantOrThrow(input.merchantId);
-  const mode = resolveMerchantMode(merchant.environmentMode);
-  const provider = createSafeProvider(mode);
+  const provider = createSafeProvider(
+    toStoredRuntimeMode(treasuryAccount.environment)
+  );
   const execution = await provider.executeTransaction({
     safeAddress: treasuryAccount.safeAddress,
     safeTxHash: operation.safeTxHash,
@@ -1673,8 +1684,17 @@ export async function executeTreasuryOperation(input: {
   return toTreasuryOperationResponse(operation);
 }
 
-export async function listTreasuryOperationsByMerchantId(merchantId: string) {
-  const operations = await TreasuryOperationModel.find({ merchantId })
+export async function listTreasuryOperationsByMerchantId(
+  merchantId: string,
+  environment?: RuntimeMode
+) {
+  const query: Record<string, unknown> = { merchantId };
+
+  if (environment) {
+    Object.assign(query, createRuntimeModeCondition("environment", environment));
+  }
+
+  const operations = await TreasuryOperationModel.find(query)
     .sort({ createdAt: -1 })
     .exec();
 
@@ -1684,12 +1704,17 @@ export async function listTreasuryOperationsByMerchantId(merchantId: string) {
 export async function listSettlementSweepOperations(input: {
   merchantId: string;
   limit: number;
+  environment?: RuntimeMode;
   status?: string;
 }) {
   const query: Record<string, unknown> = {
     merchantId: input.merchantId,
     kind: "settlement_sweep",
   };
+
+  if (input.environment) {
+    Object.assign(query, createRuntimeModeCondition("environment", input.environment));
+  }
 
   if (input.status) {
     query.status = input.status;
@@ -1703,10 +1728,17 @@ export async function listSettlementSweepOperations(input: {
   return operations.map(toTreasuryOperationResponse);
 }
 
-export async function getSettlementSweepOperation(settlementId: string, merchantId: string) {
+export async function getSettlementSweepOperation(
+  settlementId: string,
+  merchantId: string,
+  environment?: RuntimeMode
+) {
   const operation = await TreasuryOperationModel.findOne({
     merchantId,
     settlementId,
+    ...(environment
+      ? createRuntimeModeCondition("environment", environment)
+      : {}),
     kind: "settlement_sweep",
   }).exec();
 

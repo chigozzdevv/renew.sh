@@ -1,10 +1,15 @@
 import type { FeatureCard, FlowStep, NavItem, ProofItem } from "@/types/marketing";
 
-export const landingNav: NavItem[] = [
-  { label: "Overview", href: "#overview" },
-  { label: "Why Renew", href: "#why-renew" },
-  { label: "How it works", href: "#how-it-works" },
-  { label: "Why Avalanche", href: "#network" },
+export const landingPrimaryNav: NavItem[] = [
+  { label: "Overview", href: "/#overview" },
+  { label: "Why Renew", href: "/#why-renew" },
+  { label: "How it works", href: "/#how-it-works" },
+];
+
+export const landingMoreNav: NavItem[] = [
+  { label: "Why Avalanche", href: "/#network" },
+  { label: "Playground", href: "/playground" },
+  { label: "Docs", href: "/docs" },
 ];
 
 export const proofItems: ProofItem[] = [

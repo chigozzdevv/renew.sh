@@ -1,6 +1,7 @@
 import { ButtonLink } from "@/components/ui/button";
 import { Container } from "@/components/ui/container";
 import { Reveal } from "@/components/ui/reveal";
+import { GetStartedButton } from "@/components/shared/get-started";
 
 export function CTASection() {
   return (
@@ -56,9 +57,7 @@ export function CTASection() {
             </div>
 
             <div className="mx-auto flex flex-row flex-wrap items-center justify-center gap-3 lg:mx-0 lg:flex-col lg:items-end lg:justify-start">
-              <ButtonLink href="/waitlist" className="px-5 py-3 sm:px-7 sm:py-3.5">
-                Request early access
-              </ButtonLink>
+              <GetStartedButton className="px-5 py-3 sm:px-7 sm:py-3.5" />
               <ButtonLink href="/docs" variant="secondary" className="px-5 py-3 sm:px-7 sm:py-3.5">
                 View docs
               </ButtonLink>

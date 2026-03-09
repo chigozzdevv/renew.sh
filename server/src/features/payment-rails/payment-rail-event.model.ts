@@ -8,11 +8,16 @@ const paymentRailEventSchema = new Schema(
       trim: true,
       default: "yellow-card",
     },
+    environment: {
+      type: String,
+      required: true,
+      enum: ["test", "live"],
+      default: "test",
+    },
     eventKey: {
       type: String,
       required: true,
       trim: true,
-      unique: true,
     },
     state: {
       type: String,
@@ -49,6 +54,10 @@ const paymentRailEventSchema = new Schema(
   }
 );
 
+paymentRailEventSchema.index(
+  { provider: 1, environment: 1, eventKey: 1 },
+  { unique: true }
+);
 paymentRailEventSchema.index({ provider: 1, createdAt: -1 });
 
 type PaymentRailEventEntry = InferSchemaType<typeof paymentRailEventSchema> & {

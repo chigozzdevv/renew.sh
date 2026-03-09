@@ -1,5 +1,6 @@
 import { useWorkspaceMode } from "@/components/dashboard/mode-provider";
 import { useDashboardSession } from "@/components/dashboard/session-provider";
+import { Badge } from "@/components/dashboard/ui";
 import { cn } from "@/lib/utils";
 
 type DashboardTopbarProps = {
@@ -100,6 +101,10 @@ export function DashboardTopbar({ onOpenSidebar }: DashboardTopbarProps) {
               Live
             </button>
           </div>
+
+          {mode === "live" ? (
+            <Badge tone="warning">Live onboarding locked</Badge>
+          ) : null}
 
           <button
             type="button"

@@ -6,7 +6,6 @@ import type {
   ListMerchantsQuery,
   UpdateMerchantInput,
 } from "@/features/merchants/merchant.validation";
-import type { RuntimeMode } from "@/shared/constants/runtime-mode";
 
 function toMerchantResponse(document: {
   _id: { toString(): string };
@@ -19,7 +18,6 @@ function toMerchantResponse(document: {
   supportedMarkets: string[];
   metadataHash: string;
   status: string;
-  environmentMode: string;
   createdAt: Date;
   updatedAt: Date;
 }) {
@@ -34,25 +32,9 @@ function toMerchantResponse(document: {
     supportedMarkets: document.supportedMarkets,
     metadataHash: document.metadataHash,
     status: document.status,
-    environmentMode: document.environmentMode,
     createdAt: document.createdAt,
     updatedAt: document.updatedAt,
   };
-}
-
-export async function getMerchantEnvironmentModeById(
-  merchantId: string
-): Promise<RuntimeMode> {
-  const merchant = await MerchantModel.findById(merchantId)
-    .select({ environmentMode: 1 })
-    .lean()
-    .exec();
-
-  if (!merchant) {
-    throw new HttpError(404, "Merchant was not found.");
-  }
-
-  return merchant.environmentMode === "live" ? "live" : "test";
 }
 
 export async function createMerchant(input: CreateMerchantInput) {
@@ -73,7 +55,6 @@ export async function createMerchant(input: CreateMerchantInput) {
     supportedMarkets: input.supportedMarkets,
     metadataHash: input.metadataHash,
     status: input.status,
-    environmentMode: input.environmentMode,
   });
 
   return toMerchantResponse(createdMerchant);
@@ -152,10 +133,6 @@ export async function updateMerchant(
 
   if (input.status !== undefined) {
     merchant.status = input.status;
-  }
-
-  if (input.environmentMode !== undefined) {
-    merchant.environmentMode = input.environmentMode;
   }
 
   await merchant.save();

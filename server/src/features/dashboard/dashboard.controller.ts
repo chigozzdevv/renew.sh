@@ -2,10 +2,19 @@ import type { Request, Response } from "express";
 
 import { dashboardOverviewQuerySchema } from "@/features/dashboard/dashboard.validation";
 import { getDashboardOverview } from "@/features/dashboard/dashboard.service";
+import { optionalEnvironmentInputSchema } from "@/shared/utils/runtime-environment";
 import { asyncHandler } from "@/shared/utils/async-handler";
 
 function resolveMerchantScope(request: Request, fallback?: string) {
   return request.platformAuthUser?.merchantId ?? fallback;
+}
+
+function resolveEnvironmentScope(request: Request) {
+  return optionalEnvironmentInputSchema.parse(
+    typeof request.query.environment === "string"
+      ? request.query.environment
+      : request.body?.environment
+  );
 }
 
 export const getDashboardOverviewController = asyncHandler(
@@ -18,6 +27,7 @@ export const getDashboardOverviewController = asyncHandler(
           ? request.query.merchantId
           : undefined
       ),
+      environment: resolveEnvironmentScope(request),
     });
     const overview = await getDashboardOverview(query);
 

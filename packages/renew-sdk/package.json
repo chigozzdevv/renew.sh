@@ -2,6 +2,7 @@
   "name": "@renew/sdk",
   "version": "0.1.0",
   "description": "Renew SDK for checkout sessions, server integrations, and React checkout flows.",
+  "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -49,7 +50,8 @@
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",

@@ -7,6 +7,8 @@ import type {
   ListPlansQuery,
   UpdatePlanInput,
 } from "@/features/plans/plan.validation";
+import type { RuntimeMode } from "@/shared/constants/runtime-mode";
+import { createRuntimeModeCondition } from "@/shared/utils/runtime-environment";
 
 function toPlanResponse(document: {
   _id: { toString(): string };
@@ -42,15 +44,27 @@ function toPlanResponse(document: {
   };
 }
 
-async function ensurePlanScope(planId: string, merchantId?: string) {
-  const plan = await PlanModel.findById(planId).exec();
+async function ensurePlanScope(
+  planId: string,
+  merchantId?: string,
+  environment?: RuntimeMode
+) {
+  const mongoQuery: Record<string, unknown> = {
+    _id: planId,
+  };
+
+  if (merchantId) {
+    mongoQuery.merchantId = merchantId;
+  }
+
+  if (environment) {
+    Object.assign(mongoQuery, createRuntimeModeCondition("environment", environment));
+  }
+
+  const plan = await PlanModel.findOne(mongoQuery).exec();
 
   if (!plan) {
     throw new HttpError(404, "Plan was not found.");
-  }
-
-  if (merchantId && plan.merchantId.toString() !== merchantId) {
-    throw new HttpError(403, "Plan does not belong to this merchant.");
   }
 
   return plan;
@@ -65,6 +79,7 @@ export async function createPlan(input: CreatePlanInput) {
 
   const createdPlan = await PlanModel.create({
     merchantId: input.merchantId,
+    environment: input.environment,
     planCode: input.planCode,
     name: input.name,
     usdAmount: input.usdAmount,
@@ -81,28 +96,49 @@ export async function createPlan(input: CreatePlanInput) {
 }
 
 export async function listPlans(query: ListPlansQuery) {
-  const mongoQuery: Record<string, unknown> = {};
+  const filters: Record<string, unknown>[] = [];
 
   if (query.merchantId) {
-    mongoQuery.merchantId = query.merchantId;
+    filters.push({
+      merchantId: query.merchantId,
+    });
+  }
+
+  if (query.environment) {
+    filters.push(createRuntimeModeCondition("environment", query.environment));
   }
 
   if (query.status) {
-    mongoQuery.status = query.status;
+    filters.push({
+      status: query.status,
+    });
   }
 
   if (query.search) {
     const pattern = new RegExp(query.search, "i");
-    mongoQuery.$or = [{ name: pattern }, { planCode: pattern }];
+    filters.push({
+      $or: [{ name: pattern }, { planCode: pattern }],
+    });
   }
+
+  const mongoQuery =
+    filters.length === 0
+      ? {}
+      : filters.length === 1
+        ? filters[0]
+        : { $and: filters };
 
   const plans = await PlanModel.find(mongoQuery).sort({ createdAt: -1 }).exec();
 
   return plans.map(toPlanResponse);
 }
 
-export async function getPlanById(planId: string, merchantId?: string) {
-  const plan = await ensurePlanScope(planId, merchantId);
+export async function getPlanById(
+  planId: string,
+  merchantId?: string,
+  environment?: RuntimeMode
+) {
+  const plan = await ensurePlanScope(planId, merchantId, environment);
 
   return toPlanResponse(plan);
 }
@@ -110,9 +146,10 @@ export async function getPlanById(planId: string, merchantId?: string) {
 export async function updatePlan(
   planId: string,
   input: UpdatePlanInput,
-  merchantId?: string
+  merchantId?: string,
+  environment?: RuntimeMode
 ) {
-  const plan = await ensurePlanScope(planId, merchantId);
+  const plan = await ensurePlanScope(planId, merchantId, environment);
 
   if (input.planCode !== undefined) {
     plan.planCode = input.planCode;

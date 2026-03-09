@@ -11,7 +11,6 @@ import {
 } from "@/components/dashboard/surface-utils";
 import { useAuthedResource } from "@/components/dashboard/use-authed-resource";
 import {
-  Badge,
   Button,
   Card,
   Field,
@@ -30,54 +29,135 @@ import {
   revokeDeveloperKey,
   rotateWebhookSecret,
   sendWebhookTest,
+  supportedWebhookEvents,
   updateWebhook,
+  type DeliveryRecord,
   type DeveloperKeyRecord,
+  type SupportedWebhookEvent,
   type WebhookRecord,
 } from "@/lib/developers";
+
+type WebhookDraft = {
+  label: string;
+  endpointUrl: string;
+  eventTypes: SupportedWebhookEvent[];
+  retryPolicy: WebhookRecord["retryPolicy"];
+  status: WebhookRecord["status"];
+};
+
+function createDefaultWebhookEvents(): SupportedWebhookEvent[] {
+  return [...supportedWebhookEvents] as SupportedWebhookEvent[];
+}
+
+function createWebhookDraft(webhook: WebhookRecord): WebhookDraft {
+  return {
+    label: webhook.label,
+    endpointUrl: webhook.endpointUrl,
+    eventTypes: webhook.eventTypes,
+    retryPolicy: webhook.retryPolicy,
+    status: webhook.status,
+  };
+}
+
+function EventSelector({
+  selected,
+  disabled = false,
+  onToggle,
+}: {
+  selected: readonly SupportedWebhookEvent[];
+  disabled?: boolean;
+  onToggle: (eventType: SupportedWebhookEvent) => void;
+}) {
+  return (
+    <div className="grid gap-2 sm:grid-cols-2">
+      {supportedWebhookEvents.map((eventType) => {
+        const isChecked = selected.includes(eventType);
+
+        return (
+          <label
+            key={eventType}
+            className="flex items-center gap-3 rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 text-sm font-medium tracking-[-0.02em] text-[color:var(--ink)]"
+          >
+            <input
+              type="checkbox"
+              checked={isChecked}
+              disabled={disabled}
+              onChange={() => onToggle(eventType)}
+              className="h-4 w-4 rounded border-[color:var(--line)] text-[#0c4a27] focus:ring-[#0c4a27]"
+            />
+            <span>{eventType}</span>
+          </label>
+        );
+      })}
+    </div>
+  );
+}
+
+function toggleEventType(
+  current: readonly SupportedWebhookEvent[],
+  eventType: SupportedWebhookEvent
+) {
+  return current.includes(eventType)
+    ? current.filter((value) => value !== eventType)
+    : [...current, eventType];
+}
 
 export function DevelopersSurface() {
   const { token, user } = useDashboardSession();
   const { mode } = useWorkspaceMode();
-  const [environment, setEnvironment] = useState<"all" | "test" | "live">("all");
   const [selectedWebhookId, setSelectedWebhookId] = useState<string | null>(null);
+  const [editingWebhook, setEditingWebhook] = useState<WebhookDraft | null>(null);
   const [isBusy, setIsBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [newKeyLabel, setNewKeyLabel] = useState("");
-  const [newKeyEnv, setNewKeyEnv] = useState<"test" | "live">("test");
-  const [newWebhook, setNewWebhook] = useState({
+  const [newWebhook, setNewWebhook] = useState<{
+    label: string;
+    endpointUrl: string;
+    eventTypes: SupportedWebhookEvent[];
+    retryPolicy: WebhookRecord["retryPolicy"];
+  }>({
     label: "",
     endpointUrl: "",
-    eventTypes: "charge.settled,charge.failed",
-    retryPolicy: "exponential" as WebhookRecord["retryPolicy"],
+    eventTypes: createDefaultWebhookEvents(),
+    retryPolicy: "exponential",
   });
-  const [testEventType, setTestEventType] = useState("charge.settled");
+  const [testEventType, setTestEventType] =
+    useState<SupportedWebhookEvent>("charge.settled");
 
   const { data, isLoading, error, reload } = useAuthedResource(
     async ({ token, merchantId }) =>
       loadDeveloperWorkspace({
         token,
         merchantId,
-        environment,
+        environment: mode,
       }),
-    [environment]
+    [mode]
   );
 
   const keys = data?.keys ?? [];
   const webhooks = data?.webhooks ?? [];
   const deliveries = data?.deliveries ?? [];
-  const integrationStatus = data?.integrationStatus;
   const selectedWebhook =
-    webhooks.find((webhook) => webhook.id === selectedWebhookId) ?? webhooks[0] ?? null;
+    webhooks.find((webhook) => webhook.id === selectedWebhookId) ?? null;
+  const selectedWebhookDeliveries = selectedWebhook
+    ? deliveries.filter((delivery) => delivery.webhookId === selectedWebhook.id)
+    : deliveries;
 
   useEffect(() => {
-    if (!selectedWebhook) {
+    if (webhooks.length === 0) {
       setSelectedWebhookId(null);
       return;
     }
 
-    setSelectedWebhookId(selectedWebhook.id);
-  }, [selectedWebhook?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!selectedWebhookId || !webhooks.some((webhook) => webhook.id === selectedWebhookId)) {
+      setSelectedWebhookId(webhooks[0].id);
+    }
+  }, [selectedWebhookId, webhooks]);
+
+  useEffect(() => {
+    setEditingWebhook(selectedWebhook ? createWebhookDraft(selectedWebhook) : null);
+  }, [selectedWebhook]);
 
   useEffect(() => {
     if (!message && !errorMessage) {
@@ -110,8 +190,8 @@ export function DevelopersSurface() {
     try {
       await runner();
       await reload();
-    } catch (error) {
-      setErrorMessage(toErrorMessage(error));
+    } catch (actionError) {
+      setErrorMessage(toErrorMessage(actionError));
     } finally {
       setIsBusy(null);
     }
@@ -127,10 +207,10 @@ export function DevelopersSurface() {
         token,
         merchantId: user.merchantId,
         label: newKeyLabel.trim(),
-        environment: newKeyEnv,
+        environment: mode,
       });
       setNewKeyLabel("");
-      setMessage(`API key created: ${result.token}`);
+      setMessage(`Server key created: ${result.token}`);
     });
   }
 
@@ -145,12 +225,18 @@ export function DevelopersSurface() {
         merchantId: key.merchantId,
         developerKeyId: key.id,
       });
-      setMessage("API key revoked.");
+      setMessage("Server key revoked.");
     });
   }
 
   async function handleCreateWebhook() {
-    if (!token || !user?.merchantId || !newWebhook.label.trim() || !newWebhook.endpointUrl.trim()) {
+    if (
+      !token ||
+      !user?.merchantId ||
+      !newWebhook.label.trim() ||
+      !newWebhook.endpointUrl.trim() ||
+      newWebhook.eventTypes.length === 0
+    ) {
       return;
     }
 
@@ -158,21 +244,44 @@ export function DevelopersSurface() {
       const result = await createWebhook({
         token,
         merchantId: user.merchantId,
+        environment: mode,
         label: newWebhook.label.trim(),
         endpointUrl: newWebhook.endpointUrl.trim(),
-        eventTypes: newWebhook.eventTypes
-          .split(",")
-          .map((value) => value.trim())
-          .filter(Boolean),
+        eventTypes: newWebhook.eventTypes,
         retryPolicy: newWebhook.retryPolicy,
       });
+
       setNewWebhook({
         label: "",
         endpointUrl: "",
-        eventTypes: "charge.settled,charge.failed",
+        eventTypes: createDefaultWebhookEvents(),
         retryPolicy: "exponential",
       });
+      setSelectedWebhookId(result.webhook.id);
       setMessage(`Webhook created. Secret: ${result.secret}`);
+    });
+  }
+
+  async function handleSaveWebhook() {
+    if (!token || !selectedWebhook || !editingWebhook) {
+      return;
+    }
+
+    await runAction(`save-webhook:${selectedWebhook.id}`, async () => {
+      await updateWebhook({
+        token,
+        merchantId: selectedWebhook.merchantId,
+        environment: mode,
+        webhookId: selectedWebhook.id,
+        payload: {
+          label: editingWebhook.label.trim(),
+          endpointUrl: editingWebhook.endpointUrl.trim(),
+          eventTypes: editingWebhook.eventTypes,
+          retryPolicy: editingWebhook.retryPolicy,
+          status: editingWebhook.status,
+        },
+      });
+      setMessage("Webhook updated.");
     });
   }
 
@@ -181,31 +290,14 @@ export function DevelopersSurface() {
       return;
     }
 
-    await runAction("rotate-secret", async () => {
+    await runAction(`rotate-secret:${selectedWebhook.id}`, async () => {
       const result = await rotateWebhookSecret({
         token,
         merchantId: selectedWebhook.merchantId,
+        environment: mode,
         webhookId: selectedWebhook.id,
       });
       setMessage(`Secret rotated: ${result.secret}`);
-    });
-  }
-
-  async function handleToggleWebhookStatus(nextStatus: WebhookRecord["status"]) {
-    if (!token || !selectedWebhook) {
-      return;
-    }
-
-    await runAction("update-webhook", async () => {
-      await updateWebhook({
-        token,
-        merchantId: selectedWebhook.merchantId,
-        webhookId: selectedWebhook.id,
-        payload: {
-          status: nextStatus,
-        },
-      });
-      setMessage("Webhook updated.");
     });
   }
 
@@ -214,246 +306,409 @@ export function DevelopersSurface() {
       return;
     }
 
-    await runAction("send-test", async () => {
-      await sendWebhookTest({
+    await runAction(`send-test:${selectedWebhook.id}`, async () => {
+      const delivery = await sendWebhookTest({
         token,
         merchantId: selectedWebhook.merchantId,
+        environment: mode,
         webhookId: selectedWebhook.id,
-        eventType: testEventType.trim(),
+        eventType: testEventType,
       });
-      setMessage("Test delivery sent.");
+
+      setMessage(
+        delivery.status === "delivered"
+          ? "Test delivery completed."
+          : "Test delivery queued."
+      );
     });
   }
 
   if (isLoading && !data) {
-    return <PageState title="Loading developer setup" message="Fetching real keys, webhooks, and deliveries." />;
+    return (
+      <PageState
+        title="Loading developer tools"
+        message="Fetching server keys, webhook endpoints, and delivery history."
+      />
+    );
   }
 
   if (error || !data) {
     return (
       <PageState
-        title="Developer setup unavailable"
+        title="Developer tools unavailable"
         message={error ?? "Unable to load developer resources."}
         tone="danger"
-        action={<button className="text-sm font-semibold" onClick={() => void reload()}>Retry</button>}
+        action={
+          <button
+            className="text-sm font-semibold"
+            onClick={() => void reload()}
+          >
+            Retry
+          </button>
+        }
       />
     );
   }
 
   return (
     <div className="space-y-6">
-      {integrationStatus ? (
-        <Card
-          title="Integration runtime"
-          description="Safe runs against Avalanche. Fiat collection and KYB stay simulated until partner credentials are issued."
-          action={
-            <Badge tone={mode === "live" ? "warning" : "brand"}>
-              Workspace {integrationStatus.workspaceMode}
-            </Badge>
-          }
-        >
-          <div className="grid gap-3 lg:grid-cols-3">
-            {integrationStatus.providers.map((provider) => (
-              <div
-                key={provider.key}
-                className="rounded-[1.6rem] border border-[color:var(--line)] bg-[#f8faf7] p-4"
-              >
-                <p className="text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)]">
-                  {provider.label}
-                </p>
-                <div className="mt-4 space-y-3">
-                  {provider.modes.map((entry) => (
-                    <div
-                      key={`${provider.key}:${entry.mode}`}
-                      className="rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3"
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)]">
-                          {entry.mode}
-                        </p>
-                        <Badge
-                          tone={
-                            entry.state === "ready"
-                              ? "brand"
-                              : entry.state === "simulated"
-                                ? "warning"
-                                : "neutral"
-                          }
-                        >
-                          {entry.implementation}
-                        </Badge>
-                      </div>
-                      <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">
-                        {entry.detail}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </Card>
-      ) : null}
-
       <StatGrid>
-        <MetricCard label="API keys" value={String(metrics.keys)} note="Active credentials" tone="brand" />
+        <MetricCard label="Server keys" value={String(metrics.keys)} note="Backend credentials" tone="brand" />
         <MetricCard label="Webhooks" value={String(metrics.webhooks)} note="Active endpoints" />
-        <MetricCard label="Deliveries" value={String(metrics.deliveries)} note="Recent events" />
-        <MetricCard label="Failed" value={String(metrics.failedDeliveries)} note="Need review" />
+        <MetricCard label="Deliveries" value={String(metrics.deliveries)} note="Real attempts" />
+        <MetricCard label="Failed" value={String(metrics.failedDeliveries)} note="Needs review" />
       </StatGrid>
 
-      <div className="grid gap-4 xl:grid-cols-[1.08fr_0.92fr]">
-        <Card title="API keys" description="Real API credentials and webhook endpoints.">
+      {message ? (
+        <div className="rounded-2xl border border-[#d6ebc7] bg-[#f4fbef] px-4 py-3 text-sm font-medium text-[#0c4a27]">
+          {message}
+        </div>
+      ) : null}
+      {errorMessage ? (
+        <div className="rounded-2xl border border-[#e4c4be] bg-[#fff7f6] px-4 py-3 text-sm font-medium text-[#922f25]">
+          {errorMessage}
+        </div>
+      ) : null}
+
+      <div className="grid gap-4 xl:grid-cols-[1.02fr_0.98fr]">
+        <Card title="Server keys" description="Backend credentials for the selected environment.">
           <div className="space-y-4">
-            <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_160px_auto]">
-              <Input placeholder="Key label" value={newKeyLabel} onChange={(event) => setNewKeyLabel(event.target.value)} />
-              <Select value={newKeyEnv} onChange={(event) => setNewKeyEnv(event.target.value as "test" | "live")}>
-                <option value="test">Test</option>
-                <option value="live">Live</option>
-              </Select>
-              <Button tone="brand" disabled={isBusy === "create-key" || !newKeyLabel.trim()} onClick={() => void handleCreateKey()}>
-                {isBusy === "create-key" ? "Creating..." : "Create key"}
+            <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
+              <Input
+                placeholder="Server key label"
+                value={newKeyLabel}
+                onChange={(event) => setNewKeyLabel(event.target.value)}
+              />
+              <Button
+                tone="brand"
+                disabled={isBusy === "create-key" || !newKeyLabel.trim()}
+                onClick={() => void handleCreateKey()}
+              >
+                {isBusy === "create-key" ? "Creating..." : "Create server key"}
               </Button>
             </div>
 
-            <Select value={environment} onChange={(event) => setEnvironment(event.target.value as "all" | "test" | "live")}>
-              <option value="all">All environments</option>
-              <option value="test">Test</option>
-              <option value="live">Live</option>
-            </Select>
-
-            {message ? <p className="text-sm text-[color:var(--brand)]">{message}</p> : null}
-            {errorMessage ? <p className="text-sm text-[#a8382b]">{errorMessage}</p> : null}
-
-            <Table columns={["Label", "Environment", "Last used", "Status"]}>
+            <Table columns={["Label", "Last used", "Status"]}>
               {keys.map((key) => (
-                <div key={key.id}>
-                  <TableRow columns={4}>
-                    <div>
-                      <p className="text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)]">{key.label}</p>
-                      <p className="mt-1 text-sm text-[color:var(--muted)]">{key.maskedToken}</p>
-                    </div>
-                    <p className="text-sm text-[color:var(--muted)]">{key.environment}</p>
-                    <p className="text-sm text-[color:var(--muted)]">{formatDateTime(key.lastUsedAt)}</p>
-                    <div className="flex items-center justify-between gap-3">
-                      <StatusBadge value={key.status} />
-                      {key.status === "active" ? (
-                        <Button
-                          disabled={isBusy === `revoke-key:${key.id}`}
-                          onClick={() => void handleRevokeKey(key)}
-                        >
-                          Revoke
-                        </Button>
-                      ) : null}
-                    </div>
-                  </TableRow>
-                </div>
+                <TableRow key={key.id} columns={3}>
+                  <div>
+                    <p className="text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)]">
+                      {key.label}
+                    </p>
+                    <p className="mt-1 text-sm text-[color:var(--muted)]">
+                      {key.maskedToken}
+                    </p>
+                  </div>
+                  <p className="text-sm text-[color:var(--muted)]">
+                    {formatDateTime(key.lastUsedAt)}
+                  </p>
+                  <div className="flex items-center justify-between gap-3">
+                    <StatusBadge value={key.status} />
+                    {key.status === "active" ? (
+                      <Button
+                        disabled={isBusy === `revoke-key:${key.id}`}
+                        onClick={() => void handleRevokeKey(key)}
+                      >
+                        Revoke
+                      </Button>
+                    ) : null}
+                  </div>
+                </TableRow>
               ))}
             </Table>
           </div>
         </Card>
 
-        <Card title={selectedWebhook?.label ?? "Webhook profile"} description={selectedWebhook?.endpointUrl ?? "Select a webhook to manage it."}>
+        <Card title="Webhook endpoints" description="Endpoints registered for the selected environment.">
           <div className="space-y-4">
-            <div className="grid gap-3">
-              <Input
-                placeholder="Webhook label"
-                value={newWebhook.label}
-                onChange={(event) =>
-                  setNewWebhook((current) => ({ ...current, label: event.target.value }))
-                }
-              />
-              <Input
-                placeholder="Endpoint URL"
-                value={newWebhook.endpointUrl}
-                onChange={(event) =>
-                  setNewWebhook((current) => ({
-                    ...current,
-                    endpointUrl: event.target.value,
-                  }))
-                }
-              />
-              <Input
-                placeholder="Event types comma-separated"
-                value={newWebhook.eventTypes}
-                onChange={(event) =>
-                  setNewWebhook((current) => ({
-                    ...current,
-                    eventTypes: event.target.value,
-                  }))
-                }
-              />
-              <Select
-                value={newWebhook.retryPolicy}
-                onChange={(event) =>
-                  setNewWebhook((current) => ({
-                    ...current,
-                    retryPolicy: event.target.value as WebhookRecord["retryPolicy"],
-                  }))
-                }
-              >
-                <option value="none">No retries</option>
-                <option value="linear">Linear</option>
-                <option value="exponential">Exponential</option>
-              </Select>
-              <Button tone="brand" disabled={isBusy === "create-webhook"} onClick={() => void handleCreateWebhook()}>
-                {isBusy === "create-webhook" ? "Creating..." : "Create webhook"}
-              </Button>
-            </div>
-
-            {selectedWebhook ? (
-              <>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <Field label="Status" value={<StatusBadge value={selectedWebhook.status} />} />
-                  <Field label="Retry policy" value={selectedWebhook.retryPolicy} />
-                  <Field label="Events" value={selectedWebhook.eventTypes.join(", ")} />
-                  <Field label="Last delivery" value={formatDateTime(selectedWebhook.lastDeliveryAt)} />
-                </div>
-
-                <div className="flex flex-wrap gap-3">
-                  <Button tone="brand" disabled={isBusy === "rotate-secret"} onClick={() => void handleRotateSecret()}>
-                    Rotate secret
-                  </Button>
-                  <Button
-                    disabled={isBusy === "update-webhook"}
-                    onClick={() =>
-                      void handleToggleWebhookStatus(
-                        selectedWebhook.status === "active" ? "disabled" : "active"
-                      )
-                    }
-                  >
-                    {selectedWebhook.status === "active" ? "Disable" : "Enable"}
-                  </Button>
-                </div>
-
-                <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
-                  <Input value={testEventType} onChange={(event) => setTestEventType(event.target.value)} />
-                  <Button tone="brand" disabled={isBusy === "send-test"} onClick={() => void handleSendTest()}>
-                    {isBusy === "send-test" ? "Sending..." : "Send test"}
-                  </Button>
-                </div>
-              </>
-            ) : null}
+            {webhooks.length === 0 ? (
+              <div className="rounded-2xl border border-[color:var(--line)] bg-white px-4 py-10 text-center text-sm text-[color:var(--muted)]">
+                No webhook endpoints yet for this environment.
+              </div>
+            ) : (
+              <Table columns={["Label", "Events", "Status", "Manage"]}>
+                {webhooks.map((webhook) => (
+                  <TableRow key={webhook.id} columns={4}>
+                    <div>
+                      <p className="text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)]">
+                        {webhook.label}
+                      </p>
+                      <p className="mt-1 text-sm text-[color:var(--muted)]">
+                        {webhook.endpointUrl}
+                      </p>
+                    </div>
+                    <p className="text-sm text-[color:var(--muted)]">
+                      {webhook.eventTypes.join(", ")}
+                    </p>
+                    <div>
+                      <StatusBadge value={webhook.status} />
+                    </div>
+                    <div className="flex justify-start md:justify-end">
+                      <Button
+                        tone={selectedWebhookId === webhook.id ? "brand" : "neutral"}
+                        onClick={() => setSelectedWebhookId(webhook.id)}
+                      >
+                        {selectedWebhookId === webhook.id ? "Selected" : "Manage"}
+                      </Button>
+                    </div>
+                  </TableRow>
+                ))}
+              </Table>
+            )}
           </div>
         </Card>
       </div>
 
-      <Card title="Webhook deliveries" description="Recent delivery attempts from the real backend.">
-        <Table columns={["Event", "Webhook", "HTTP", "Delivered", "Status"]}>
-          {deliveries.map((delivery) => {
-            const webhook = webhooks.find((item) => item.id === delivery.webhookId);
+      <div className="grid gap-4 xl:grid-cols-[0.96fr_1.04fr]">
+        <Card title="Create webhook" description="Register a real endpoint and choose the events to deliver.">
+          <div className="space-y-4">
+            <Input
+              placeholder="Webhook label"
+              value={newWebhook.label}
+              onChange={(event) =>
+                setNewWebhook((current) => ({
+                  ...current,
+                  label: event.target.value,
+                }))
+              }
+            />
+            <Input
+              placeholder="https://api.acme.example/renew/webhooks"
+              value={newWebhook.endpointUrl}
+              onChange={(event) =>
+                setNewWebhook((current) => ({
+                  ...current,
+                  endpointUrl: event.target.value,
+                }))
+              }
+            />
+            <EventSelector
+              selected={newWebhook.eventTypes}
+              onToggle={(eventType) =>
+                setNewWebhook((current) => ({
+                  ...current,
+                  eventTypes: toggleEventType(current.eventTypes, eventType),
+                }))
+              }
+            />
+            <Select
+              value={newWebhook.retryPolicy}
+              onChange={(event) =>
+                setNewWebhook((current) => ({
+                  ...current,
+                  retryPolicy: event.target.value as WebhookRecord["retryPolicy"],
+                }))
+              }
+            >
+              <option value="none">No retries</option>
+              <option value="linear">Linear retries</option>
+              <option value="exponential">Exponential retries</option>
+            </Select>
+            <Button
+              tone="brand"
+              disabled={
+                isBusy === "create-webhook" ||
+                !newWebhook.label.trim() ||
+                !newWebhook.endpointUrl.trim() ||
+                newWebhook.eventTypes.length === 0
+              }
+              onClick={() => void handleCreateWebhook()}
+            >
+              {isBusy === "create-webhook" ? "Creating..." : "Create webhook"}
+            </Button>
+          </div>
+        </Card>
 
-            return (
-              <TableRow key={delivery.id} columns={5}>
-                <p className="text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)]">{delivery.eventType}</p>
-                <p className="text-sm text-[color:var(--muted)]">{webhook?.label ?? delivery.webhookId.slice(-8)}</p>
-                <p className="text-sm text-[color:var(--muted)]">{delivery.httpStatus ?? "--"}</p>
-                <p className="text-sm text-[color:var(--muted)]">{formatDateTime(delivery.deliveredAt)}</p>
-                <div><StatusBadge value={delivery.status} /></div>
-              </TableRow>
-            );
-          })}
-        </Table>
+        <Card
+          title={selectedWebhook?.label ?? "Webhook details"}
+          description={
+            selectedWebhook?.endpointUrl ?? "Select a webhook endpoint to edit, rotate, and test."
+          }
+        >
+          {selectedWebhook && editingWebhook ? (
+            <div className="space-y-4">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Last delivery" value={formatDateTime(selectedWebhook.lastDeliveryAt)} />
+                <Field label="Current status" value={<StatusBadge value={selectedWebhook.status} />} />
+              </div>
+
+              <Input
+                value={editingWebhook.label}
+                onChange={(event) =>
+                  setEditingWebhook((current) =>
+                    current
+                      ? {
+                          ...current,
+                          label: event.target.value,
+                        }
+                      : current
+                  )
+                }
+              />
+              <Input
+                value={editingWebhook.endpointUrl}
+                onChange={(event) =>
+                  setEditingWebhook((current) =>
+                    current
+                      ? {
+                          ...current,
+                          endpointUrl: event.target.value,
+                        }
+                      : current
+                  )
+                }
+              />
+              <EventSelector
+                selected={editingWebhook.eventTypes}
+                onToggle={(eventType) =>
+                  setEditingWebhook((current) =>
+                    current
+                      ? {
+                          ...current,
+                          eventTypes: toggleEventType(current.eventTypes, eventType),
+                        }
+                      : current
+                  )
+                }
+              />
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Select
+                  value={editingWebhook.retryPolicy}
+                  onChange={(event) =>
+                    setEditingWebhook((current) =>
+                      current
+                        ? {
+                            ...current,
+                            retryPolicy: event.target.value as WebhookRecord["retryPolicy"],
+                          }
+                        : current
+                    )
+                  }
+                >
+                  <option value="none">No retries</option>
+                  <option value="linear">Linear retries</option>
+                  <option value="exponential">Exponential retries</option>
+                </Select>
+                <Select
+                  value={editingWebhook.status}
+                  onChange={(event) =>
+                    setEditingWebhook((current) =>
+                      current
+                        ? {
+                            ...current,
+                            status: event.target.value as WebhookRecord["status"],
+                          }
+                        : current
+                    )
+                  }
+                >
+                  <option value="active">Active</option>
+                  <option value="disabled">Disabled</option>
+                </Select>
+              </div>
+
+              <div className="flex flex-wrap gap-3">
+                <Button
+                  tone="brand"
+                  disabled={
+                    isBusy === `save-webhook:${selectedWebhook.id}` ||
+                    !editingWebhook.label.trim() ||
+                    !editingWebhook.endpointUrl.trim() ||
+                    editingWebhook.eventTypes.length === 0
+                  }
+                  onClick={() => void handleSaveWebhook()}
+                >
+                  {isBusy === `save-webhook:${selectedWebhook.id}`
+                    ? "Saving..."
+                    : "Save changes"}
+                </Button>
+                <Button
+                  disabled={isBusy === `rotate-secret:${selectedWebhook.id}`}
+                  onClick={() => void handleRotateSecret()}
+                >
+                  {isBusy === `rotate-secret:${selectedWebhook.id}`
+                    ? "Rotating..."
+                    : "Rotate secret"}
+                </Button>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
+                <Select
+                  value={testEventType}
+                  onChange={(event) =>
+                    setTestEventType(event.target.value as SupportedWebhookEvent)
+                  }
+                >
+                  {supportedWebhookEvents.map((eventType) => (
+                    <option key={eventType} value={eventType}>
+                      {eventType}
+                    </option>
+                  ))}
+                </Select>
+                <Button
+                  tone="brand"
+                  disabled={isBusy === `send-test:${selectedWebhook.id}`}
+                  onClick={() => void handleSendTest()}
+                >
+                  {isBusy === `send-test:${selectedWebhook.id}`
+                    ? "Sending..."
+                    : "Send real test"}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-[color:var(--line)] bg-white px-4 py-10 text-center text-sm text-[color:var(--muted)]">
+              Select a webhook endpoint to manage it.
+            </div>
+          )}
+        </Card>
+      </div>
+
+      <Card
+        title="Webhook deliveries"
+        description={
+          selectedWebhook
+            ? `Recent delivery attempts for ${selectedWebhook.label}.`
+            : "Recent delivery attempts for the selected environment."
+        }
+      >
+        {selectedWebhookDeliveries.length === 0 ? (
+          <div className="rounded-2xl border border-[color:var(--line)] bg-white px-4 py-10 text-center text-sm text-[color:var(--muted)]">
+            No deliveries recorded yet.
+          </div>
+        ) : (
+          <Table columns={["Event", "Attempts", "HTTP", "Delivered", "Status"]}>
+            {selectedWebhookDeliveries.map((delivery: DeliveryRecord) => (
+              <div key={delivery.id} className="space-y-2">
+                <TableRow columns={5}>
+                  <div>
+                    <p className="text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)]">
+                      {delivery.eventType}
+                    </p>
+                    <p className="mt-1 text-sm text-[color:var(--muted)]">
+                      {delivery.eventId}
+                    </p>
+                  </div>
+                  <p className="text-sm text-[color:var(--muted)]">{delivery.attempts}</p>
+                  <p className="text-sm text-[color:var(--muted)]">
+                    {delivery.httpStatus ?? "--"}
+                  </p>
+                  <p className="text-sm text-[color:var(--muted)]">
+                    {formatDateTime(delivery.deliveredAt)}
+                  </p>
+                  <div>
+                    <StatusBadge value={delivery.status} />
+                  </div>
+                </TableRow>
+                {delivery.errorMessage ? (
+                  <div className="rounded-2xl border border-[#efe2df] bg-[#fff7f6] px-4 py-3 text-sm text-[#922f25]">
+                    {delivery.errorMessage}
+                  </div>
+                ) : null}
+              </div>
+            ))}
+          </Table>
+        )}
       </Card>
     </div>
   );

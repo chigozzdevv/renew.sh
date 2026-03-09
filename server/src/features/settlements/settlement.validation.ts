@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { environmentInputSchema } from "@/shared/utils/runtime-environment";
+
 const objectIdSchema = z
   .string()
   .trim()
@@ -27,6 +29,7 @@ const sweepApprovalStatusSchema = z.enum([
 
 export const createSettlementSchema = z.object({
   merchantId: objectIdSchema,
+  environment: environmentInputSchema.default("test"),
   sourceChargeId: objectIdSchema.nullable().optional(),
   batchRef: z.string().trim().min(2).max(120),
   grossUsdc: z.coerce.number().positive(),
@@ -35,7 +38,11 @@ export const createSettlementSchema = z.object({
   destinationWallet: addressSchema,
   status: settlementStatusSchema.default("queued"),
   txHash: z.string().trim().min(1).nullable().optional(),
+  bridgeSourceTxHash: z.string().trim().min(1).nullable().optional(),
+  bridgeReceiveTxHash: z.string().trim().min(1).nullable().optional(),
+  creditTxHash: z.string().trim().min(1).nullable().optional(),
   submittedAt: z.coerce.date().nullable().optional(),
+  bridgeAttestedAt: z.coerce.date().nullable().optional(),
   scheduledFor: z.coerce.date(),
   settledAt: z.coerce.date().nullable().optional(),
   reversedAt: z.coerce.date().nullable().optional(),
@@ -44,6 +51,7 @@ export const createSettlementSchema = z.object({
 
 export const listSettlementsQuerySchema = z.object({
   merchantId: objectIdSchema.optional(),
+  environment: environmentInputSchema.optional(),
   status: settlementStatusSchema.optional(),
   search: z.string().trim().min(1).optional(),
 });
@@ -51,7 +59,11 @@ export const listSettlementsQuerySchema = z.object({
 export const updateSettlementSchema = z.object({
   status: settlementStatusSchema.optional(),
   txHash: z.string().trim().min(1).nullable().optional(),
+  bridgeSourceTxHash: z.string().trim().min(1).nullable().optional(),
+  bridgeReceiveTxHash: z.string().trim().min(1).nullable().optional(),
+  creditTxHash: z.string().trim().min(1).nullable().optional(),
   submittedAt: z.coerce.date().nullable().optional(),
+  bridgeAttestedAt: z.coerce.date().nullable().optional(),
   sourceChargeId: objectIdSchema.nullable().optional(),
   settledAt: z.coerce.date().nullable().optional(),
   reversedAt: z.coerce.date().nullable().optional(),
@@ -65,6 +77,7 @@ export const settlementParamSchema = z.object({
 
 export const settlementActionSchema = z.object({
   merchantId: objectIdSchema,
+  environment: environmentInputSchema.default("test"),
   actor: z.string().trim().min(2).max(120).default("system"),
 });
 
@@ -82,6 +95,7 @@ export const rejectSweepApprovalSchema = settlementActionSchema.extend({
 
 export const listSweepApprovalsQuerySchema = z.object({
   merchantId: objectIdSchema,
+  environment: environmentInputSchema.optional(),
   status: sweepApprovalStatusSchema.optional(),
   limit: z.coerce.number().int().min(1).max(100).default(25),
 });

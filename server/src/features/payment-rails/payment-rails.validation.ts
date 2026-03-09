@@ -1,6 +1,12 @@
 import { z } from "zod";
 
+import {
+  environmentInputSchema,
+  optionalEnvironmentInputSchema,
+} from "@/shared/utils/runtime-environment";
+
 export const listChannelsQuerySchema = z.object({
+  environment: environmentInputSchema.default("test"),
   country: z.string().trim().min(2).max(3).toUpperCase().optional(),
   currency: z.string().trim().min(2).max(8).toUpperCase().optional(),
   channelType: z.string().trim().min(2).max(32).optional(),
@@ -14,6 +20,7 @@ export const listChannelsQuerySchema = z.object({
 });
 
 export const listNetworksQuerySchema = z.object({
+  environment: environmentInputSchema.default("test"),
   country: z.string().trim().min(2).max(3).toUpperCase().optional(),
   channelId: z.string().trim().min(2).max(120).optional(),
   includeInactive: z
@@ -25,11 +32,13 @@ export const listNetworksQuerySchema = z.object({
 });
 
 export const syncPaymentRailSchema = z.object({
+  environment: environmentInputSchema.default("test"),
   country: z.string().trim().min(2).max(3).toUpperCase().optional(),
 });
 
 export const createWidgetQuoteSchema = z
   .object({
+    environment: environmentInputSchema.default("test"),
     currency: z.string().trim().min(2).max(8).toUpperCase(),
     localAmount: z.coerce.number().positive().optional(),
     cryptoAmount: z.coerce.number().positive().optional(),
@@ -49,11 +58,13 @@ export const createWidgetQuoteSchema = z
   });
 
 export const resolveBankAccountSchema = z.object({
+  environment: environmentInputSchema.default("test"),
   accountNumber: z.string().trim().min(6).max(24),
   networkId: z.string().trim().min(2).max(120),
 });
 
 export const yellowCardWebhookSchema = z.object({
+  environment: optionalEnvironmentInputSchema,
   id: z.string().trim().min(1).optional(),
   sequenceId: z.string().trim().min(1).optional(),
   state: z.string().trim().min(1).optional(),

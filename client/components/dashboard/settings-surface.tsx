@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
+import { useWorkspaceMode } from "@/components/dashboard/mode-provider";
 import { useDashboardSession } from "@/components/dashboard/session-provider";
 import { useAuthedResource } from "@/components/dashboard/use-authed-resource";
 import {
@@ -114,7 +115,16 @@ function toErrorMessage(error: unknown) {
 
 export function SettingsPageSurface() {
   const { token, user } = useDashboardSession();
-  const { data, isLoading, error, reload } = useAuthedResource(loadWorkspaceSettings);
+  const { mode } = useWorkspaceMode();
+  const { data, isLoading, error, reload } = useAuthedResource(
+    async ({ token, merchantId }) =>
+      loadWorkspaceSettings({
+        token,
+        merchantId,
+        environment: mode,
+      }),
+    [mode]
+  );
 
   const [activeTab, setActiveTab] = useState<SettingsTabKey>("workspace");
   const [actionMessage, setActionMessage] = useState<string | null>(null);
@@ -223,6 +233,7 @@ export function SettingsPageSurface() {
       await updateWorkspaceSettings({
         token,
         merchantId: user.merchantId,
+        environment: mode,
         payload: { profile: profileDraft },
       });
       setActionMessage("Workspace settings saved.");
@@ -238,6 +249,7 @@ export function SettingsPageSurface() {
       await updateWorkspaceSettings({
         token,
         merchantId: user.merchantId,
+        environment: mode,
         payload: { billing: billingDraft },
       });
       setActionMessage("Billing defaults saved.");
@@ -253,6 +265,7 @@ export function SettingsPageSurface() {
       await updateWorkspaceSettings({
         token,
         merchantId: user.merchantId,
+        environment: mode,
         payload: { notifications: notificationsDraft },
       });
       setActionMessage("Notification settings saved.");
@@ -268,6 +281,7 @@ export function SettingsPageSurface() {
       await updateWorkspaceSettings({
         token,
         merchantId: user.merchantId,
+        environment: mode,
         payload: { security: securityDraft },
       });
       setActionMessage("Access policy saved.");
@@ -283,6 +297,7 @@ export function SettingsPageSurface() {
       const result = await saveWalletSettings({
         token,
         merchantId: user.merchantId,
+        environment: mode,
         primaryWallet: walletDraft.primaryWallet.trim(),
         reserveWallet: walletDraft.reserveWallet.trim() || null,
         walletAlerts: walletDraft.walletAlerts,
@@ -306,6 +321,7 @@ export function SettingsPageSurface() {
       await confirmPrimaryWalletChange({
         token,
         merchantId: user.merchantId,
+        environment: mode,
       });
       setActionMessage("Primary wallet confirmation queued for approvals.");
     });
@@ -320,6 +336,7 @@ export function SettingsPageSurface() {
       await promoteReserveWallet({
         token,
         merchantId: user.merchantId,
+        environment: mode,
       });
       setActionMessage("Reserve wallet promotion queued for approvals.");
     });
@@ -334,6 +351,7 @@ export function SettingsPageSurface() {
       await removeReserveWallet({
         token,
         merchantId: user.merchantId,
+        environment: mode,
       });
       setActionMessage("Reserve wallet removal queued for approvals.");
       setShowWalletEditor(false);
@@ -356,6 +374,7 @@ export function SettingsPageSurface() {
       await updateTreasuryThreshold({
         token,
         merchantId: user.merchantId,
+        environment: mode,
         threshold: nextThreshold,
       });
       setActionMessage("Safe threshold change queued for approvals.");

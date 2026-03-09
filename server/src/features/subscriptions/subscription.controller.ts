@@ -12,10 +12,19 @@ import {
   listSubscriptionsQuerySchema,
   updateSubscriptionSchema,
 } from "@/features/subscriptions/subscription.validation";
+import { optionalEnvironmentInputSchema } from "@/shared/utils/runtime-environment";
 import { asyncHandler } from "@/shared/utils/async-handler";
 
 function resolveMerchantScope(request: Request, fallback?: string) {
   return request.platformAuthUser?.merchantId ?? fallback;
+}
+
+function resolveEnvironmentScope(request: Request) {
+  return optionalEnvironmentInputSchema.parse(
+    typeof request.query.environment === "string"
+      ? request.query.environment
+      : request.body?.environment
+  );
 }
 
 export const createSubscriptionController = asyncHandler(
@@ -23,6 +32,7 @@ export const createSubscriptionController = asyncHandler(
     const input = createSubscriptionSchema.parse({
       ...request.body,
       merchantId: resolveMerchantScope(request, request.body?.merchantId),
+      environment: resolveEnvironmentScope(request),
     });
     const subscription = await createSubscription(input);
 
@@ -44,6 +54,7 @@ export const listSubscriptionsController = asyncHandler(
           ? request.query.merchantId
           : undefined
       ),
+      environment: resolveEnvironmentScope(request),
     });
     const subscriptions = await listSubscriptions(query);
 
@@ -58,7 +69,8 @@ export const getSubscriptionController = asyncHandler(
   async (request: Request, response: Response) => {
     const subscription = await getSubscriptionById(
       String(request.params.subscriptionId),
-      resolveMerchantScope(request)
+      resolveMerchantScope(request),
+      resolveEnvironmentScope(request)
     );
 
     response.status(200).json({
@@ -74,7 +86,8 @@ export const updateSubscriptionController = asyncHandler(
     const subscription = await updateSubscription(
       String(request.params.subscriptionId),
       input,
-      resolveMerchantScope(request)
+      resolveMerchantScope(request),
+      resolveEnvironmentScope(request)
     );
 
     response.status(200).json({
@@ -89,7 +102,8 @@ export const queueSubscriptionChargeController = asyncHandler(
   async (request: Request, response: Response) => {
     const result = await queueSubscriptionCharge(
       String(request.params.subscriptionId),
-      resolveMerchantScope(request)
+      resolveMerchantScope(request),
+      resolveEnvironmentScope(request)
     );
 
     response.status(202).json({

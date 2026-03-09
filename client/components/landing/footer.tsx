@@ -1,4 +1,7 @@
+import Link from "next/link";
+
 import { Container } from "@/components/ui/container";
+import { GetStartedLink } from "@/components/shared/get-started";
 import { Logo } from "@/components/shared/logo";
 
 export function Footer() {
@@ -13,13 +16,24 @@ export function Footer() {
             </p>
           </div>
 
-          <div className="flex flex-col items-center gap-1 text-sm text-[color:var(--muted)] sm:items-end">
-            <a
-              href="mailto:hello@renew.sh"
-              className="font-medium transition-colors hover:text-[color:var(--brand)]"
-            >
-              hello@renew.sh
-            </a>
+          <div className="flex flex-col items-center gap-3 text-sm text-[color:var(--muted)] sm:items-end">
+            <div className="flex items-center gap-4">
+              <Link
+                href="/"
+                className="font-medium transition-colors hover:text-[color:var(--brand)]"
+              >
+                Home
+              </Link>
+              <Link
+                href="/docs"
+                className="font-medium transition-colors hover:text-[color:var(--brand)]"
+              >
+                Docs
+              </Link>
+              <GetStartedLink className="font-medium transition-colors hover:text-[color:var(--brand)]">
+                Get started
+              </GetStartedLink>
+            </div>
             <p>© {new Date().getFullYear()} Renew</p>
           </div>
         </div>

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import { useWorkspaceMode } from "@/components/dashboard/mode-provider";
 import { useDashboardSession } from "@/components/dashboard/session-provider";
 import {
   StatusBadge,
@@ -34,6 +35,7 @@ type SubscriptionStatusFilter = SubscriptionRecord["status"] | "all";
 
 export function SubscriptionsSurface() {
   const { token, user } = useDashboardSession();
+  const { mode } = useWorkspaceMode();
   const [status, setStatus] = useState<SubscriptionStatusFilter>("all");
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -56,10 +58,11 @@ export function SubscriptionsSurface() {
       loadSubscriptionWorkspace({
         token,
         merchantId,
+        environment: mode,
         status,
         search,
       }),
-    [status, search]
+    [mode, status, search]
   );
 
   const subscriptions = data?.subscriptions ?? [];
@@ -135,6 +138,7 @@ export function SubscriptionsSurface() {
       await createSubscription({
         token,
         merchantId: user.merchantId,
+        environment: mode,
         planId: draft.planId,
         customerRef: draft.customerRef.trim(),
         customerName: draft.customerName.trim(),
@@ -157,6 +161,7 @@ export function SubscriptionsSurface() {
       await updateSubscription({
         token,
         subscriptionId: selectedSubscription.id,
+        environment: mode,
         payload: {
           status: nextStatus,
         },
@@ -174,6 +179,7 @@ export function SubscriptionsSurface() {
       await queueSubscriptionCharge({
         token,
         subscriptionId: selectedSubscription.id,
+        environment: mode,
       });
       setMessage("Charge queued.");
     });
@@ -181,7 +187,7 @@ export function SubscriptionsSurface() {
 
   if (isLoading && !data) {
     return (
-      <PageState title="Loading subscriptions" message="Fetching live recurring billing records." />
+      <PageState title="Loading subscriptions" message="Fetching recurring billing records for the selected environment." />
     );
   }
 
@@ -208,7 +214,7 @@ export function SubscriptionsSurface() {
       <div className="grid gap-4 xl:grid-cols-[1.08fr_0.92fr]">
         <Card
           title="Subscription list"
-          description="Recurring and usage-based subscriptions from the live backend."
+          description="Recurring and usage-based subscriptions for the selected environment."
           action={<Button onClick={() => setShowCreate((current) => !current)}>{showCreate ? "Close" : "Create subscription"}</Button>}
         >
           <div className="space-y-4">

@@ -54,12 +54,6 @@ const merchantSchema = new Schema(
       trim: true,
       default: "active",
     },
-    environmentMode: {
-      type: String,
-      required: true,
-      enum: ["test", "live"],
-      default: "test",
-    },
   },
   {
     timestamps: true,

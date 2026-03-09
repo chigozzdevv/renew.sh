@@ -17,6 +17,7 @@ import {
   listCustomersQuerySchema,
   updateCustomerSchema,
 } from "@/features/customers/customer.validation";
+import { optionalEnvironmentInputSchema } from "@/shared/utils/runtime-environment";
 import { asyncHandler } from "@/shared/utils/async-handler";
 
 function resolveActor(request: Request) {
@@ -25,6 +26,14 @@ function resolveActor(request: Request) {
 
 function resolveMerchantScope(request: Request, fallback?: string) {
   return request.platformAuthUser?.merchantId ?? fallback;
+}
+
+function resolveEnvironmentScope(request: Request) {
+  return optionalEnvironmentInputSchema.parse(
+    typeof request.query.environment === "string"
+      ? request.query.environment
+      : request.body?.environment
+  );
 }
 
 export const listCustomersController = asyncHandler(
@@ -37,6 +46,7 @@ export const listCustomersController = asyncHandler(
           ? request.query.merchantId
           : undefined
       ),
+      environment: resolveEnvironmentScope(request),
     });
     const customers = await listCustomers(query);
 
@@ -58,8 +68,13 @@ export const getCustomerController = asyncHandler(
           ? request.query.merchantId
           : undefined
       ),
+      environment: resolveEnvironmentScope(request),
     });
-    const customer = await getCustomerById(params.customerId, action.merchantId);
+    const customer = await getCustomerById(
+      params.customerId,
+      action.merchantId,
+      action.environment
+    );
 
     response.status(200).json({
       success: true,
@@ -73,6 +88,7 @@ export const createCustomerController = asyncHandler(
     const input = createCustomerSchema.parse({
       ...request.body,
       merchantId: resolveMerchantScope(request, request.body?.merchantId),
+      environment: resolveEnvironmentScope(request),
       actor: resolveActor(request),
     });
     const customer = await createCustomer(input);
@@ -96,13 +112,19 @@ export const updateCustomerController = asyncHandler(
           ? request.query.merchantId
           : undefined
       ),
+      environment: resolveEnvironmentScope(request),
       actor: resolveActor(request),
     });
     const input = updateCustomerSchema.parse({
       ...request.body,
       actor: resolveActor(request),
     });
-    const customer = await updateCustomer(params.customerId, action.merchantId, input);
+    const customer = await updateCustomer(
+      params.customerId,
+      action.merchantId,
+      action.environment,
+      input
+    );
 
     response.status(200).json({
       success: true,
@@ -118,6 +140,7 @@ export const pauseCustomerController = asyncHandler(
     const input = customerActionSchema.parse({
       ...request.body,
       merchantId: resolveMerchantScope(request, request.body?.merchantId),
+      environment: resolveEnvironmentScope(request),
       actor: resolveActor(request),
     });
     const customer = await pauseCustomerBilling(params.customerId, input);
@@ -136,6 +159,7 @@ export const resumeCustomerController = asyncHandler(
     const input = customerActionSchema.parse({
       ...request.body,
       merchantId: resolveMerchantScope(request, request.body?.merchantId),
+      environment: resolveEnvironmentScope(request),
       actor: resolveActor(request),
     });
     const customer = await resumeCustomerBilling(params.customerId, input);
@@ -154,6 +178,7 @@ export const blacklistCustomerController = asyncHandler(
     const input = blacklistCustomerSchema.parse({
       ...request.body,
       merchantId: resolveMerchantScope(request, request.body?.merchantId),
+      environment: resolveEnvironmentScope(request),
       actor: resolveActor(request),
     });
     const customer = await blacklistCustomer(params.customerId, input);

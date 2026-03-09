@@ -6,7 +6,12 @@ const treasuryAccountSchema = new Schema(
       type: Schema.Types.ObjectId,
       required: true,
       ref: "Merchant",
-      unique: true,
+    },
+    environment: {
+      type: String,
+      required: true,
+      enum: ["test", "live"],
+      default: "test",
     },
     custodyModel: {
       type: String,
@@ -86,7 +91,8 @@ const treasuryAccountSchema = new Schema(
   }
 );
 
-treasuryAccountSchema.index({ safeAddress: 1 }, { unique: true });
+treasuryAccountSchema.index({ merchantId: 1, environment: 1 }, { unique: true });
+treasuryAccountSchema.index({ safeAddress: 1, environment: 1 }, { unique: true });
 
 type TreasuryAccountEntry = InferSchemaType<typeof treasuryAccountSchema> & {
   _id: Types.ObjectId;

@@ -1,7 +1,7 @@
 import type { NextFunction, Request, Response, RequestHandler } from "express";
 
-import { env } from "@/config/env.config";
 import { assertMerchantKybApprovedForLive } from "@/features/kyc/kyc.service";
+import { optionalEnvironmentInputSchema } from "@/shared/utils/runtime-environment";
 
 function resolveMerchantScope(request: Request) {
   if (request.platformAuthUser?.merchantId) {
@@ -33,19 +33,23 @@ export function requireMerchantKybApproved(
 ): RequestHandler {
   return async (request: Request, _response: Response, next: NextFunction) => {
     try {
-      if (env.PAYMENT_ENV !== "live") {
-        next();
-        return;
-      }
-
       const merchantId = resolveMerchantScope(request);
+      const environment = optionalEnvironmentInputSchema.parse(
+        typeof request.query.environment === "string"
+          ? request.query.environment
+          : request.body?.environment
+      );
 
-      if (!merchantId) {
+      if (!merchantId || !environment) {
         next();
         return;
       }
 
-      await assertMerchantKybApprovedForLive(merchantId, actionDescription);
+      await assertMerchantKybApprovedForLive(
+        merchantId,
+        actionDescription,
+        environment
+      );
       next();
     } catch (error) {
       next(error);

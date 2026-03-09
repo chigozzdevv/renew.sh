@@ -25,6 +25,8 @@ import {
 } from "@/features/payment-rails/payment-rails.validation";
 import { getYellowCardConfig } from "@/config/yellow-card.config";
 import { HttpError } from "@/shared/errors/http-error";
+import type { RuntimeMode } from "@/shared/constants/runtime-mode";
+import { optionalEnvironmentInputSchema } from "@/shared/utils/runtime-environment";
 import { asyncHandler } from "@/shared/utils/async-handler";
 
 function normalizeSignature(value: string) {
@@ -62,9 +64,20 @@ function verifyWebhookSignature(rawBody: string, headerValue: string, secret: st
   return false;
 }
 
+function resolveEnvironmentScope(request: Request) {
+  return optionalEnvironmentInputSchema.parse(
+    typeof request.query.environment === "string"
+      ? request.query.environment
+      : request.body?.environment
+  );
+}
+
 export const listChannelsController = asyncHandler(
   async (request: Request, response: Response) => {
-    const query = listChannelsQuerySchema.parse(request.query);
+    const query = listChannelsQuerySchema.parse({
+      ...request.query,
+      environment: resolveEnvironmentScope(request),
+    });
     const channels = await listChannels(query);
 
     response.status(200).json({
@@ -76,11 +89,11 @@ export const listChannelsController = asyncHandler(
 
 export const syncChannelsController = asyncHandler(
   async (request: Request, response: Response) => {
-    const input = syncPaymentRailSchema.parse(request.body);
-    const channels = await syncChannels(
-      input,
-      request.platformAuthUser?.merchantId
-    );
+    const input = syncPaymentRailSchema.parse({
+      ...request.body,
+      environment: resolveEnvironmentScope(request),
+    });
+    const channels = await syncChannels(input);
 
     response.status(200).json({
       success: true,
@@ -92,7 +105,10 @@ export const syncChannelsController = asyncHandler(
 
 export const listNetworksController = asyncHandler(
   async (request: Request, response: Response) => {
-    const query = listNetworksQuerySchema.parse(request.query);
+    const query = listNetworksQuerySchema.parse({
+      ...request.query,
+      environment: resolveEnvironmentScope(request),
+    });
     const networks = await listNetworks(query);
 
     response.status(200).json({
@@ -104,11 +120,11 @@ export const listNetworksController = asyncHandler(
 
 export const syncNetworksController = asyncHandler(
   async (request: Request, response: Response) => {
-    const input = syncPaymentRailSchema.parse(request.body);
-    const networks = await syncNetworks(
-      input,
-      request.platformAuthUser?.merchantId
-    );
+    const input = syncPaymentRailSchema.parse({
+      ...request.body,
+      environment: resolveEnvironmentScope(request),
+    });
+    const networks = await syncNetworks(input);
 
     response.status(200).json({
       success: true,
@@ -120,7 +136,10 @@ export const syncNetworksController = asyncHandler(
 
 export const enqueuePaymentRailSyncController = asyncHandler(
   async (request: Request, response: Response) => {
-    const input = syncPaymentRailSchema.parse(request.body);
+    const input = syncPaymentRailSchema.parse({
+      ...request.body,
+      environment: resolveEnvironmentScope(request),
+    });
     const job = await enqueuePaymentRailSync(input);
 
     response.status(202).json({
@@ -133,11 +152,11 @@ export const enqueuePaymentRailSyncController = asyncHandler(
 
 export const createWidgetQuoteController = asyncHandler(
   async (request: Request, response: Response) => {
-    const input = createWidgetQuoteSchema.parse(request.body);
-    const quote = await createWidgetQuote(
-      input,
-      request.platformAuthUser?.merchantId
-    );
+    const input = createWidgetQuoteSchema.parse({
+      ...request.body,
+      environment: resolveEnvironmentScope(request),
+    });
+    const quote = await createWidgetQuote(input);
 
     response.status(200).json({
       success: true,
@@ -148,11 +167,11 @@ export const createWidgetQuoteController = asyncHandler(
 
 export const resolveBankAccountController = asyncHandler(
   async (request: Request, response: Response) => {
-    const input = resolveBankAccountSchema.parse(request.body);
-    const result = await resolveBankAccount(
-      input,
-      request.platformAuthUser?.merchantId
-    );
+    const input = resolveBankAccountSchema.parse({
+      ...request.body,
+      environment: resolveEnvironmentScope(request),
+    });
+    const result = await resolveBankAccount(input);
 
     response.status(200).json({
       success: true,
@@ -164,10 +183,8 @@ export const resolveBankAccountController = asyncHandler(
 export const getCollectionRequestController = asyncHandler(
   async (request: Request, response: Response) => {
     const params = collectionParamSchema.parse(request.params);
-    const result = await getCollectionRequest(
-      params.collectionId,
-      request.platformAuthUser?.merchantId
-    );
+    const environment = resolveEnvironmentScope(request) ?? "test";
+    const result = await getCollectionRequest(params.collectionId, environment);
 
     response.status(200).json({
       success: true,
@@ -179,10 +196,8 @@ export const getCollectionRequestController = asyncHandler(
 export const acceptCollectionRequestController = asyncHandler(
   async (request: Request, response: Response) => {
     const params = collectionParamSchema.parse(request.params);
-    const result = await acceptCollectionRequest(
-      params.collectionId,
-      request.platformAuthUser?.merchantId
-    );
+    const environment = resolveEnvironmentScope(request) ?? "test";
+    const result = await acceptCollectionRequest(params.collectionId, environment);
 
     response.status(200).json({
       success: true,
@@ -195,10 +210,8 @@ export const acceptCollectionRequestController = asyncHandler(
 export const denyCollectionRequestController = asyncHandler(
   async (request: Request, response: Response) => {
     const params = collectionParamSchema.parse(request.params);
-    const result = await denyCollectionRequest(
-      params.collectionId,
-      request.platformAuthUser?.merchantId
-    );
+    const environment = resolveEnvironmentScope(request) ?? "test";
+    const result = await denyCollectionRequest(params.collectionId, environment);
 
     response.status(200).json({
       success: true,
@@ -216,22 +229,37 @@ export const processYellowCardWebhookController = asyncHandler(
       (secret) => secret.length > 0
     );
 
+    let matchedEnvironment: RuntimeMode | null = null;
+
     if (configuredSecrets.length > 0) {
       const signatureHeader =
         request.header("x-yc-signature") ?? request.header("x-signature") ?? "";
+      const candidateModes: RuntimeMode[] = ["test", "live"];
+      matchedEnvironment =
+        candidateModes.find((mode) =>
+          verifyWebhookSignature(
+            request.rawBody ?? "",
+            signatureHeader,
+            getYellowCardConfig(mode).webhookSecret
+          )
+        ) ?? null;
 
       if (
         !request.rawBody ||
-        !configuredSecrets.some((secret) =>
-          verifyWebhookSignature(request.rawBody!, signatureHeader, secret)
-        )
+        !matchedEnvironment
       ) {
         throw new HttpError(401, "Invalid Yellow Card webhook signature.");
       }
     }
 
-    const input = yellowCardWebhookSchema.parse(request.body);
-    const result = await processYellowCardWebhook(input);
+    const input = yellowCardWebhookSchema.parse({
+      ...request.body,
+      environment: matchedEnvironment ?? resolveEnvironmentScope(request),
+    });
+    const result = await processYellowCardWebhook(
+      input,
+      matchedEnvironment ?? undefined
+    );
 
     response.status(202).json({
       success: true,

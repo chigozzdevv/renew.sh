@@ -20,6 +20,7 @@ import {
   teamMemberKycParamSchema,
   teamMemberKycStatusQuerySchema,
 } from "@/features/kyc/kyc.validation";
+import { optionalEnvironmentInputSchema } from "@/shared/utils/runtime-environment";
 import { asyncHandler } from "@/shared/utils/async-handler";
 
 function resolveActor(request: Request) {
@@ -30,13 +31,25 @@ function resolveMerchantScope(request: Request, fallback?: string) {
   return request.platformAuthUser?.merchantId ?? fallback;
 }
 
+function resolveEnvironmentScope(request: Request) {
+  return optionalEnvironmentInputSchema.parse(
+    typeof request.query.environment === "string"
+      ? request.query.environment
+      : request.body?.environment
+  );
+}
+
 export const getMerchantKybStatusController = asyncHandler(
   async (request: Request, response: Response) => {
     const params = merchantKybParamSchema.parse(request.params);
     const query = merchantKybStatusQuerySchema.parse({
       merchantId: resolveMerchantScope(request, params.merchantId),
+      environment: resolveEnvironmentScope(request),
     });
-    const status = await getMerchantKybStatusByMerchantId(query.merchantId);
+    const status = await getMerchantKybStatusByMerchantId(
+      query.merchantId,
+      query.environment ?? "test"
+    );
 
     response.status(200).json({
       success: true,
@@ -52,6 +65,7 @@ export const startMerchantKybController = asyncHandler(
       ...request.body,
       merchantId: resolveMerchantScope(request, params.merchantId),
       actor: resolveActor(request),
+      environment: resolveEnvironmentScope(request),
     });
     const result = await startMerchantKybSession(input);
 
@@ -70,6 +84,7 @@ export const syncMerchantKybController = asyncHandler(
       ...request.body,
       merchantId: resolveMerchantScope(request, params.merchantId),
       actor: resolveActor(request),
+      environment: resolveEnvironmentScope(request),
     });
     const result = await syncMerchantKybStatus(input);
 
@@ -87,6 +102,7 @@ export const getTeamMemberKycStatusController = asyncHandler(
     const query = teamMemberKycStatusQuerySchema.parse({
       teamMemberId: params.teamMemberId,
       merchantId: resolveMerchantScope(request),
+      environment: resolveEnvironmentScope(request),
     });
     const status = await getTeamMemberKycStatusById(query);
 
@@ -105,6 +121,7 @@ export const startTeamMemberKycController = asyncHandler(
       merchantId: resolveMerchantScope(request, request.body?.merchantId),
       teamMemberId: params.teamMemberId,
       actor: resolveActor(request),
+      environment: resolveEnvironmentScope(request),
     });
     const result = await startTeamMemberKycSession(input);
 
@@ -124,6 +141,7 @@ export const syncTeamMemberKycController = asyncHandler(
       merchantId: resolveMerchantScope(request, request.body?.merchantId),
       teamMemberId: params.teamMemberId,
       actor: resolveActor(request),
+      environment: resolveEnvironmentScope(request),
     });
     const result = await syncTeamMemberKycStatus(input);
 
@@ -137,12 +155,16 @@ export const syncTeamMemberKycController = asyncHandler(
 
 export const processSumsubWebhookController = asyncHandler(
   async (request: Request, response: Response) => {
-    const payload = sumsubWebhookSchema.parse(request.body);
+    const payload = sumsubWebhookSchema.parse({
+      ...request.body,
+      environment: resolveEnvironmentScope(request),
+    });
     const result = await processSumsubWebhook({
       payload,
       rawBody: request.rawBody ?? JSON.stringify(payload),
       digestHeader: request.header("x-payload-digest") ?? null,
       digestAlgorithmHeader: request.header("x-payload-digest-alg") ?? null,
+      environment: payload.environment ?? undefined,
     });
 
     response.status(200).json({

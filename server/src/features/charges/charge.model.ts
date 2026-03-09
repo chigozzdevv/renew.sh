@@ -7,6 +7,12 @@ const chargeSchema = new Schema(
       required: true,
       ref: "Merchant",
     },
+    environment: {
+      type: String,
+      required: true,
+      trim: true,
+      default: "test",
+    },
     subscriptionId: {
       type: Schema.Types.ObjectId,
       required: true,

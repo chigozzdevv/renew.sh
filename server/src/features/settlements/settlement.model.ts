@@ -7,6 +7,12 @@ const settlementSchema = new Schema(
       required: true,
       ref: "Merchant",
     },
+    environment: {
+      type: String,
+      required: true,
+      trim: true,
+      default: "test",
+    },
     sourceChargeId: {
       type: Schema.Types.ObjectId,
       ref: "Charge",
@@ -50,7 +56,26 @@ const settlementSchema = new Schema(
       trim: true,
       default: null,
     },
+    bridgeSourceTxHash: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    bridgeReceiveTxHash: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    creditTxHash: {
+      type: String,
+      trim: true,
+      default: null,
+    },
     submittedAt: {
+      type: Date,
+      default: null,
+    },
+    bridgeAttestedAt: {
       type: Date,
       default: null,
     },

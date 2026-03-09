@@ -1,7 +1,10 @@
 import { z } from "zod";
 
+import { environmentInputSchema } from "@/shared/utils/runtime-environment";
+
 export const createSubscriptionSchema = z.object({
   merchantId: z.string().trim().min(1),
+  environment: environmentInputSchema.default("test"),
   planId: z.string().trim().min(1),
   customerRef: z.string().trim().min(2).max(120),
   customerName: z.string().trim().min(2).max(120),
@@ -18,6 +21,7 @@ export const createSubscriptionSchema = z.object({
 
 export const listSubscriptionsQuerySchema = z.object({
   merchantId: z.string().trim().min(1).optional(),
+  environment: environmentInputSchema.optional(),
   planId: z.string().trim().min(1).optional(),
   status: z.enum(["active", "paused", "cancelled", "past_due"]).optional(),
   search: z.string().trim().min(1).optional(),

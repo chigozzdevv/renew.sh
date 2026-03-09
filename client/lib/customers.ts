@@ -27,6 +27,7 @@ export type CustomerRecord = {
 export async function loadCustomers(input: {
   token: string;
   merchantId: string;
+  environment: "test" | "live";
   status?: CustomerRecord["status"] | "all";
   market?: string;
   search?: string;
@@ -35,6 +36,7 @@ export async function loadCustomers(input: {
     token: input.token,
     query: {
       merchantId: input.merchantId,
+      environment: input.environment,
       status: input.status && input.status !== "all" ? input.status : undefined,
       market: input.market?.trim() ? input.market.trim().toUpperCase() : undefined,
       search: input.search?.trim() || undefined,
@@ -47,6 +49,7 @@ export async function loadCustomers(input: {
 export async function createCustomer(input: {
   token: string;
   merchantId: string;
+  environment: "test" | "live";
   customerRef: string;
   name: string;
   email: string;
@@ -57,6 +60,7 @@ export async function createCustomer(input: {
     token: input.token,
     body: JSON.stringify({
       merchantId: input.merchantId,
+      environment: input.environment,
       customerRef: input.customerRef,
       name: input.name,
       email: input.email,
@@ -70,6 +74,7 @@ export async function createCustomer(input: {
 export async function pauseCustomer(input: {
   token: string;
   merchantId: string;
+  environment: "test" | "live";
   customerId: string;
 }) {
   const response = await fetchApi<CustomerRecord>(`/customers/${input.customerId}/pause`, {
@@ -77,6 +82,7 @@ export async function pauseCustomer(input: {
     token: input.token,
     body: JSON.stringify({
       merchantId: input.merchantId,
+      environment: input.environment,
     }),
   });
 
@@ -86,6 +92,7 @@ export async function pauseCustomer(input: {
 export async function resumeCustomer(input: {
   token: string;
   merchantId: string;
+  environment: "test" | "live";
   customerId: string;
 }) {
   const response = await fetchApi<CustomerRecord>(`/customers/${input.customerId}/resume`, {
@@ -93,6 +100,7 @@ export async function resumeCustomer(input: {
     token: input.token,
     body: JSON.stringify({
       merchantId: input.merchantId,
+      environment: input.environment,
     }),
   });
 
@@ -102,6 +110,7 @@ export async function resumeCustomer(input: {
 export async function blacklistCustomer(input: {
   token: string;
   merchantId: string;
+  environment: "test" | "live";
   customerId: string;
   reason: string;
 }) {
@@ -110,6 +119,7 @@ export async function blacklistCustomer(input: {
     token: input.token,
     body: JSON.stringify({
       merchantId: input.merchantId,
+      environment: input.environment,
       reason: input.reason,
     }),
   });

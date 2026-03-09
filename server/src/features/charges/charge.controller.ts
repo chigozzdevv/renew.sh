@@ -12,10 +12,19 @@ import {
   listChargesQuerySchema,
   updateChargeSchema,
 } from "@/features/charges/charge.validation";
+import { optionalEnvironmentInputSchema } from "@/shared/utils/runtime-environment";
 import { asyncHandler } from "@/shared/utils/async-handler";
 
 function resolveMerchantScope(request: Request, fallback?: string) {
   return request.platformAuthUser?.merchantId ?? fallback;
+}
+
+function resolveEnvironmentScope(request: Request) {
+  return optionalEnvironmentInputSchema.parse(
+    typeof request.query.environment === "string"
+      ? request.query.environment
+      : request.body?.environment
+  );
 }
 
 export const createChargeController = asyncHandler(
@@ -23,6 +32,7 @@ export const createChargeController = asyncHandler(
     const input = createChargeSchema.parse({
       ...request.body,
       merchantId: resolveMerchantScope(request, request.body?.merchantId),
+      environment: resolveEnvironmentScope(request),
     });
     const charge = await createCharge(input);
 
@@ -44,6 +54,7 @@ export const listChargesController = asyncHandler(
           ? request.query.merchantId
           : undefined
       ),
+      environment: resolveEnvironmentScope(request),
     });
     const charges = await listCharges(query);
 
@@ -58,7 +69,8 @@ export const getChargeController = asyncHandler(
   async (request: Request, response: Response) => {
     const charge = await getChargeById(
       String(request.params.chargeId),
-      resolveMerchantScope(request)
+      resolveMerchantScope(request),
+      resolveEnvironmentScope(request)
     );
 
     response.status(200).json({
@@ -74,7 +86,8 @@ export const updateChargeController = asyncHandler(
     const charge = await updateCharge(
       String(request.params.chargeId),
       input,
-      resolveMerchantScope(request)
+      resolveMerchantScope(request),
+      resolveEnvironmentScope(request)
     );
 
     response.status(200).json({
@@ -89,7 +102,8 @@ export const retryChargeController = asyncHandler(
   async (request: Request, response: Response) => {
     const result = await queueChargeRetry(
       String(request.params.chargeId),
-      resolveMerchantScope(request)
+      resolveMerchantScope(request),
+      resolveEnvironmentScope(request)
     );
 
     response.status(202).json({

@@ -1,8 +1,9 @@
-import { ButtonLink } from "@/components/ui/button";
 import { Container } from "@/components/ui/container";
 import { Reveal } from "@/components/ui/reveal";
 import { FiatTicker } from "@/components/landing/fiat-ticker";
 import { HeroGrid } from "@/components/landing/hero-grid";
+import { GetStartedButton } from "@/components/shared/get-started";
+import { ButtonLink } from "@/components/ui/button";
 import { supportedBillingCurrencies } from "@/lib/content";
 
 export function Hero() {
@@ -26,9 +27,7 @@ export function Hero() {
           </Reveal>
 
           <Reveal className="mt-8 flex flex-row flex-wrap items-center gap-3" delay={0.12}>
-            <ButtonLink href="/waitlist" className="px-5 py-3 sm:px-7 sm:py-3.5">
-              Request early access
-            </ButtonLink>
+            <GetStartedButton className="px-5 py-3 sm:px-7 sm:py-3.5" />
             <ButtonLink href="/docs" variant="secondary" className="px-5 py-3 sm:px-7 sm:py-3.5">
               View docs
             </ButtonLink>

@@ -4,6 +4,7 @@ import express from "express";
 import { getAllowedCorsOrigins } from "@/config/env.config";
 import { authRouter } from "@/features/auth/auth.routes";
 import { chargeRouter } from "@/features/charges/charge.routes";
+import { checkoutRouter } from "@/features/checkout/checkout.routes";
 import { customerRouter } from "@/features/customers/customer.routes";
 import { dashboardRouter } from "@/features/dashboard/dashboard.routes";
 import { developerRouter } from "@/features/developers/developer.routes";
@@ -18,8 +19,8 @@ import { settingRouter } from "@/features/settings/setting.routes";
 import { subscriptionRouter } from "@/features/subscriptions/subscription.routes";
 import { teamRouter } from "@/features/teams/team.routes";
 import { treasuryRouter } from "@/features/treasury/treasury.routes";
-import { waitlistRouter } from "@/features/waitlist/waitlist.routes";
 import { errorHandler, notFoundHandler } from "@/shared/middleware/error-handler";
+import { blockLiveModeUntilLaunch } from "@/shared/middleware/live-mode-launch-gate";
 import {
   requirePlatformAuth,
   requirePlatformPermissions,
@@ -69,6 +70,7 @@ export function createApp() {
 
   app.use("/v1/protocol", protocolRouter);
   app.use("/v1/auth", authRouter);
+  app.use("/v1/checkout", checkoutRouter);
   app.use("/v1/kyc", kycRouter);
   app.use("/v1/payment-rails", paymentRailRouter);
   app.use(
@@ -89,48 +91,56 @@ export function createApp() {
       "developers",
       "team_admin",
     ]),
+    blockLiveModeUntilLaunch(),
     dashboardRouter
   );
   app.use(
     "/v1/customers",
     requirePlatformAuth,
     requirePlatformPermissions(["customers", "team_admin"]),
+    blockLiveModeUntilLaunch(),
     customerRouter
   );
   app.use(
     "/v1/plans",
     requirePlatformAuth,
     requirePlatformPermissions(["plans", "team_admin"]),
+    blockLiveModeUntilLaunch(),
     planRouter
   );
   app.use(
     "/v1/subscriptions",
     requirePlatformAuth,
     requirePlatformPermissions(["subscriptions", "team_admin"]),
+    blockLiveModeUntilLaunch(),
     subscriptionRouter
   );
   app.use(
     "/v1/charges",
     requirePlatformAuth,
     requirePlatformPermissions(["payments", "team_admin"]),
+    blockLiveModeUntilLaunch(),
     chargeRouter
   );
   app.use(
     "/v1/settlements",
     requirePlatformAuth,
     requirePlatformPermissions(["treasury", "team_admin"]),
+    blockLiveModeUntilLaunch(),
     settlementRouter
   );
   app.use(
     "/v1/developers",
     requirePlatformAuth,
     requirePlatformPermissions(["developers", "team_admin"]),
+    blockLiveModeUntilLaunch(),
     developerRouter
   );
   app.use(
     "/v1/treasury",
     requirePlatformAuth,
     requirePlatformPermissions(["treasury", "team_admin"]),
+    blockLiveModeUntilLaunch(),
     treasuryRouter
   );
   app.use(
@@ -143,6 +153,7 @@ export function createApp() {
     "/v1/settings",
     requirePlatformAuth,
     requirePlatformPermissions(["team_admin", "treasury"]),
+    blockLiveModeUntilLaunch(),
     settingRouter
   );
   app.use(
@@ -151,8 +162,6 @@ export function createApp() {
     requirePlatformPermissions(["team_admin"]),
     auditRouter
   );
-  app.use("/v1/waitlist", waitlistRouter);
-
   app.use(notFoundHandler);
   app.use(errorHandler);
 

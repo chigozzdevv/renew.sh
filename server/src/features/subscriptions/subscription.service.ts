@@ -11,6 +11,8 @@ import type {
   ListSubscriptionsQuery,
   UpdateSubscriptionInput,
 } from "@/features/subscriptions/subscription.validation";
+import type { RuntimeMode } from "@/shared/constants/runtime-mode";
+import { createRuntimeModeCondition } from "@/shared/utils/runtime-environment";
 
 function toSubscriptionResponse(document: {
   _id: { toString(): string };
@@ -50,15 +52,27 @@ function toSubscriptionResponse(document: {
   };
 }
 
-async function ensureSubscriptionScope(subscriptionId: string, merchantId?: string) {
-  const subscription = await SubscriptionModel.findById(subscriptionId).exec();
+async function ensureSubscriptionScope(
+  subscriptionId: string,
+  merchantId?: string,
+  environment?: RuntimeMode
+) {
+  const mongoQuery: Record<string, unknown> = {
+    _id: subscriptionId,
+  };
+
+  if (merchantId) {
+    mongoQuery.merchantId = merchantId;
+  }
+
+  if (environment) {
+    Object.assign(mongoQuery, createRuntimeModeCondition("environment", environment));
+  }
+
+  const subscription = await SubscriptionModel.findOne(mongoQuery).exec();
 
   if (!subscription) {
     throw new HttpError(404, "Subscription was not found.");
-  }
-
-  if (merchantId && subscription.merchantId.toString() !== merchantId) {
-    throw new HttpError(403, "Subscription does not belong to this merchant.");
   }
 
   return subscription;
@@ -67,7 +81,11 @@ async function ensureSubscriptionScope(subscriptionId: string, merchantId?: stri
 export async function createSubscription(input: CreateSubscriptionInput) {
   const [merchantExists, planExists] = await Promise.all([
     MerchantModel.exists({ _id: input.merchantId }),
-    PlanModel.exists({ _id: input.planId }),
+    PlanModel.exists({
+      _id: input.planId,
+      merchantId: input.merchantId,
+      ...createRuntimeModeCondition("environment", input.environment),
+    }),
   ]);
 
   if (!merchantExists) {
@@ -80,6 +98,7 @@ export async function createSubscription(input: CreateSubscriptionInput) {
 
   const createdSubscription = await SubscriptionModel.create({
     merchantId: input.merchantId,
+    environment: input.environment,
     planId: input.planId,
     customerRef: input.customerRef,
     customerName: input.customerName,
@@ -96,24 +115,43 @@ export async function createSubscription(input: CreateSubscriptionInput) {
 }
 
 export async function listSubscriptions(query: ListSubscriptionsQuery) {
-  const mongoQuery: Record<string, unknown> = {};
+  const filters: Record<string, unknown>[] = [];
 
   if (query.merchantId) {
-    mongoQuery.merchantId = query.merchantId;
+    filters.push({
+      merchantId: query.merchantId,
+    });
+  }
+
+  if (query.environment) {
+    filters.push(createRuntimeModeCondition("environment", query.environment));
   }
 
   if (query.planId) {
-    mongoQuery.planId = query.planId;
+    filters.push({
+      planId: query.planId,
+    });
   }
 
   if (query.status) {
-    mongoQuery.status = query.status;
+    filters.push({
+      status: query.status,
+    });
   }
 
   if (query.search) {
     const pattern = new RegExp(query.search, "i");
-    mongoQuery.$or = [{ customerName: pattern }, { customerRef: pattern }];
+    filters.push({
+      $or: [{ customerName: pattern }, { customerRef: pattern }],
+    });
   }
+
+  const mongoQuery =
+    filters.length === 0
+      ? {}
+      : filters.length === 1
+        ? filters[0]
+        : { $and: filters };
 
   const subscriptions = await SubscriptionModel.find(mongoQuery)
     .sort({ nextChargeAt: 1 })
@@ -124,9 +162,14 @@ export async function listSubscriptions(query: ListSubscriptionsQuery) {
 
 export async function getSubscriptionById(
   subscriptionId: string,
-  merchantId?: string
+  merchantId?: string,
+  environment?: RuntimeMode
 ) {
-  const subscription = await ensureSubscriptionScope(subscriptionId, merchantId);
+  const subscription = await ensureSubscriptionScope(
+    subscriptionId,
+    merchantId,
+    environment
+  );
 
   return toSubscriptionResponse(subscription);
 }
@@ -134,9 +177,14 @@ export async function getSubscriptionById(
 export async function updateSubscription(
   subscriptionId: string,
   input: UpdateSubscriptionInput,
-  merchantId?: string
+  merchantId?: string,
+  environment?: RuntimeMode
 ) {
-  const subscription = await ensureSubscriptionScope(subscriptionId, merchantId);
+  const subscription = await ensureSubscriptionScope(
+    subscriptionId,
+    merchantId,
+    environment
+  );
 
   if (input.status !== undefined) {
     subscription.status = input.status;
@@ -177,9 +225,14 @@ export async function updateSubscription(
 
 export async function queueSubscriptionCharge(
   subscriptionId: string,
-  merchantId?: string
+  merchantId?: string,
+  environment?: RuntimeMode
 ) {
-  const subscription = await ensureSubscriptionScope(subscriptionId, merchantId);
+  const subscription = await ensureSubscriptionScope(
+    subscriptionId,
+    merchantId,
+    environment
+  );
 
   const queuedJob = await enqueueQueueJob(
     queueNames.subscriptionCharge,

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import { useWorkspaceMode } from "@/components/dashboard/mode-provider";
 import { useDashboardSession } from "@/components/dashboard/session-provider";
 import { useAuthedResource } from "@/components/dashboard/use-authed-resource";
 import {
@@ -180,8 +181,15 @@ type OwnerEntry = {
 
 export function TreasuryPageSurface() {
   const { token, user } = useDashboardSession();
+  const { mode } = useWorkspaceMode();
   const { data, isLoading, error, reload } = useAuthedResource(
-    loadTreasuryWorkspace
+    async ({ token, merchantId }) =>
+      loadTreasuryWorkspace({
+        token,
+        merchantId,
+        environment: mode,
+      }),
+    [mode]
   );
   const [selectedOperationId, setSelectedOperationId] = useState<string | null>(
     null
@@ -396,6 +404,7 @@ export function TreasuryPageSurface() {
         await bootstrapTreasuryAccount({
           token,
           merchantId: user.merchantId,
+          environment: mode,
           payload: {
             mode: "create",
             ownerTeamMemberIds: bootstrapOwnerIds,
@@ -412,6 +421,7 @@ export function TreasuryPageSurface() {
       await bootstrapTreasuryAccount({
         token,
         merchantId: user.merchantId,
+        environment: mode,
         payload: {
           mode: "import",
           safeAddress: bootstrapSafeAddress.trim(),
@@ -483,6 +493,7 @@ export function TreasuryPageSurface() {
       await addTreasuryOwner({
         token,
         merchantId: user.merchantId,
+        environment: mode,
         teamMemberId: ownerTeamMemberId,
         threshold: ownerThreshold ? Number(ownerThreshold) : undefined,
       });
@@ -498,6 +509,7 @@ export function TreasuryPageSurface() {
       await removeTreasuryOwner({
         token,
         merchantId: user.merchantId,
+        environment: mode,
         teamMemberId,
       });
     }, "Treasury owner removal queued.");
@@ -512,6 +524,7 @@ export function TreasuryPageSurface() {
       await updateTreasuryThreshold({
         token,
         merchantId: user.merchantId,
+        environment: mode,
         threshold: Number(thresholdDraft),
       });
     }, "Treasury threshold change queued.");
@@ -526,6 +539,7 @@ export function TreasuryPageSurface() {
       await queueSettlementSweep({
         token,
         merchantId: user.merchantId,
+        environment: mode,
         settlementId: settlement.id,
       });
     }, `Settlement ${settlement.batchRef} queued for treasury approval.`);

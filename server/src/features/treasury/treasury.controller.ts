@@ -27,6 +27,7 @@ import {
   updateTreasuryThresholdSchema,
   verifyTreasurySignerSchema,
 } from "@/features/treasury/treasury.validation";
+import { optionalEnvironmentInputSchema } from "@/shared/utils/runtime-environment";
 import { asyncHandler } from "@/shared/utils/async-handler";
 
 function resolveActor(request: Request) {
@@ -37,10 +38,21 @@ function resolveTeamMemberId(request: Request) {
   return request.platformAuthUser?.teamMemberId ?? null;
 }
 
+function resolveEnvironmentScope(request: Request) {
+  return optionalEnvironmentInputSchema.parse(
+    typeof request.query.environment === "string"
+      ? request.query.environment
+      : request.body?.environment
+  );
+}
+
 export const getTreasuryController = asyncHandler(
   async (request: Request, response: Response) => {
     const params = treasuryMerchantParamSchema.parse(request.params);
-    const treasury = await getTreasuryByMerchantId(params.merchantId);
+    const treasury = await getTreasuryByMerchantId(
+      params.merchantId,
+      resolveEnvironmentScope(request) ?? "test"
+    );
 
     response.status(200).json({
       success: true,
@@ -52,7 +64,10 @@ export const getTreasuryController = asyncHandler(
 export const bootstrapTreasuryController = asyncHandler(
   async (request: Request, response: Response) => {
     const params = treasuryMerchantParamSchema.parse(request.params);
-    const payload = bootstrapTreasurySchema.parse(request.body);
+    const payload = bootstrapTreasurySchema.parse({
+      ...request.body,
+      environment: resolveEnvironmentScope(request),
+    });
     const treasury = await bootstrapTreasuryAccount({
       merchantId: params.merchantId,
       actor: resolveActor(request),
@@ -143,7 +158,10 @@ export const revokeTreasurySignerController = asyncHandler(
 export const addTreasuryOwnerController = asyncHandler(
   async (request: Request, response: Response) => {
     const params = treasuryMerchantParamSchema.parse(request.params);
-    const payload = addTreasuryOwnerSchema.parse(request.body);
+    const payload = addTreasuryOwnerSchema.parse({
+      ...request.body,
+      environment: resolveEnvironmentScope(request),
+    });
     const operation = await addTreasuryOwner({
       merchantId: params.merchantId,
       actor: resolveActor(request),
@@ -161,7 +179,10 @@ export const addTreasuryOwnerController = asyncHandler(
 export const removeTreasuryOwnerController = asyncHandler(
   async (request: Request, response: Response) => {
     const params = treasurySignerParamSchema.parse(request.params);
-    const payload = removeTreasuryOwnerSchema.parse(request.body);
+    const payload = removeTreasuryOwnerSchema.parse({
+      ...request.body,
+      environment: resolveEnvironmentScope(request),
+    });
     const operation = await removeTreasuryOwner({
       merchantId: params.merchantId,
       teamMemberId: params.teamMemberId,
@@ -180,7 +201,10 @@ export const removeTreasuryOwnerController = asyncHandler(
 export const updateTreasuryThresholdController = asyncHandler(
   async (request: Request, response: Response) => {
     const params = treasuryMerchantParamSchema.parse(request.params);
-    const payload = updateTreasuryThresholdSchema.parse(request.body);
+    const payload = updateTreasuryThresholdSchema.parse({
+      ...request.body,
+      environment: resolveEnvironmentScope(request),
+    });
     const operation = await updateTreasuryThreshold({
       merchantId: params.merchantId,
       actor: resolveActor(request),

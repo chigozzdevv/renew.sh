@@ -22,6 +22,7 @@ export type PlanRecord = {
 export async function loadPlans(input: {
   token: string;
   merchantId: string;
+  environment: "test" | "live";
   status?: PlanRecord["status"] | "all";
   search?: string;
 }) {
@@ -29,6 +30,7 @@ export async function loadPlans(input: {
     token: input.token,
     query: {
       merchantId: input.merchantId,
+      environment: input.environment,
       status: input.status && input.status !== "all" ? input.status : undefined,
       search: input.search?.trim() || undefined,
     },
@@ -40,6 +42,7 @@ export async function loadPlans(input: {
 export async function createPlan(input: {
   token: string;
   merchantId: string;
+  environment: "test" | "live";
   planCode: string;
   name: string;
   usdAmount: number;
@@ -63,11 +66,15 @@ export async function createPlan(input: {
 export async function updatePlan(input: {
   token: string;
   planId: string;
+  environment: "test" | "live";
   payload: Partial<Omit<PlanRecord, "id" | "merchantId" | "createdAt" | "updatedAt">>;
 }) {
   const response = await fetchApi<PlanRecord>(`/plans/${input.planId}`, {
     method: "PATCH",
     token: input.token,
+    query: {
+      environment: input.environment,
+    },
     body: JSON.stringify(input.payload),
   });
 

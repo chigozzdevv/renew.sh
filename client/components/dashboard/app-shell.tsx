@@ -10,6 +10,7 @@ import { DashboardSidebar } from "@/components/dashboard/sidebar";
 import { ModeProvider } from "@/components/dashboard/mode-provider";
 import { DashboardSessionProvider } from "@/components/dashboard/session-provider";
 import { DashboardTopbar } from "@/components/dashboard/topbar";
+import { DashboardWorkspaceAccessBoundary } from "@/components/dashboard/workspace-access-boundary";
 import { cn } from "@/lib/utils";
 
 type DashboardAppShellProps = {
@@ -35,7 +36,11 @@ export function DashboardAppShell({ children }: DashboardAppShellProps) {
 
             <div className="flex min-w-0 flex-1 flex-col">
               <DashboardTopbar onOpenSidebar={() => setIsSidebarOpen(true)} />
-              <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8">{children}</main>
+              <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8">
+                <DashboardWorkspaceAccessBoundary>
+                  {children}
+                </DashboardWorkspaceAccessBoundary>
+              </main>
             </div>
           </div>
 

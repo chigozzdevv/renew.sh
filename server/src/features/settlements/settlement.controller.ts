@@ -24,6 +24,7 @@ import {
   updateSettlementSchema,
 } from "@/features/settlements/settlement.validation";
 import { HttpError } from "@/shared/errors/http-error";
+import { optionalEnvironmentInputSchema } from "@/shared/utils/runtime-environment";
 import { asyncHandler } from "@/shared/utils/async-handler";
 
 function resolveActor(request: Request) {
@@ -32,6 +33,14 @@ function resolveActor(request: Request) {
 
 function resolveMerchantScope(request: Request, fallback?: string) {
   return request.platformAuthUser?.merchantId ?? fallback;
+}
+
+function resolveEnvironmentScope(request: Request) {
+  return optionalEnvironmentInputSchema.parse(
+    typeof request.query.environment === "string"
+      ? request.query.environment
+      : request.body?.environment
+  );
 }
 
 function resolveApprover(request: Request) {
@@ -52,6 +61,7 @@ export const createSettlementController = asyncHandler(
     const input = createSettlementSchema.parse({
       ...request.body,
       merchantId: resolveMerchantScope(request, request.body?.merchantId),
+      environment: resolveEnvironmentScope(request),
     });
     const settlement = await createSettlement(input);
 
@@ -73,6 +83,7 @@ export const listSettlementsController = asyncHandler(
           ? request.query.merchantId
           : undefined
       ),
+      environment: resolveEnvironmentScope(request),
     });
     const settlements = await listSettlements(query);
 
@@ -92,7 +103,11 @@ export const getSettlementController = asyncHandler(
         ? request.query.merchantId
         : undefined
     );
-    const settlement = await getSettlementById(params.settlementId, merchantId);
+    const settlement = await getSettlementById(
+      params.settlementId,
+      merchantId,
+      resolveEnvironmentScope(request)
+    );
 
     response.status(200).json({
       success: true,
@@ -111,7 +126,12 @@ export const updateSettlementController = asyncHandler(
         ? request.query.merchantId
         : undefined
     );
-    const settlement = await updateSettlement(params.settlementId, input, merchantId);
+    const settlement = await updateSettlement(
+      params.settlementId,
+      input,
+      merchantId,
+      resolveEnvironmentScope(request)
+    );
 
     response.status(200).json({
       success: true,
@@ -127,11 +147,13 @@ export const queueSettlementSweepController = asyncHandler(
     const action = settlementActionSchema.parse({
       ...request.body,
       merchantId: resolveMerchantScope(request, request.body?.merchantId),
+      environment: resolveEnvironmentScope(request),
       actor: resolveActor(request),
     });
     const result = await queueSettlementSweep(params.settlementId, {
       merchantId: action.merchantId,
       actor: resolveApprover(request) ?? undefined,
+      environment: action.environment,
     });
 
     response.status(result.queued ? 202 : 200).json({
@@ -153,6 +175,7 @@ export const requestSweepApprovalController = asyncHandler(
     const input = requestSweepApprovalSchema.parse({
       ...request.body,
       merchantId: resolveMerchantScope(request, request.body?.merchantId),
+      environment: resolveEnvironmentScope(request),
       actor: resolveActor(request),
     });
     const approval = await requestSweepApproval(params.settlementId, input);
@@ -171,6 +194,7 @@ export const approveSweepController = asyncHandler(
     const action = approveSweepApprovalSchema.parse({
       ...request.body,
       merchantId: resolveMerchantScope(request, request.body?.merchantId),
+      environment: resolveEnvironmentScope(request),
       actor: resolveActor(request),
     });
     const approver = resolveApprover(request);
@@ -198,6 +222,7 @@ export const rejectSweepController = asyncHandler(
     const input = rejectSweepApprovalSchema.parse({
       ...request.body,
       merchantId: resolveMerchantScope(request, request.body?.merchantId),
+      environment: resolveEnvironmentScope(request),
       actor: resolveActor(request),
     });
     const approval = await rejectSweep(params.settlementId, input);
@@ -216,6 +241,7 @@ export const executeApprovedSweepController = asyncHandler(
     const action = settlementActionSchema.parse({
       ...request.body,
       merchantId: resolveMerchantScope(request, request.body?.merchantId),
+      environment: resolveEnvironmentScope(request),
       actor: resolveActor(request),
     });
     const result = await executeApprovedSweep(params.settlementId, {
@@ -243,6 +269,7 @@ export const listSweepApprovalsController = asyncHandler(
           ? request.query.merchantId
           : undefined
       ),
+      environment: resolveEnvironmentScope(request),
     });
     const approvals = await listSweepApprovals(query);
 

@@ -55,6 +55,7 @@ const developerKeySchema = new Schema(
 );
 
 developerKeySchema.index({ merchantId: 1, status: 1 });
+developerKeySchema.index({ tokenHash: 1 }, { unique: true });
 
 type DeveloperKeyEntry = InferSchemaType<typeof developerKeySchema> & {
   _id: Types.ObjectId;

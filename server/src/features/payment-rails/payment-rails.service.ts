@@ -3,12 +3,12 @@ import { enqueueQueueJob } from "@/shared/workers/queue-runtime";
 import { queueNames } from "@/shared/workers/queue-names";
 
 import { ChargeModel } from "@/features/charges/charge.model";
-import { getMerchantEnvironmentModeById } from "@/features/merchants/merchant.service";
+import { emitChargeWebhookEventForStatusChange } from "@/features/developers/developer-webhook-delivery.service";
 import { PaymentRailEventModel } from "@/features/payment-rails/payment-rail-event.model";
 import { ChannelModel } from "@/features/payment-rails/channel.model";
 import { NetworkModel } from "@/features/payment-rails/network.model";
 import { SettlementModel } from "@/features/settlements/settlement.model";
-import { queueSettlementSweep } from "@/features/settlements/settlement.service";
+import { queueSettlementBridge } from "@/features/settlements/settlement.service";
 import type {
   CreateWidgetQuoteInput,
   ListChannelsQuery,
@@ -19,18 +19,15 @@ import type {
 } from "@/features/payment-rails/payment-rails.validation";
 import { getYellowCardProvider } from "@/features/payment-rails/providers/yellow-card/yellow-card.factory";
 import type { RuntimeMode } from "@/shared/constants/runtime-mode";
-
-async function resolvePaymentRailMode(merchantId?: string): Promise<RuntimeMode> {
-  if (!merchantId) {
-    return "test";
-  }
-
-  return getMerchantEnvironmentModeById(merchantId);
-}
+import {
+  createRuntimeModeCondition,
+  toStoredRuntimeMode,
+} from "@/shared/utils/runtime-environment";
 
 function toChannelResponse(document: {
   _id: { toString(): string };
   externalId: string;
+  environment?: string;
   country: string;
   currency: string;
   countryCurrency: string;
@@ -54,6 +51,7 @@ function toChannelResponse(document: {
   return {
     id: document._id.toString(),
     externalId: document.externalId,
+    environment: document.environment === "live" ? "live" : "test",
     country: document.country,
     currency: document.currency,
     countryCurrency: document.countryCurrency,
@@ -79,6 +77,7 @@ function toChannelResponse(document: {
 function toNetworkResponse(document: {
   _id: { toString(): string };
   externalId: string;
+  environment?: string;
   code?: string | null;
   country: string;
   name: string;
@@ -93,6 +92,7 @@ function toNetworkResponse(document: {
   return {
     id: document._id.toString(),
     externalId: document.externalId,
+    environment: document.environment === "live" ? "live" : "test",
     code: document.code ?? null,
     country: document.country,
     name: document.name,
@@ -108,6 +108,10 @@ function toNetworkResponse(document: {
 
 export async function listChannels(query: ListChannelsQuery) {
   const mongoQuery: Record<string, unknown> = {};
+
+  if (query.environment) {
+    Object.assign(mongoQuery, createRuntimeModeCondition("environment", query.environment));
+  }
 
   if (query.country) {
     mongoQuery.country = query.country;
@@ -141,6 +145,10 @@ export async function listChannels(query: ListChannelsQuery) {
 export async function listNetworks(query: ListNetworksQuery) {
   const mongoQuery: Record<string, unknown> = {};
 
+  if (query.environment) {
+    Object.assign(mongoQuery, createRuntimeModeCondition("environment", query.environment));
+  }
+
   if (query.country) {
     mongoQuery.country = query.country;
   }
@@ -160,19 +168,19 @@ export async function listNetworks(query: ListNetworksQuery) {
   return networks.map(toNetworkResponse);
 }
 
-export async function syncChannels(
-  input: SyncPaymentRailInput,
-  merchantId?: string
-) {
-  const mode = await resolvePaymentRailMode(merchantId);
-  const yellowCardProvider = getYellowCardProvider(mode);
+export async function syncChannels(input: SyncPaymentRailInput) {
+  const yellowCardProvider = getYellowCardProvider(input.environment);
   const channels = await yellowCardProvider.getChannels(input.country);
 
   const operations = channels.map((channel) =>
     ChannelModel.findOneAndUpdate(
-      { externalId: channel.id },
       {
         externalId: channel.id,
+        ...createRuntimeModeCondition("environment", input.environment),
+      },
+      {
+        externalId: channel.id,
+        environment: input.environment,
         country: channel.country,
         currency: channel.currency,
         countryCurrency: channel.countryCurrency,
@@ -205,19 +213,19 @@ export async function syncChannels(
   return synced.map(toChannelResponse);
 }
 
-export async function syncNetworks(
-  input: SyncPaymentRailInput,
-  merchantId?: string
-) {
-  const mode = await resolvePaymentRailMode(merchantId);
-  const yellowCardProvider = getYellowCardProvider(mode);
+export async function syncNetworks(input: SyncPaymentRailInput) {
+  const yellowCardProvider = getYellowCardProvider(input.environment);
   const networks = await yellowCardProvider.getNetworks(input.country);
 
   const operations = networks.map((network) =>
     NetworkModel.findOneAndUpdate(
-      { externalId: network.id },
       {
         externalId: network.id,
+        ...createRuntimeModeCondition("environment", input.environment),
+      },
+      {
+        externalId: network.id,
+        environment: input.environment,
         code: network.code ?? null,
         country: network.country,
         name: network.name,
@@ -241,14 +249,11 @@ export async function syncNetworks(
   return synced.map(toNetworkResponse);
 }
 
-export async function createWidgetQuote(
-  input: CreateWidgetQuoteInput,
-  merchantId?: string
-) {
-  const mode = await resolvePaymentRailMode(merchantId);
-  const yellowCardProvider = getYellowCardProvider(mode);
+export async function createWidgetQuote(input: CreateWidgetQuoteInput) {
+  const yellowCardProvider = getYellowCardProvider(input.environment);
   const activeChannel = await ChannelModel.findOne({
     externalId: input.channelId,
+    ...createRuntimeModeCondition("environment", input.environment),
     status: "active",
     widgetStatus: "active",
     apiStatus: "active",
@@ -270,14 +275,11 @@ export async function createWidgetQuote(
   };
 }
 
-export async function resolveBankAccount(
-  input: ResolveBankAccountInput,
-  merchantId?: string
-) {
-  const mode = await resolvePaymentRailMode(merchantId);
-  const yellowCardProvider = getYellowCardProvider(mode);
+export async function resolveBankAccount(input: ResolveBankAccountInput) {
+  const yellowCardProvider = getYellowCardProvider(input.environment);
   const network = await NetworkModel.findOne({
     externalId: input.networkId,
+    ...createRuntimeModeCondition("environment", input.environment),
     status: "active",
   }).exec();
 
@@ -299,7 +301,7 @@ export async function enqueuePaymentRailSync(input: SyncPaymentRailInput) {
     "sync-payment-rails",
     input,
     {
-      jobId: `payment-rail-sync:${input.country ?? "all"}:${Math.floor(
+      jobId: `payment-rail-sync:${input.environment}:${input.country ?? "all"}:${Math.floor(
         Date.now() / 60000
       )}`,
     }
@@ -335,8 +337,12 @@ export async function runPaymentRailSyncJob(input: SyncPaymentRailInput) {
   };
 }
 
-export async function getPreferredCollectionChannel(currency: string) {
+export async function getPreferredCollectionChannel(
+  currency: string,
+  environment: RuntimeMode = "test"
+) {
   const channel = await ChannelModel.findOne({
+    ...createRuntimeModeCondition("environment", environment),
     currency,
     status: "active",
     widgetStatus: "active",
@@ -357,9 +363,11 @@ export async function getPreferredCollectionChannel(currency: string) {
 
 export async function getPreferredCollectionNetwork(
   channelId: string,
-  country?: string
+  country?: string,
+  environment: RuntimeMode = "test"
 ) {
   const mongoQuery: Record<string, unknown> = {
+    ...createRuntimeModeCondition("environment", environment),
     status: "active",
     channelIds: channelId,
   };
@@ -375,6 +383,7 @@ export async function getPreferredCollectionNetwork(
 
 export async function createCollectionRequest(input: {
   merchantId: string;
+  environment: RuntimeMode;
   channelId: string;
   customerRef: string;
   customerName: string;
@@ -386,8 +395,7 @@ export async function createCollectionRequest(input: {
   accountType: "bank" | "momo";
   accountNumber?: string | null;
 }) {
-  const mode = await resolvePaymentRailMode(input.merchantId);
-  const yellowCardProvider = getYellowCardProvider(mode);
+  const yellowCardProvider = getYellowCardProvider(input.environment);
   const sequenceId = `renew-${input.customerRef}-${Date.now()}`;
 
   return yellowCardProvider.submitCollectionRequest({
@@ -414,28 +422,25 @@ export async function createCollectionRequest(input: {
 
 export async function getCollectionRequest(
   collectionId: string,
-  merchantId?: string
+  environment: RuntimeMode = "test"
 ) {
-  const mode = await resolvePaymentRailMode(merchantId);
-  const yellowCardProvider = getYellowCardProvider(mode);
+  const yellowCardProvider = getYellowCardProvider(environment);
   return yellowCardProvider.getCollectionById(collectionId);
 }
 
 export async function acceptCollectionRequest(
   collectionId: string,
-  merchantId?: string
+  environment: RuntimeMode = "test"
 ) {
-  const mode = await resolvePaymentRailMode(merchantId);
-  const yellowCardProvider = getYellowCardProvider(mode);
+  const yellowCardProvider = getYellowCardProvider(environment);
   return yellowCardProvider.acceptCollectionRequest(collectionId);
 }
 
 export async function denyCollectionRequest(
   collectionId: string,
-  merchantId?: string
+  environment: RuntimeMode = "test"
 ) {
-  const mode = await resolvePaymentRailMode(merchantId);
-  const yellowCardProvider = getYellowCardProvider(mode);
+  const yellowCardProvider = getYellowCardProvider(environment);
   return yellowCardProvider.denyCollectionRequest(collectionId);
 }
 
@@ -479,7 +484,11 @@ function normalizeWebhookState(payload: YellowCardWebhookInput) {
   return value?.trim().toLowerCase() ?? "unknown";
 }
 
-function buildWebhookEventKey(payload: YellowCardWebhookInput, state: string) {
+function buildWebhookEventKey(
+  payload: YellowCardWebhookInput,
+  state: string,
+  environment: RuntimeMode
+) {
   const sequenceId = readWebhookValue<string>(payload, "sequenceId") ?? "none";
   const externalId = readWebhookValue<string>(payload, "id") ?? "none";
   const event = readWebhookValue<string>(payload, "event") ?? "none";
@@ -489,13 +498,24 @@ function buildWebhookEventKey(payload: YellowCardWebhookInput, state: string) {
     readWebhookValue<string>(payload, "createdAt") ??
     "none";
 
-  return `yellow-card:${sequenceId}:${externalId}:${state}:${event}:${status}:${timestamp}`;
+  return `yellow-card:${environment}:${sequenceId}:${externalId}:${state}:${event}:${status}:${timestamp}`;
 }
 
-export async function processYellowCardWebhook(input: YellowCardWebhookInput) {
+export async function processYellowCardWebhook(
+  input: YellowCardWebhookInput,
+  environmentHint?: RuntimeMode
+) {
+  const environment =
+    environmentHint ??
+    optionalEnvironmentFromPayload(input) ??
+    "test";
   const state = normalizeWebhookState(input);
-  const eventKey = buildWebhookEventKey(input, state);
-  const existingEvent = await PaymentRailEventModel.findOne({ eventKey }).exec();
+  const eventKey = buildWebhookEventKey(input, state, environment);
+  const existingEvent = await PaymentRailEventModel.findOne({
+    provider: "yellow-card",
+    environment,
+    eventKey,
+  }).exec();
 
   if (existingEvent && existingEvent.processedAt) {
     return {
@@ -516,6 +536,7 @@ export async function processYellowCardWebhook(input: YellowCardWebhookInput) {
     try {
       webhookEvent = await PaymentRailEventModel.create({
         provider: "yellow-card",
+        environment,
         eventKey,
         state,
         externalId: readWebhookValue<string>(input, "id") ?? null,
@@ -533,7 +554,11 @@ export async function processYellowCardWebhook(input: YellowCardWebhookInput) {
         throw error;
       }
 
-      const duplicateEvent = await PaymentRailEventModel.findOne({ eventKey }).exec();
+      const duplicateEvent = await PaymentRailEventModel.findOne({
+        provider: "yellow-card",
+        environment,
+        eventKey,
+      }).exec();
 
       return {
         processed: true,
@@ -552,10 +577,16 @@ export async function processYellowCardWebhook(input: YellowCardWebhookInput) {
   const externalId = readWebhookValue<string>(input, "id");
   const charge =
     (sequenceId
-      ? await ChargeModel.findOne({ externalChargeId: sequenceId }).exec()
+      ? await ChargeModel.findOne({
+          externalChargeId: sequenceId,
+          ...createRuntimeModeCondition("environment", environment),
+        }).exec()
       : null) ??
     (externalId
-      ? await ChargeModel.findOne({ externalChargeId: externalId }).exec()
+      ? await ChargeModel.findOne({
+          externalChargeId: externalId,
+          ...createRuntimeModeCondition("environment", environment),
+        }).exec()
       : null);
 
   if (!charge) {
@@ -581,11 +612,16 @@ export async function processYellowCardWebhook(input: YellowCardWebhookInput) {
 
   const linkedSettlement = await SettlementModel.findOne({
     sourceChargeId: charge._id,
+    ...createRuntimeModeCondition(
+      "environment",
+      toStoredRuntimeMode(charge.environment)
+    ),
   })
     .sort({ createdAt: -1 })
     .exec();
 
   const now = new Date();
+  const previousChargeStatus = charge.status;
   let nextChargeStatus = charge.status;
   let nextFailureCode = charge.failureCode ?? null;
 
@@ -612,7 +648,10 @@ export async function processYellowCardWebhook(input: YellowCardWebhookInput) {
     nextFailureCode = null;
 
     if (linkedSettlement) {
-      await queueSettlementSweep(linkedSettlement._id.toString());
+      await queueSettlementBridge(linkedSettlement._id.toString(), {
+        merchantId: linkedSettlement.merchantId.toString(),
+        environment,
+      });
     }
   } else if (
     state.includes("processing") ||
@@ -629,6 +668,11 @@ export async function processYellowCardWebhook(input: YellowCardWebhookInput) {
   charge.failureCode = nextFailureCode;
   charge.processedAt = now;
   await charge.save();
+  await emitChargeWebhookEventForStatusChange({
+    previousStatus: previousChargeStatus,
+    chargeId: charge._id.toString(),
+    nextStatus: charge.status,
+  });
 
   const result = {
     processed: true,
@@ -648,4 +692,20 @@ export async function processYellowCardWebhook(input: YellowCardWebhookInput) {
   }
 
   return result;
+}
+
+function optionalEnvironmentFromPayload(
+  payload: YellowCardWebhookInput
+): RuntimeMode | null {
+  const rawEnvironment = readWebhookValue<string>(payload, "environment");
+
+  if (rawEnvironment === "live") {
+    return "live";
+  }
+
+  if (rawEnvironment === "test") {
+    return "test";
+  }
+
+  return null;
 }

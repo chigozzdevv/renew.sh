@@ -6,7 +6,12 @@ const networkSchema = new Schema(
       type: String,
       required: true,
       trim: true,
-      unique: true,
+    },
+    environment: {
+      type: String,
+      required: true,
+      enum: ["test", "live"],
+      default: "test",
     },
     code: {
       type: String,
@@ -60,6 +65,8 @@ const networkSchema = new Schema(
     versionKey: false,
   }
 );
+
+networkSchema.index({ externalId: 1, environment: 1 }, { unique: true });
 
 type NetworkEntry = InferSchemaType<typeof networkSchema>;
 

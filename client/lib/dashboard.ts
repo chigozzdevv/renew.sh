@@ -63,7 +63,7 @@ export const dashboardPages: Record<DashboardRouteKey, DashboardPageContent> = {
       {
         label: "Markets",
         value: "20",
-        note: "Live coverage",
+        note: "Current environment",
       },
       {
         label: "At-risk accounts",
@@ -84,9 +84,9 @@ export const dashboardPages: Record<DashboardRouteKey, DashboardPageContent> = {
     actions: ["New plan", "Duplicate plan"],
     stats: [
       {
-        label: "Live plans",
+        label: "Active plans",
         value: "18",
-        note: "Currently active",
+        note: "Current environment",
         tone: "brand",
       },
       {
@@ -200,13 +200,13 @@ export const dashboardPages: Record<DashboardRouteKey, DashboardPageContent> = {
   developers: {
     key: "developers",
     title: "Developers",
-    description: "Keep API keys, webhooks, and event delivery visible while teams integrate.",
-    actions: ["Create API key", "Add webhook"],
+    description: "Keep server keys, webhooks, and event delivery visible while teams integrate.",
+    actions: ["Create server key", "Add webhook"],
     stats: [
       {
-        label: "Live API keys",
+        label: "Server keys",
         value: "4",
-        note: "Production credentials",
+        note: "Current environment",
         tone: "brand",
       },
       {

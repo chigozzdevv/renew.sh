@@ -28,6 +28,7 @@ export type PaymentWorkspace = {
 export async function loadPaymentWorkspace(input: {
   token: string;
   merchantId: string;
+  environment: "test" | "live";
   status?: PaymentRecord["status"] | "all";
   search?: string;
 }) {
@@ -36,6 +37,7 @@ export async function loadPaymentWorkspace(input: {
       token: input.token,
       query: {
         merchantId: input.merchantId,
+        environment: input.environment,
         status: input.status && input.status !== "all" ? input.status : undefined,
         search: input.search?.trim() || undefined,
       },
@@ -43,6 +45,7 @@ export async function loadPaymentWorkspace(input: {
     loadSubscriptionWorkspace({
       token: input.token,
       merchantId: input.merchantId,
+      environment: input.environment,
       status: "all",
     }),
   ]);
@@ -56,6 +59,7 @@ export async function loadPaymentWorkspace(input: {
 export async function retryCharge(input: {
   token: string;
   chargeId: string;
+  environment: "test" | "live";
 }) {
   const response = await fetchApi<{
     queued: boolean;
@@ -64,6 +68,9 @@ export async function retryCharge(input: {
   }>(`/charges/${input.chargeId}/retry`, {
     method: "POST",
     token: input.token,
+    query: {
+      environment: input.environment,
+    },
   });
 
   return response.data;

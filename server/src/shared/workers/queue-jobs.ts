@@ -1,3 +1,8 @@
+export type DeveloperWebhookDeliveryJob = {
+  deliveryId: string;
+  attempt: number;
+};
+
 export type PaymentRailSyncJob = {
   country?: string;
 };

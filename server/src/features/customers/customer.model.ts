@@ -7,6 +7,12 @@ const customerSchema = new Schema(
       required: true,
       ref: "Merchant",
     },
+    environment: {
+      type: String,
+      required: true,
+      trim: true,
+      default: "test",
+    },
     customerRef: {
       type: String,
       required: true,
@@ -92,9 +98,9 @@ const customerSchema = new Schema(
   }
 );
 
-customerSchema.index({ merchantId: 1, customerRef: 1 }, { unique: true });
-customerSchema.index({ merchantId: 1, email: 1 }, { unique: true });
-customerSchema.index({ merchantId: 1, status: 1, market: 1 });
+customerSchema.index({ merchantId: 1, environment: 1, customerRef: 1 }, { unique: true });
+customerSchema.index({ merchantId: 1, environment: 1, email: 1 }, { unique: true });
+customerSchema.index({ merchantId: 1, environment: 1, status: 1, market: 1 });
 
 type CustomerEntry = InferSchemaType<typeof customerSchema> & {
   _id: Types.ObjectId;

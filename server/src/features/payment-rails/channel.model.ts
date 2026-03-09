@@ -6,7 +6,12 @@ const channelSchema = new Schema(
       type: String,
       required: true,
       trim: true,
-      unique: true,
+    },
+    environment: {
+      type: String,
+      required: true,
+      enum: ["test", "live"],
+      default: "test",
     },
     country: {
       type: String,
@@ -112,6 +117,8 @@ const channelSchema = new Schema(
     versionKey: false,
   }
 );
+
+channelSchema.index({ externalId: 1, environment: 1 }, { unique: true });
 
 type ChannelEntry = InferSchemaType<typeof channelSchema>;
 

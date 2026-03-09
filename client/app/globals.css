@@ -95,3 +95,51 @@ a {
   -webkit-mask-image: radial-gradient(circle at center, black 42%, transparent 76%);
   mask-image: radial-gradient(circle at center, black 42%, transparent 76%);
 }
+
+.docs-token-plain {
+  color: #e8f5df;
+}
+
+.docs-token-comment {
+  color: #7d8d85;
+}
+
+.docs-token-string {
+  color: #f6cb75;
+}
+
+.docs-token-number {
+  color: #8fd0ff;
+}
+
+.docs-token-keyword {
+  color: #f39bb5;
+}
+
+.docs-token-property {
+  color: #7fe0d5;
+}
+
+.docs-token-punctuation {
+  color: #97a79f;
+}
+
+.docs-token-operator {
+  color: #b6c6bc;
+}
+
+.docs-token-command {
+  color: #95f0b1;
+}
+
+.docs-token-flag {
+  color: #99d8ff;
+}
+
+.docs-token-env {
+  color: #d4b2ff;
+}
+
+.docs-token-type {
+  color: #c7f08d;
+}

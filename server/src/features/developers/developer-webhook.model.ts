@@ -7,6 +7,12 @@ const developerWebhookSchema = new Schema(
       required: true,
       ref: "Merchant",
     },
+    environment: {
+      type: String,
+      required: true,
+      trim: true,
+      default: "test",
+    },
     label: {
       type: String,
       required: true,
@@ -17,7 +23,7 @@ const developerWebhookSchema = new Schema(
       required: true,
       trim: true,
     },
-    secretHash: {
+    secretCiphertext: {
       type: String,
       required: true,
       trim: true,
@@ -54,7 +60,7 @@ const developerWebhookSchema = new Schema(
   }
 );
 
-developerWebhookSchema.index({ merchantId: 1, status: 1 });
+developerWebhookSchema.index({ merchantId: 1, environment: 1, status: 1 });
 
 type DeveloperWebhookEntry = InferSchemaType<typeof developerWebhookSchema> & {
   _id: Types.ObjectId;

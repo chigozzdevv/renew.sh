@@ -7,10 +7,21 @@ const developerDeliverySchema = new Schema(
       required: true,
       ref: "Merchant",
     },
+    environment: {
+      type: String,
+      required: true,
+      trim: true,
+      default: "test",
+    },
     webhookId: {
       type: Schema.Types.ObjectId,
       required: true,
       ref: "DeveloperWebhook",
+    },
+    eventId: {
+      type: String,
+      required: true,
+      trim: true,
     },
     eventType: {
       type: String,
@@ -53,8 +64,9 @@ const developerDeliverySchema = new Schema(
   }
 );
 
-developerDeliverySchema.index({ merchantId: 1, createdAt: -1 });
+developerDeliverySchema.index({ merchantId: 1, environment: 1, createdAt: -1 });
 developerDeliverySchema.index({ webhookId: 1, createdAt: -1 });
+developerDeliverySchema.index({ webhookId: 1, eventId: 1 }, { unique: true });
 
 type DeveloperDeliveryEntry = InferSchemaType<typeof developerDeliverySchema> & {
   _id: Types.ObjectId;

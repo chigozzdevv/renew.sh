@@ -2,16 +2,15 @@ import { randomBytes, randomUUID } from "crypto";
 
 import {
   createPublicClient,
-  createWalletClient,
   encodeFunctionData,
   http,
   parseAbi,
-  stringToHex,
   type Address,
   type Hex,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 
+import { getCctpConfig } from "@/config/cctp.config";
 import { env } from "@/config/env.config";
 import { connectToDatabase, disconnectFromDatabase } from "@/config/db.config";
 import { MerchantModel } from "@/features/merchants/merchant.model";
@@ -25,16 +24,11 @@ const SIX_DECIMAL_SCALE = 1_000_000n;
 const encodeContractCall = encodeFunctionData as (input: unknown) => Hex;
 
 const renewProtocolAdminAbi = parseAbi([
-  "function nextPlanId() view returns (uint256)",
-  "function nextSubscriptionId() view returns (uint256)",
   "function registerMerchant(address payoutWallet,address reserveWallet,bytes32 metadataHash)",
-  "function createPlan(bytes32 planCode,uint128 usdPrice,uint64 billingInterval,uint32 trialPeriod,uint32 retryWindow,uint8 maxRetryCount,uint8 billingMode,uint128 usageRate) returns (uint256)",
-  "function createSubscription(uint256 planId,bytes32 customerRef,bytes32 billingCurrency,uint64 firstChargeAt,uint128 localAmountSnapshot,bytes32 mandateHash) returns (uint256)",
-  "function executeCharge(uint256 subscriptionId,bytes32 externalChargeId,address settlementSource,uint128 localAmount,uint128 fxRate,uint128 usageUnits,uint128 usdcAmount) returns (uint256)",
 ]);
 
-const mockUsdcAbi = parseAbi([
-  "function approve(address spender,uint256 amount) returns (bool)",
+const erc20Abi = parseAbi([
+  "function balanceOf(address owner) view returns (uint256)",
 ]);
 
 type ApiEnvelope<T> = {
@@ -47,6 +41,7 @@ type ApiRequestOptions = {
   method?: string;
   token?: string;
   body?: unknown;
+  headers?: Record<string, string>;
 };
 
 type SeedWorkspaceResult = {
@@ -104,6 +99,7 @@ function assertTestnetPrerequisites() {
     "SAFE_EXECUTOR_PRIVATE_KEY_TEST",
     env.SAFE_EXECUTOR_PRIVATE_KEY_TEST
   );
+  getCctpConfig("test").assertConfigured();
   getRequiredTestValue("SAFE_TX_SERVICE_URL_TEST", env.SAFE_TX_SERVICE_URL_TEST);
   getRequiredTestValue("AVALANCHE_RPC_URL_TEST", env.AVALANCHE_RPC_URL_TEST);
 }
@@ -121,6 +117,7 @@ async function apiRequest<T>(
             authorization: `Bearer ${options.token}`,
           }
         : {}),
+      ...(options.headers ?? {}),
     },
     body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
   });
@@ -172,7 +169,6 @@ async function seedWorkspace(): Promise<SeedWorkspaceResult> {
     supportedMarkets: ["ZMW", "NGN", "KES"],
     metadataHash: "0x0",
     status: "active",
-    environmentMode: "test",
   });
 
   const passwordHash = createPasswordHash(
@@ -226,19 +222,8 @@ function getProtocolAddress() {
   ) as Address;
 }
 
-function getUsdcAddress() {
-  return getRequiredTestValue(
-    "USDC_TOKEN_ADDRESS_TEST",
-    env.USDC_TOKEN_ADDRESS_TEST
-  ) as Address;
-}
-
 function toUsdcBaseUnits(amount: bigint) {
   return amount * SIX_DECIMAL_SCALE;
-}
-
-async function waitForHash(publicClient: ReturnType<typeof createPublicClient>, hash: Hex) {
-  await publicClient.waitForTransactionReceipt({ hash });
 }
 
 async function waitForSettledState(input: {
@@ -255,27 +240,17 @@ async function waitForSettledState(input: {
     hash: input.treasuryTxHash,
   });
 
-  await apiRequest(`/v1/settlements/${input.settlementId}`, {
-    method: "PATCH",
-    token: input.token,
-    body: {
-      status: "settled",
-      txHash: input.treasuryTxHash,
-      settledAt: new Date().toISOString(),
-    },
-  });
-
   for (let attempt = 0; attempt < 10; attempt += 1) {
     const [settlement, charge] = await Promise.all([
       apiRequest<{ id: string; status: string; txHash: string | null }>(
-        `/v1/settlements/${input.settlementId}`,
+        `/v1/settlements/${input.settlementId}?environment=test`,
         {
           method: "GET",
           token: input.token,
         }
       ),
       apiRequest<{ id: string; status: string; failureCode: string | null }>(
-        `/v1/charges/${input.chargeId}`,
+        `/v1/charges/${input.chargeId}?environment=test`,
         {
           method: "GET",
           token: input.token,
@@ -362,23 +337,62 @@ async function executeSafeCall(input: {
   });
 }
 
-async function prepareOnchainMerchantBalance(input: {
+async function assertLiquidityFunding() {
+  const cctpConfig = getCctpConfig("test").assertConfigured();
+  const sourceAccount = privateKeyToAccount(cctpConfig.sourcePrivateKey as Hex);
+  const avalancheAccount = privateKeyToAccount(getExecutorPrivateKey());
+  const sourceClient = createPublicClient({
+    transport: http(cctpConfig.sourceRpcUrl),
+  });
+  const avalancheClient = createPublicClient({
+    transport: http(getTestRpcUrl()),
+  });
+
+  const [sourceGas, sourceUsdc, avalancheGas] = await Promise.all([
+    sourceClient.getBalance({ address: sourceAccount.address }),
+    sourceClient.readContract({
+      address: cctpConfig.sourceUsdcAddress as Address,
+      abi: erc20Abi,
+      functionName: "balanceOf",
+      args: [sourceAccount.address],
+    }),
+    avalancheClient.getBalance({ address: avalancheAccount.address }),
+  ]);
+
+  const fundingIssues: string[] = [];
+
+  if (sourceGas === 0n) {
+    fundingIssues.push(
+      `Sepolia gas missing for ${sourceAccount.address}`
+    );
+  }
+
+  if (sourceUsdc < toUsdcBaseUnits(25n)) {
+    fundingIssues.push(
+      `Circle test USDC missing for ${sourceAccount.address} on ${cctpConfig.sourceUsdcAddress}`
+    );
+  }
+
+  if (avalancheGas === 0n) {
+    fundingIssues.push(
+      `Fuji AVAX missing for ${avalancheAccount.address}`
+    );
+  }
+
+  if (fundingIssues.length > 0) {
+    throw new Error(
+      `Funding is incomplete before the MVP smoke run:\n- ${fundingIssues.join("\n- ")}`
+    );
+  }
+}
+
+async function registerOnchainMerchant(input: {
   safeAddress: string;
   ownerPrivateKey: Hex;
   payoutWalletAddress: string;
   reserveWalletAddress: string;
 }) {
-  const rpcUrl = getTestRpcUrl();
-  const publicClient = createPublicClient({
-    transport: http(rpcUrl),
-  });
-  const executorAccount = privateKeyToAccount(getExecutorPrivateKey());
-  const executorWalletClient = createWalletClient({
-    account: executorAccount,
-    transport: http(rpcUrl),
-  });
   const protocolAddress = getProtocolAddress();
-  const usdcAddress = getUsdcAddress();
 
   await executeSafeCall({
     safeAddress: input.safeAddress,
@@ -390,99 +404,11 @@ async function prepareOnchainMerchantBalance(input: {
       args: [
         input.payoutWalletAddress as Address,
         input.reserveWalletAddress as Address,
-        stringToHex("renew-mvp-merchant", { size: 32 }),
+        `0x${Buffer.from("renew-mvp-merchant".padEnd(32, "\0")).toString("hex")}` as Hex,
       ],
     }),
     origin: "e2e:register-merchant",
   });
-
-  const nextPlanId = await publicClient.readContract({
-    address: protocolAddress,
-    abi: renewProtocolAdminAbi,
-    functionName: "nextPlanId",
-  });
-
-  await executeSafeCall({
-    safeAddress: input.safeAddress,
-    ownerPrivateKey: input.ownerPrivateKey,
-    targetAddress: protocolAddress,
-    data: encodeContractCall({
-      abi: renewProtocolAdminAbi,
-      functionName: "createPlan",
-      args: [
-        stringToHex("MVP-ONCHAIN-PLAN", { size: 32 }),
-        toUsdcBaseUnits(25n),
-        30 * 24 * 60 * 60,
-        0,
-        24 * 60 * 60,
-        3,
-        0,
-        0,
-      ],
-    }),
-    origin: "e2e:create-plan",
-  });
-
-  const nextSubscriptionId = await publicClient.readContract({
-    address: protocolAddress,
-    abi: renewProtocolAdminAbi,
-    functionName: "nextSubscriptionId",
-  });
-
-  await executeSafeCall({
-    safeAddress: input.safeAddress,
-    ownerPrivateKey: input.ownerPrivateKey,
-    targetAddress: protocolAddress,
-    data: encodeContractCall({
-      abi: renewProtocolAdminAbi,
-      functionName: "createSubscription",
-      args: [
-        nextPlanId,
-        stringToHex("cust-mvp-chain", { size: 32 }),
-        stringToHex("ZMW", { size: 32 }),
-        0n,
-        700n,
-        stringToHex("mandate-mvp-chain", { size: 32 }),
-      ],
-    }),
-    origin: "e2e:create-subscription",
-  });
-
-  const approvalNonce = await publicClient.getTransactionCount({
-    address: executorAccount.address,
-    blockTag: "pending",
-  });
-  const approvalHash = await executorWalletClient.writeContract({
-    address: usdcAddress,
-    abi: mockUsdcAbi,
-    functionName: "approve",
-    args: [protocolAddress, toUsdcBaseUnits(25n)],
-    chain: undefined,
-    nonce: approvalNonce,
-  });
-  await waitForHash(publicClient, approvalHash);
-
-  const executeChargeNonce = await publicClient.getTransactionCount({
-    address: executorAccount.address,
-    blockTag: "pending",
-  });
-  const executeChargeHash = await executorWalletClient.writeContract({
-    address: protocolAddress,
-    abi: renewProtocolAdminAbi,
-    functionName: "executeCharge",
-    args: [
-      nextSubscriptionId,
-      stringToHex(`mvp-${Date.now()}`, { size: 32 }),
-      executorAccount.address,
-      700n,
-      28n,
-      0n,
-      toUsdcBaseUnits(25n),
-    ],
-    chain: undefined,
-    nonce: executeChargeNonce,
-  });
-  await waitForHash(publicClient, executeChargeHash);
 }
 
 async function main() {
@@ -545,27 +471,32 @@ async function main() {
     method: "POST",
     token,
     body: {
+      environment: "test",
       mode: "create",
       threshold: 1,
       ownerTeamMemberIds: [seeded.teamMemberId],
     },
   });
 
-  console.log("4. Seeding the on-chain merchant balance on Fuji.");
-  await prepareOnchainMerchantBalance({
+  console.log("4. Verifying bridge liquidity wallets.");
+  await assertLiquidityFunding();
+
+  console.log("5. Registering the merchant Safe on RenewProtocol.");
+  await registerOnchainMerchant({
     safeAddress: treasury.data.safeAddress,
     ownerPrivateKey: seeded.ownerPrivateKey,
     payoutWalletAddress: seeded.payoutWalletAddress,
     reserveWalletAddress: seeded.reserveWalletAddress,
   });
 
-  console.log("5. Syncing test payment rails.");
+  console.log("6. Syncing test payment rails.");
   const syncedChannels = await apiRequest<
     Array<{ externalId: string; country: string; currency: string }>
   >("/v1/payment-rails/channels/sync", {
     method: "POST",
     token,
     body: {
+      environment: "test",
       country: "ZM",
     },
   });
@@ -575,6 +506,7 @@ async function main() {
     method: "POST",
     token,
     body: {
+      environment: "test",
       country: "ZM",
     },
   });
@@ -588,12 +520,13 @@ async function main() {
     throw new Error("Payment rail sync did not return the expected ZMW channel/network.");
   }
 
-  console.log("6. Creating a live plan, customer, and subscription.");
+  console.log("7. Creating a sandbox plan.");
   const plan = await apiRequest<{ id: string; name: string }>("/v1/plans", {
     method: "POST",
     token,
     body: {
       merchantId: seeded.merchantId,
+      environment: "test",
       planCode: `MVP-${Date.now()}`,
       name: "Core Pro",
       usdAmount: 25,
@@ -606,12 +539,85 @@ async function main() {
     },
   });
 
+  console.log("8. Creating a sandbox server key and checkout session.");
+  const developerKey = await apiRequest<{
+    key: { id: string; environment: "sandbox" | "live"; maskedToken: string };
+    token: string;
+  }>("/v1/developers/keys", {
+    method: "POST",
+    token,
+    body: {
+      merchantId: seeded.merchantId,
+      environment: "test",
+      label: "E2E Sandbox Key",
+    },
+  });
+
+  const checkoutPlans = await apiRequest<
+    Array<{ id: string; planCode: string; name: string }>
+  >("/v1/checkout/plans", {
+    method: "GET",
+    headers: {
+      "x-renew-secret-key": developerKey.data.token,
+    },
+  });
+
+  if (!checkoutPlans.data.some((entry) => entry.id === plan.data.id)) {
+    throw new Error("Checkout plan listing did not include the sandbox plan.");
+  }
+
+  const checkoutSession = await apiRequest<{
+    clientSecret: string;
+    session: {
+      id: string;
+      environment: "sandbox" | "live";
+      status: string;
+      nextAction: string;
+    };
+  }>("/v1/checkout/sessions", {
+    method: "POST",
+    headers: {
+      "x-renew-secret-key": developerKey.data.token,
+    },
+    body: {
+      planId: plan.data.id,
+      expiresInMinutes: 30,
+    },
+  });
+
+  const checkoutSessionState = await apiRequest<{
+    id: string;
+    environment: "sandbox" | "live";
+    status: string;
+    nextAction: string;
+  }>(`/v1/checkout/sessions/${checkoutSession.data.session.id}`, {
+    method: "GET",
+    headers: {
+      "x-renew-client-secret": checkoutSession.data.clientSecret,
+    },
+  });
+
+  if (checkoutSessionState.data.environment !== "sandbox") {
+    throw new Error(
+      `Checkout session should be sandbox, received ${checkoutSessionState.data.environment}.`
+    );
+  }
+
+  if (checkoutSessionState.data.status !== "open") {
+    throw new Error(
+      `Checkout session should start open, received ${checkoutSessionState.data.status}.`
+    );
+  }
+
+  console.log("9. Creating a sandbox customer and subscription.");
+
   const customerRef = `cust-${randomUUID().slice(0, 8)}`;
   await apiRequest<{ id: string }>("/v1/customers", {
     method: "POST",
     token,
     body: {
       merchantId: seeded.merchantId,
+      environment: "test",
       customerRef,
       name: "MVP Customer",
       email: `billing+${customerRef}@example.com`,
@@ -632,6 +638,7 @@ async function main() {
       token,
       body: {
         merchantId: seeded.merchantId,
+        environment: "test",
         planId: plan.data.id,
         customerRef,
         customerName: "MVP Customer",
@@ -646,48 +653,31 @@ async function main() {
     }
   );
 
-  console.log("7. Recording a charge and linked settlement.");
-  const externalChargeId = `mvp-charge-${Date.now()}`;
-  const charge = await apiRequest<{
-    id: string;
-    externalChargeId: string;
-    status: string;
-  }>("/v1/charges", {
+  console.log("10. Running the subscription charge flow.");
+  const queuedCharge = await apiRequest<{
+    queued: boolean;
+    processedInline: boolean;
+    subscriptionId: string;
+    result: {
+      chargeId: string;
+      externalChargeId: string;
+      settlementId: string;
+      collectionStatus: string;
+      settlementStatus: string;
+    };
+  }>(`/v1/subscriptions/${subscription.data.id}/queue-charge`, {
     method: "POST",
     token,
     body: {
-      merchantId: seeded.merchantId,
-      subscriptionId: subscription.data.id,
-      externalChargeId,
-      localAmount: 700,
-      fxRate: 28,
-      usdcAmount: 25,
-      feeAmount: 1.25,
-      status: "pending",
+      environment: "test",
     },
   });
 
-  const settlement = await apiRequest<{
-    id: string;
-    status: string;
-    batchRef: string;
-  }>("/v1/settlements", {
-    method: "POST",
-    token,
-    body: {
-      merchantId: seeded.merchantId,
-      sourceChargeId: charge.data.id,
-      batchRef: `settlement-${externalChargeId}`,
-      grossUsdc: 25,
-      feeUsdc: 1.25,
-      netUsdc: 23.75,
-      destinationWallet: treasury.data.payoutWallet,
-      status: "queued",
-      scheduledFor: new Date().toISOString(),
-    },
-  });
+  if (!queuedCharge.data.result?.chargeId || !queuedCharge.data.result?.settlementId) {
+    throw new Error("Subscription charge did not produce a charge and settlement.");
+  }
 
-  console.log("8. Simulating the Yellow Card fiat settlement callback.");
+  console.log("11. Simulating the Yellow Card fiat settlement callback.");
   const webhook = await apiRequest<{
     processed: boolean;
     matched: boolean;
@@ -697,26 +687,28 @@ async function main() {
   }>("/v1/payment-rails/webhooks/yellow-card", {
     method: "POST",
     body: {
-      sequenceId: charge.data.externalChargeId,
+      environment: "test",
+      sequenceId: queuedCharge.data.result.externalChargeId,
       state: "complete",
     },
   });
 
-  console.log("9. Creating the treasury sweep operation.");
+  console.log("12. Creating the treasury sweep operation.");
   const requestedSweep = await apiRequest<{
     id: string;
     status: string;
     threshold: number;
     approvedCount: number;
-  }>(`/v1/settlements/${settlement.data.id}/sweeps/request`, {
+  }>(`/v1/settlements/${queuedCharge.data.result.settlementId}/sweeps/request`, {
     method: "POST",
     token,
     body: {
       merchantId: seeded.merchantId,
+      environment: "test",
     },
   });
 
-  console.log("10. Signing and approving the treasury operation.");
+  console.log("13. Signing and approving the treasury operation.");
   const signingPayloadResponse = await apiRequest<{
     operation: { id: string; safeTxHash: string; safeNonce: number };
     signingPayload: {
@@ -760,7 +752,7 @@ async function main() {
     },
   });
 
-  console.log("11. Executing the treasury operation.");
+  console.log("14. Executing the treasury operation.");
   const executedOperation = await apiRequest<{
     id: string;
     status: string;
@@ -771,25 +763,17 @@ async function main() {
     body: {},
   });
 
-  console.log("12. Asserting final API state.");
+  console.log("15. Asserting final API state.");
   const finalCharge = await apiRequest<{ id: string; status: string; failureCode: string | null }>(
-    `/v1/charges/${charge.data.id}`,
+    `/v1/charges/${queuedCharge.data.result.chargeId}?environment=test`,
     {
       method: "GET",
       token,
     }
   );
-  const finalSettlement = await apiRequest<{
-    id: string;
-    status: string;
-    txHash: string | null;
-  }>(`/v1/settlements/${settlement.data.id}`, {
-    method: "GET",
-    token,
-  });
   const finalTreasury = await apiRequest<{
     account: { safeAddress: string; threshold: number } | null;
-  }>(`/v1/treasury/${seeded.merchantId}`, {
+  }>(`/v1/treasury/${seeded.merchantId}?environment=test`, {
     method: "GET",
     token,
   });
@@ -810,8 +794,8 @@ async function main() {
 
   const settledState = await waitForSettledState({
     token,
-    settlementId: settlement.data.id,
-    chargeId: charge.data.id,
+    settlementId: queuedCharge.data.result.settlementId,
+    chargeId: queuedCharge.data.result.chargeId,
     treasuryTxHash: executedOperation.data.txHash as Hex,
   });
 
@@ -835,6 +819,18 @@ async function main() {
     throw new Error("Treasury Safe was not persisted for the merchant.");
   }
 
+  const finalSettlement = await apiRequest<{
+    id: string;
+    status: string;
+    txHash: string | null;
+    bridgeSourceTxHash: string | null;
+    bridgeReceiveTxHash: string | null;
+    creditTxHash: string | null;
+  }>(`/v1/settlements/${queuedCharge.data.result.settlementId}?environment=test`, {
+    method: "GET",
+    token,
+  });
+
   console.log(
     JSON.stringify(
       {
@@ -844,10 +840,13 @@ async function main() {
         safeAddress: finalTreasury.data.account.safeAddress,
         planId: plan.data.id,
         subscriptionId: subscription.data.id,
-        chargeId: charge.data.id,
-        settlementId: settlement.data.id,
+        chargeId: queuedCharge.data.result.chargeId,
+        settlementId: queuedCharge.data.result.settlementId,
         treasuryOperationId: requestedSweep.data.id,
         treasuryExecutionTxHash: executedOperation.data.txHash,
+        bridgeSourceTxHash: finalSettlement.data.bridgeSourceTxHash,
+        bridgeReceiveTxHash: finalSettlement.data.bridgeReceiveTxHash,
+        creditTxHash: finalSettlement.data.creditTxHash,
         chargeStatus: settledState.charge.status,
         settlementStatus: settledState.settlement.status,
       },

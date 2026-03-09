@@ -51,6 +51,12 @@ const treasuryOperationSchema = new Schema(
       required: true,
       ref: "Merchant",
     },
+    environment: {
+      type: String,
+      required: true,
+      enum: ["test", "live"],
+      default: "test",
+    },
     treasuryAccountId: {
       type: Schema.Types.ObjectId,
       required: true,
@@ -160,7 +166,7 @@ const treasuryOperationSchema = new Schema(
 );
 
 treasuryOperationSchema.index(
-  { safeTxHash: 1 },
+  { safeTxHash: 1, environment: 1 },
   {
     unique: true,
     partialFilterExpression: {
@@ -170,8 +176,13 @@ treasuryOperationSchema.index(
     },
   }
 );
-treasuryOperationSchema.index({ merchantId: 1, status: 1, createdAt: -1 });
-treasuryOperationSchema.index({ settlementId: 1, kind: 1 });
+treasuryOperationSchema.index({
+  merchantId: 1,
+  environment: 1,
+  status: 1,
+  createdAt: -1,
+});
+treasuryOperationSchema.index({ settlementId: 1, environment: 1, kind: 1 });
 
 type TreasuryOperationEntry = InferSchemaType<typeof treasuryOperationSchema> & {
   _id: Types.ObjectId;

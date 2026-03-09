@@ -10,11 +10,7 @@ import {
   type ReactNode,
 } from "react";
 
-import { useDashboardSession } from "@/components/dashboard/session-provider";
-import {
-  fetchApi,
-  workspaceModeStorageKey,
-} from "@/lib/api";
+import { workspaceModeStorageKey } from "@/lib/api";
 
 type WorkspaceMode = "test" | "live";
 
@@ -26,91 +22,50 @@ type ModeContextValue = {
 
 const ModeContext = createContext<ModeContextValue | null>(null);
 
-function readStoredMode(): WorkspaceMode {
+function readStoredMode(): WorkspaceMode | null {
   if (typeof window === "undefined") {
+    return null;
+  }
+
+  const value = window.localStorage.getItem(workspaceModeStorageKey);
+
+  if (value === "live") {
+    return "live";
+  }
+
+  if (value === "test") {
     return "test";
   }
 
-  return window.localStorage.getItem(workspaceModeStorageKey) === "live"
-    ? "live"
-    : "test";
-}
-
-async function updateSessionMode(mode: WorkspaceMode, token: string) {
-  const response = await fetchApi<{
-    workspaceMode?: WorkspaceMode;
-  }>("/auth/me/workspace-mode", {
-    method: "PATCH",
-    token,
-    body: JSON.stringify({ mode }),
-  });
-
-  return response.data?.workspaceMode === "live" ? "live" : "test";
+  return null;
 }
 
 export function ModeProvider({ children }: { children: ReactNode }) {
-  const { token, user } = useDashboardSession();
   const [mode, setModeState] = useState<WorkspaceMode>("test");
-  const [isUpdating, setIsUpdating] = useState(false);
 
   useEffect(() => {
-    const storedMode = readStoredMode();
+    const storedMode = readStoredMode() ?? "test";
     startTransition(() => {
       setModeState(storedMode);
     });
 
   }, []);
 
-  useEffect(() => {
-    if (!user) {
-      return;
-    }
-
-    const nextMode = user.workspaceMode === "live" ? "live" : "test";
-    window.localStorage.setItem(workspaceModeStorageKey, nextMode);
-    startTransition(() => {
-      setModeState(nextMode);
-    });
-  }, [user]);
-
   const value = useMemo<ModeContextValue>(
     () => ({
       mode,
-      isUpdating,
+      isUpdating: false,
       async setMode(nextMode) {
-        if (nextMode === mode || isUpdating) {
+        if (nextMode === mode) {
           return;
         }
-
-        const previousMode = mode;
-
-        setIsUpdating(true);
         window.localStorage.setItem(workspaceModeStorageKey, nextMode);
         startTransition(() => {
           setModeState(nextMode);
         });
-
-        try {
-          if (!token) {
-            return;
-          }
-
-          const confirmedMode = await updateSessionMode(nextMode, token);
-          window.localStorage.setItem(workspaceModeStorageKey, confirmedMode);
-          startTransition(() => {
-            setModeState(confirmedMode);
-          });
-        } catch {
-          window.localStorage.setItem(workspaceModeStorageKey, previousMode);
-          startTransition(() => {
-            setModeState(previousMode);
-          });
-        } finally {
-          setIsUpdating(false);
-        }
       },
     }),
-    [isUpdating, mode, token]
+    [mode]
   );
 
   return <ModeContext.Provider value={value}>{children}</ModeContext.Provider>;

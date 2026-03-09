@@ -247,7 +247,7 @@ export function TeamsSurface() {
   }
 
   if (isLoading && !data) {
-    return <PageState title="Loading team" message="Fetching live team membership and access state." />;
+    return <PageState title="Loading team" message="Fetching team membership and access state." />;
   }
 
   if (error || !data) {
@@ -271,7 +271,7 @@ export function TeamsSurface() {
       </StatGrid>
 
       <div className="grid gap-4 xl:grid-cols-[1.08fr_0.92fr]">
-        <Card title="Team members" description="Role-based access from the live backend.">
+        <Card title="Team members" description="Role-based access for this account.">
           <div className="space-y-4">
             <div className="grid gap-3 md:grid-cols-3">
               <Select value={role} onChange={(event) => setRole(event.target.value as TeamRoleFilter)}>

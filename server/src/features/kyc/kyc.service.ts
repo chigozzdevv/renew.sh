@@ -9,7 +9,6 @@ import type {
   SumsubReviewSnapshot,
 } from "@/features/kyc/providers/sumsub/sumsub.types";
 import { MerchantModel } from "@/features/merchants/merchant.model";
-import { getMerchantEnvironmentModeById } from "@/features/merchants/merchant.service";
 import { TeamMemberModel } from "@/features/teams/team.model";
 import type {
   StartMerchantKybInput,
@@ -18,6 +17,11 @@ import type {
   SyncMerchantKybInput,
   SyncTeamMemberKycInput,
 } from "@/features/kyc/kyc.validation";
+import {
+  liveOnboardingDisabledMessage,
+  liveOnboardingEnabled,
+  testModeOnboardingUnavailableMessage,
+} from "@/shared/constants/live-onboarding";
 import { HttpError } from "@/shared/errors/http-error";
 import type { RuntimeMode } from "@/shared/constants/runtime-mode";
 
@@ -274,84 +278,94 @@ function extractReviewFromWebhook(payload: SumsubWebhookInput): SumsubReviewSnap
   };
 }
 
-export async function getMerchantKybStatusByMerchantId(merchantId: string) {
-  await getMerchantOrThrow(merchantId);
-  const mode = await getMerchantEnvironmentModeById(merchantId);
+function parseModeFromExternalUserId(value: string | null): RuntimeMode | null {
+  if (!value) {
+    return null;
+  }
 
-  const record = await KycCheckModel.findOne({
-    merchantId,
+  const match = value.match(/^renew:(test|live):/i);
+  return match?.[1] === "live" ? "live" : match?.[1] === "test" ? "test" : null;
+}
+
+function createUnavailableKycResponse(input: {
+  subjectType: KycSubjectType;
+  subjectRef: string;
+  mode: RuntimeMode;
+  levelName: string;
+}) {
+  return {
+    subjectType: input.subjectType,
+    subjectRef: input.subjectRef,
+    status: "not_started" as const,
+    provider: "sumsub",
+    mode: input.mode,
+    applicantId: null,
+    reviewStatus: null,
+    reviewAnswer: null,
+    rejectType: null,
+    rejectLabels: [],
+    moderationComment: null,
+    clientComment: null,
+    lastEventType: null,
+    lastEventAt: null,
+    completedAt: null,
+    lastSyncedAt: null,
+    levelName: input.levelName,
+    metadata: {
+      available: false,
+      reason:
+        input.mode === "live"
+          ? liveOnboardingDisabledMessage
+          : testModeOnboardingUnavailableMessage,
+    },
+  };
+}
+
+function assertKycOnboardingAvailable(mode: RuntimeMode, action: string) {
+  if (mode !== "live") {
+    throw new HttpError(
+      409,
+      `${testModeOnboardingUnavailableMessage} Switch the workspace to live before ${action}.`
+    );
+  }
+
+  if (!liveOnboardingEnabled) {
+    throw new HttpError(409, liveOnboardingDisabledMessage);
+  }
+}
+
+export async function getMerchantKybStatusByMerchantId(
+  merchantId: string,
+  mode: RuntimeMode = "test"
+) {
+  await getMerchantOrThrow(merchantId);
+  return createUnavailableKycResponse({
     subjectType: "merchant",
     subjectRef: merchantId,
     mode,
-  }).exec();
-
-  if (!record) {
-    return {
-      subjectType: "merchant",
-      subjectRef: merchantId,
-      status: "not_started",
-      provider: "sumsub",
-      mode,
-      applicantId: null,
-      reviewStatus: null,
-      reviewAnswer: null,
-      rejectType: null,
-      rejectLabels: [],
-      moderationComment: null,
-      clientComment: null,
-      lastEventType: null,
-      lastEventAt: null,
-      completedAt: null,
-      lastSyncedAt: null,
-      levelName: getSumsubConfig(mode).levelNameKyb,
-    };
-  }
-
-  return toKycResponse(record);
+    levelName: getSumsubConfig("live").levelNameKyb,
+  });
 }
 
 export async function getTeamMemberKycStatusById(input: {
   merchantId: string;
   teamMemberId: string;
+  environment?: RuntimeMode;
 }) {
   await getTeamMemberOrThrow(input.teamMemberId, input.merchantId);
-  const mode = await getMerchantEnvironmentModeById(input.merchantId);
-
-  const record = await KycCheckModel.findOne({
-    merchantId: input.merchantId,
+  const mode = input.environment ?? "test";
+  return createUnavailableKycResponse({
     subjectType: "team_member",
     subjectRef: input.teamMemberId,
     mode,
-  }).exec();
-
-  if (!record) {
-    return {
-      subjectType: "team_member",
-      subjectRef: input.teamMemberId,
-      status: "not_started",
-      provider: "sumsub",
-      mode,
-      applicantId: null,
-      reviewStatus: null,
-      reviewAnswer: null,
-      rejectType: null,
-      rejectLabels: [],
-      moderationComment: null,
-      clientComment: null,
-      lastEventType: null,
-      lastEventAt: null,
-      completedAt: null,
-      lastSyncedAt: null,
-      levelName: getSumsubConfig(mode).levelNameKyc,
-    };
-  }
-
-  return toKycResponse(record);
+    levelName: getSumsubConfig("live").levelNameKyc,
+  });
 }
 
 export async function startMerchantKybSession(input: StartMerchantKybInput) {
   const merchant = await getMerchantOrThrow(input.merchantId);
-  const mode = await getMerchantEnvironmentModeById(input.merchantId);
+  const mode = input.environment;
+  assertKycOnboardingAvailable(mode, "starting merchant KYB");
   const config = getSumsubConfig(mode);
   const sumsubProvider = getSumsubProvider(mode);
   const levelName = input.levelName ?? config.levelNameKyb;
@@ -425,7 +439,8 @@ export async function startMerchantKybSession(input: StartMerchantKybInput) {
 
 export async function startTeamMemberKycSession(input: StartTeamMemberKycInput) {
   const member = await getTeamMemberOrThrow(input.teamMemberId, input.merchantId);
-  const mode = await getMerchantEnvironmentModeById(input.merchantId);
+  const mode = input.environment;
+  assertKycOnboardingAvailable(mode, "starting team member KYC");
   const config = getSumsubConfig(mode);
   const sumsubProvider = getSumsubProvider(mode);
   const levelName = input.levelName ?? config.levelNameKyc;
@@ -500,7 +515,8 @@ export async function startTeamMemberKycSession(input: StartTeamMemberKycInput) 
 
 export async function syncMerchantKybStatus(input: SyncMerchantKybInput) {
   await getMerchantOrThrow(input.merchantId);
-  const mode = await getMerchantEnvironmentModeById(input.merchantId);
+  const mode = input.environment;
+  assertKycOnboardingAvailable(mode, "syncing merchant KYB");
   const sumsubProvider = getSumsubProvider(mode);
   const record = await KycCheckModel.findOne({
     merchantId: input.merchantId,
@@ -547,7 +563,8 @@ export async function syncMerchantKybStatus(input: SyncMerchantKybInput) {
 
 export async function syncTeamMemberKycStatus(input: SyncTeamMemberKycInput) {
   await getTeamMemberOrThrow(input.teamMemberId, input.merchantId);
-  const mode = await getMerchantEnvironmentModeById(input.merchantId);
+  const mode = input.environment;
+  assertKycOnboardingAvailable(mode, "syncing team member KYC");
   const sumsubProvider = getSumsubProvider(mode);
   const record = await KycCheckModel.findOne({
     merchantId: input.merchantId,
@@ -597,31 +614,32 @@ export async function processSumsubWebhook(input: {
   rawBody: string;
   digestHeader: string | null;
   digestAlgorithmHeader: string | null;
+  environment?: RuntimeMode;
 }) {
-  const testConfig = getSumsubConfig("test");
-  const liveConfig = getSumsubConfig("live");
-  const hasConfiguredWebhookSecret =
-    testConfig.webhookSecret.length > 0 || liveConfig.webhookSecret.length > 0;
-  const digestValid =
-    getSumsubProvider("test").verifyWebhookDigest({
-      rawBody: input.rawBody,
-      digest: input.digestHeader,
-      algorithm: input.digestAlgorithmHeader,
-    }) ||
-    getSumsubProvider("live").verifyWebhookDigest({
-      rawBody: input.rawBody,
-      digest: input.digestHeader,
-      algorithm: input.digestAlgorithmHeader,
-    });
+  const payloadMode =
+    input.payload.environment ??
+    parseModeFromExternalUserId(toStringOrNull(input.payload.externalUserId));
+  const requestedMode = input.environment ?? payloadMode ?? "live";
+  assertKycOnboardingAvailable(requestedMode, "processing Sumsub webhooks");
 
-  if (hasConfiguredWebhookSecret && !digestValid) {
+  const mode: RuntimeMode = "live";
+  const liveConfig = getSumsubConfig(mode);
+  const sumsubProvider = getSumsubProvider(mode);
+  const hasConfiguredWebhookSecret = liveConfig.webhookSecret.length > 0;
+  const digestMatches = sumsubProvider.verifyWebhookDigest({
+    rawBody: input.rawBody,
+    digest: input.digestHeader,
+    algorithm: input.digestAlgorithmHeader,
+  });
+
+  if (hasConfiguredWebhookSecret && !digestMatches) {
     throw new HttpError(401, "Invalid Sumsub webhook digest.");
   }
-
   const eventType = toStringOrNull(input.payload.type) ?? "unknown";
   const eventKey = createHash("sha256").update(input.rawBody, "utf8").digest("hex");
   const existingEvent = await KycEventModel.findOne({
     provider: "sumsub",
+    environment: mode,
     eventKey,
   }).exec();
 
@@ -640,6 +658,7 @@ export async function processSumsubWebhook(input: {
     try {
       event = await KycEventModel.create({
         provider: "sumsub",
+        environment: mode,
         eventKey,
         eventType,
         applicantId: toStringOrNull(input.payload.applicantId),
@@ -652,6 +671,7 @@ export async function processSumsubWebhook(input: {
       if (maybeDuplicate.code === 11000) {
         event = await KycEventModel.findOne({
           provider: "sumsub",
+          environment: mode,
           eventKey,
         }).exec();
       } else {
@@ -667,9 +687,9 @@ export async function processSumsubWebhook(input: {
   const applicantId = toStringOrNull(input.payload.applicantId);
   const externalUserId = toStringOrNull(input.payload.externalUserId);
   const record = applicantId
-    ? await KycCheckModel.findOne({ applicantId }).exec()
+    ? await KycCheckModel.findOne({ applicantId, mode }).exec()
     : externalUserId
-      ? await KycCheckModel.findOne({ externalUserId }).exec()
+      ? await KycCheckModel.findOne({ externalUserId, mode }).exec()
       : null;
 
   if (!record) {
@@ -745,12 +765,15 @@ export async function processSumsubWebhook(input: {
 
 export async function assertMerchantKybApprovedForLive(
   merchantId: string,
-  action = "running this live operation"
+  action = "running this live operation",
+  mode: RuntimeMode
 ) {
-  const mode = await getMerchantEnvironmentModeById(merchantId);
-
   if (mode !== "live") {
     return;
+  }
+
+  if (!liveOnboardingEnabled) {
+    throw new HttpError(409, liveOnboardingDisabledMessage);
   }
 
   const record = await KycCheckModel.findOne({

@@ -7,6 +7,12 @@ const planSchema = new Schema(
       required: true,
       ref: "Merchant",
     },
+    environment: {
+      type: String,
+      required: true,
+      trim: true,
+      default: "test",
+    },
     planCode: {
       type: String,
       required: true,
