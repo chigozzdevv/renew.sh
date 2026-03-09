@@ -1,6 +1,7 @@
 import {
   createPublicClient,
   createWalletClient,
+  decodeEventLog,
   getAddress,
   http,
   keccak256,
@@ -32,7 +33,12 @@ const messageTransmitterAbi = parseAbi([
 
 const renewProtocolAbi = parseAbi([
   "function creditSettlement(address merchant,bytes32 externalChargeId,address settlementSource,uint128 usdcAmount) returns (uint256)",
+  "function executeCharge(uint256 subscriptionId,bytes32 externalChargeId,address settlementSource,uint128 localAmount,uint128 fxRate,uint128 usageUnits,uint128 usdcAmount) returns (uint256)",
+  "function recordFailedCharge(uint256 subscriptionId,bytes32 externalChargeId,bytes32 failureCode) returns (uint256)",
   "function chargeOperators(address operator) view returns (bool)",
+  "event ChargeExecuted(uint256 indexed chargeId,uint256 indexed subscriptionId,address indexed merchant,bytes32 externalChargeId,uint128 usdcAmount,uint128 feeAmount,uint128 usageUnits,uint64 billingPeriodAt,uint64 nextChargeAt)",
+  "event ChargeFailed(uint256 indexed chargeId,uint256 indexed subscriptionId,address indexed merchant,bytes32 externalChargeId,bytes32 failureCode,uint8 retryCount,uint64 retryAvailableAt)",
+  "event SettlementCredited(uint256 indexed chargeId,address indexed merchant,bytes32 indexed externalChargeId,address settlementSource,uint128 usdcAmount,uint128 feeAmount)",
 ]);
 
 const SIX_DECIMAL_SCALE = 1_000_000n;
@@ -68,6 +74,23 @@ type BurnParameters = {
   fallbackReason: string | null;
 };
 
+type ProtocolChargeExecutionInput =
+  | {
+      mode: "subscription_charge";
+      externalChargeId: string;
+      protocolSubscriptionId: string;
+      localAmount: number;
+      fxRate: number;
+      usageUnits?: number;
+      usdcAmount: number;
+    }
+  | {
+      mode: "settlement_credit";
+      merchantAddress: string;
+      externalChargeId: string;
+      amountUsdc: number;
+    };
+
 function logCctp(event: string, details: Record<string, unknown>) {
   console.log(
     `[cctp] ${event} ${JSON.stringify({
@@ -91,6 +114,22 @@ function addressToBytes32(address: Address) {
 
 function formatBaseUnitsToUsdc(amount: bigint) {
   return Number(amount) / Number(SIX_DECIMAL_SCALE);
+}
+
+function toProtocolBytes32(value: string) {
+  const normalized = value.trim();
+
+  if (!normalized) {
+    throw new HttpError(400, "Protocol bytes32 values must not be empty.");
+  }
+
+  const bytes = Buffer.from(normalized, "utf8");
+
+  if (bytes.length <= 32) {
+    return `0x${bytes.toString("hex").padEnd(64, "0")}` as Hex;
+  }
+
+  return keccak256(stringToHex(normalized));
 }
 
 function ceilDiv(dividend: bigint, divisor: bigint) {
@@ -332,11 +371,31 @@ async function fetchAttestation(input: {
   );
 }
 
-export async function bridgeSettlementToAvalanche(input: {
-  merchantAddress: string;
-  externalChargeId: string;
-  netUsdc: number;
-}) {
+function extractProtocolChargeIdFromReceipt(logs: Array<{ data: Hex; topics: Hex[] }>) {
+  for (const log of logs) {
+    try {
+      const decoded = decodeEventLog({
+        abi: renewProtocolAbi,
+        data: log.data,
+        topics: log.topics as [Hex, ...Hex[]],
+      });
+
+      if (
+        decoded.eventName === "ChargeExecuted" ||
+        decoded.eventName === "ChargeFailed" ||
+        decoded.eventName === "SettlementCredited"
+      ) {
+        return decoded.args.chargeId.toString();
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
+}
+
+export async function bridgeSettlementToAvalanche(input: ProtocolChargeExecutionInput) {
   const mode = env.PAYMENT_ENV;
   const cctpConfig = getCctpConfig(mode).assertConfigured();
   const protocolConfig = getProtocolRuntimeConfig(mode);
@@ -389,7 +448,9 @@ export async function bridgeSettlementToAvalanche(input: {
     ),
   ]);
 
-  const amount = toUsdcBaseUnits(input.netUsdc);
+  const amount = toUsdcBaseUnits(
+    input.mode === "subscription_charge" ? input.usdcAmount : input.amountUsdc
+  );
   const burnParameters = await resolveBurnParameters({
     attestationApiUrl: cctpConfig.attestationApiUrl,
     sourceDomain: cctpConfig.sourceDomain,
@@ -408,7 +469,10 @@ export async function bridgeSettlementToAvalanche(input: {
   logCctp("bridge-start", {
     environment: mode,
     externalChargeId: input.externalChargeId,
-    merchantAddress: input.merchantAddress.toLowerCase(),
+    merchantAddress:
+      input.mode === "settlement_credit"
+        ? input.merchantAddress.toLowerCase()
+        : null,
     sourceWalletAddress: sourceAccount.address.toLowerCase(),
     destinationWalletAddress: destinationAccount.address.toLowerCase(),
     sourceDomain: cctpConfig.sourceDomain,
@@ -434,9 +498,9 @@ export async function bridgeSettlementToAvalanche(input: {
   if (sourceUsdcBalance < amount) {
     throw new HttpError(
       409,
-      `CCTP source wallet ${sourceAccount.address} is short ${input.netUsdc.toFixed(
-        2
-      )} USDC. Fund it with Circle test USDC before running settlement.`
+      `CCTP source wallet ${sourceAccount.address} is short ${formatBaseUnitsToUsdc(
+        amount
+      ).toFixed(2)} USDC. Fund it with Circle test USDC before running settlement.`
     );
   }
 
@@ -558,25 +622,57 @@ export async function bridgeSettlementToAvalanche(input: {
     );
   }
 
-  const creditHash = await destinationWalletClient.writeContract({
-    address: protocolAddress,
-    abi: renewProtocolAbi,
-    functionName: "creditSettlement",
-    args: [
-      input.merchantAddress as Address,
-      externalChargeIdHash,
-      destinationAccount.address,
-      amount,
-    ],
-    chain: undefined,
+  const protocolHash =
+    input.mode === "subscription_charge"
+      ? await destinationWalletClient.writeContract({
+          address: protocolAddress,
+          abi: renewProtocolAbi,
+          functionName: "executeCharge",
+          args: [
+            BigInt(input.protocolSubscriptionId),
+            toProtocolBytes32(input.externalChargeId),
+            destinationAccount.address,
+            toUsdcBaseUnits(input.localAmount),
+            toUsdcBaseUnits(input.fxRate),
+            BigInt(Math.max(0, Math.trunc(input.usageUnits ?? 0))),
+            amount,
+          ],
+          chain: undefined,
+        })
+      : await destinationWalletClient.writeContract({
+          address: protocolAddress,
+          abi: renewProtocolAbi,
+          functionName: "creditSettlement",
+          args: [
+            input.merchantAddress as Address,
+            externalChargeIdHash,
+            destinationAccount.address,
+            amount,
+          ],
+          chain: undefined,
+        });
+  const protocolReceipt = await destinationClient.waitForTransactionReceipt({
+    hash: protocolHash,
   });
-  await destinationClient.waitForTransactionReceipt({ hash: creditHash });
-  logCctp("credit-confirmed", {
-    externalChargeId: input.externalChargeId,
-    burnTxHash: burnHash.toLowerCase(),
-    creditTxHash: creditHash.toLowerCase(),
-    merchantAddress: input.merchantAddress.toLowerCase(),
-  });
+  const protocolChargeId = extractProtocolChargeIdFromReceipt(protocolReceipt.logs);
+
+  logCctp(
+    input.mode === "subscription_charge"
+      ? "execute-charge-confirmed"
+      : "credit-confirmed",
+    {
+      externalChargeId: input.externalChargeId,
+      burnTxHash: burnHash.toLowerCase(),
+      creditTxHash: protocolHash.toLowerCase(),
+      merchantAddress:
+        input.mode === "subscription_charge"
+          ? null
+          : input.merchantAddress.toLowerCase(),
+      protocolSubscriptionId:
+        input.mode === "subscription_charge" ? input.protocolSubscriptionId : null,
+      protocolChargeId,
+    }
+  );
 
   return {
     sourceWalletAddress: sourceAccount.address.toLowerCase(),
@@ -586,7 +682,70 @@ export async function bridgeSettlementToAvalanche(input: {
     bridgedUsdc: formatBaseUnitsToUsdc(amount),
     bridgeSourceTxHash: burnHash.toLowerCase(),
     bridgeReceiveTxHash: receiveHash.toLowerCase(),
-    creditTxHash: creditHash.toLowerCase(),
+    creditTxHash: protocolHash.toLowerCase(),
+    protocolChargeId,
+    protocolExecutionKind:
+      input.mode === "subscription_charge" ? "subscription_charge" : "settlement_credit",
     attestedAt: new Date(),
+  };
+}
+
+export async function recordFailedProtocolCharge(input: {
+  environment: "test" | "live";
+  protocolSubscriptionId: string;
+  externalChargeId: string;
+  failureCode: string;
+}) {
+  const protocolConfig = getProtocolRuntimeConfig(input.environment);
+  const destinationAccount = privateKeyToAccount(
+    (input.environment === "live"
+      ? env.SAFE_EXECUTOR_PRIVATE_KEY_LIVE
+      : env.SAFE_EXECUTOR_PRIVATE_KEY_TEST) as Hex
+  );
+  const destinationClient = createPublicClient({
+    transport: http(protocolConfig.rpcUrl),
+  });
+  const destinationWalletClient = createWalletClient({
+    account: destinationAccount,
+    transport: http(protocolConfig.rpcUrl),
+  });
+  const protocolAddress = getAddress(protocolConfig.protocolAddress);
+
+  await ensureNativeGas(
+    "Avalanche settlement wallet",
+    destinationClient,
+    destinationAccount.address
+  );
+
+  const isChargeOperator = await destinationClient.readContract({
+    address: protocolAddress,
+    abi: renewProtocolAbi,
+    functionName: "chargeOperators",
+    args: [destinationAccount.address],
+  });
+
+  if (!isChargeOperator) {
+    throw new HttpError(
+      409,
+      `Avalanche settlement wallet ${destinationAccount.address} is not an enabled Renew charge operator.`
+    );
+  }
+
+  const txHash = await destinationWalletClient.writeContract({
+    address: protocolAddress,
+    abi: renewProtocolAbi,
+    functionName: "recordFailedCharge",
+    args: [
+      BigInt(input.protocolSubscriptionId),
+      toProtocolBytes32(input.externalChargeId),
+      toProtocolBytes32(input.failureCode),
+    ],
+    chain: undefined,
+  });
+  const receipt = await destinationClient.waitForTransactionReceipt({ hash: txHash });
+
+  return {
+    protocolChargeId: extractProtocolChargeIdFromReceipt(receipt.logs),
+    txHash: txHash.toLowerCase(),
   };
 }

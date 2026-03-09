@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { Suspense, useState } from "react";
 
 import { Container } from "@/components/ui/container";
 import { Logo } from "@/components/shared/logo";
@@ -39,7 +39,7 @@ function toErrorMessage(error: unknown) {
   return "Unable to create your workspace.";
 }
 
-export default function SignupPage() {
+function SignupPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const nextPath = getNextPath(searchParams.get("next"));
@@ -196,5 +196,13 @@ export default function SignupPage() {
         </section>
       </Container>
     </main>
+  );
+}
+
+export default function SignupPage() {
+  return (
+    <Suspense fallback={null}>
+      <SignupPageContent />
+    </Suspense>
   );
 }

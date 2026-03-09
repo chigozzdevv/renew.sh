@@ -59,7 +59,12 @@ const subscriptionSchema = new Schema(
       type: String,
       required: true,
       trim: true,
-      default: "active",
+      default: "pending_activation",
+    },
+    pendingStatus: {
+      type: String,
+      trim: true,
+      default: null,
     },
     nextChargeAt: {
       type: Date,
@@ -71,6 +76,27 @@ const subscriptionSchema = new Schema(
     },
     retryAvailableAt: {
       type: Date,
+      default: null,
+    },
+    protocolSubscriptionId: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    protocolOperationId: {
+      type: Schema.Types.ObjectId,
+      ref: "TreasuryOperation",
+      default: null,
+    },
+    protocolSyncStatus: {
+      type: String,
+      trim: true,
+      default: "not_synced",
+    },
+    protocolTxHash: {
+      type: String,
+      trim: true,
+      lowercase: true,
       default: null,
     },
   },

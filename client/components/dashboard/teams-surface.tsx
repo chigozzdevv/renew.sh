@@ -328,15 +328,13 @@ export function TeamsSurface() {
                   </option>
                 ))}
               </Select>
-              <div className="space-y-3 md:col-span-2">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--muted)]">
-                  Market access
-                </p>
+              <div className="md:col-span-2">
                 <MarketMultiSelect
                   options={supportedMarkets}
                   value={inviteDraft.markets}
                   onChange={(markets) => setInviteDraft((current) => ({ ...current, markets }))}
                   allLabel="All merchant markets"
+                  placeholder="Select market access"
                 />
               </div>
               <div className="md:col-span-2">
@@ -361,8 +359,8 @@ export function TeamsSurface() {
             <div className="max-h-[34rem] overflow-y-auto pr-1">
               <Table columns={["Member", "Role", "Access", "Last active", "Status"]}>
                 {members.map((member) => (
-                  <button key={member.id} type="button" className="mb-3 block w-full text-left last:mb-0" onClick={() => setSelectedId(member.id)}>
-                    <TableRow columns={5}>
+                  <button key={member.id} type="button" className="mb-3 block w-full text-left outline-none last:mb-0" onClick={() => setSelectedId(member.id)}>
+                    <TableRow columns={5} selected={selectedMember?.id === member.id}>
                       <div>
                         <p className="text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)]">{member.name}</p>
                         <p className="mt-1 text-sm text-[color:var(--muted)]">{member.email}</p>

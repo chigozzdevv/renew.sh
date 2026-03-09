@@ -179,12 +179,12 @@ export function Button({
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & {
   tone?:
-    | "neutral"
-    | "brand"
-    | "danger"
-    | "darkNeutral"
-    | "darkBrand"
-    | "darkDanger";
+  | "neutral"
+  | "brand"
+  | "danger"
+  | "darkNeutral"
+  | "darkBrand"
+  | "darkDanger";
 }) {
   return (
     <button
@@ -241,7 +241,10 @@ export function DarkField({
       <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/46">
         {label}
       </p>
-      <div className="mt-2 text-sm font-semibold tracking-[-0.02em] text-white">
+      <div
+        className="mt-2 text-sm font-semibold tracking-[-0.02em] text-white truncate"
+        title={typeof value === 'string' ? value : undefined}
+      >
         {value}
       </div>
     </div>
@@ -289,14 +292,19 @@ export function Table({
 export function TableRow({
   children,
   columns,
+  selected,
 }: {
   children: ReactNode;
   columns: 3 | 4 | 5;
+  selected?: boolean;
 }) {
   return (
     <div
       className={cn(
-        "grid gap-3 rounded-2xl border border-[color:var(--line)] bg-white px-4 py-4",
+        "grid gap-3 rounded-[1.25rem] border px-4 py-4 transition-colors",
+        selected
+          ? "border-[#0c4a27]/30 bg-[#f4f8f1] shadow-[0_4px_20px_rgba(12,74,39,0.04)]"
+          : "border-[color:var(--line)] bg-white hover:border-[#0c4a27]/20 hover:bg-[#fafcfe]",
         columns === 3
           ? "md:grid-cols-3"
           : columns === 4

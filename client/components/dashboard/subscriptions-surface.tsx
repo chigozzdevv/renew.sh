@@ -8,6 +8,8 @@ import {
   StatusBadge,
   formatCurrency,
   formatDateTime,
+  formatTxHash,
+  getAvalancheTxUrl,
   toErrorMessage,
 } from "@/components/dashboard/surface-utils";
 import { useAuthedResource } from "@/components/dashboard/use-authed-resource";
@@ -434,6 +436,18 @@ export function SubscriptionsSurface() {
               ? planNameById.get(selectedSubscription.planId) ?? "Plan"
               : "Select a subscription to inspect its billing state."
           }
+          action={
+            selectedSubscription?.onchain.txHash ? (
+              <a
+                href={getAvalancheTxUrl(mode, selectedSubscription.onchain.txHash)}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center justify-center rounded-2xl border border-white/12 bg-white/6 px-4 py-3 text-sm font-semibold tracking-[-0.02em] text-white transition-colors hover:bg-white/10"
+              >
+                View tx ↗
+              </a>
+            ) : null
+          }
         >
           {selectedSubscription ? (
             <div className="space-y-4">
@@ -461,6 +475,31 @@ export function SubscriptionsSurface() {
                 <DarkField
                   label="Retry opens"
                   value={formatDateTime(selectedSubscription.retryAvailableAt)}
+                />
+                <DarkField
+                  label="Onchain status"
+                  value={<StatusBadge value={selectedSubscription.onchain.status} />}
+                />
+                <DarkField
+                  label="Protocol subscription"
+                  value={selectedSubscription.onchain.id ?? "Pending"}
+                />
+                <DarkField
+                  label="Latest tx"
+                  value={
+                    selectedSubscription.onchain.txHash ? (
+                      <a
+                        href={getAvalancheTxUrl(mode, selectedSubscription.onchain.txHash)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-white underline decoration-white/35 underline-offset-4 transition-colors hover:text-[#d9f6bc]"
+                      >
+                        {formatTxHash(selectedSubscription.onchain.txHash)}
+                      </a>
+                    ) : (
+                      "Waiting for execution"
+                    )
+                  }
                 />
               </div>
 

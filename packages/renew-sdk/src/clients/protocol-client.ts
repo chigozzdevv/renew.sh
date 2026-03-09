@@ -10,12 +10,24 @@ export function createRenewProtocolClient(
 ) {
   return {
     address,
-    registerMerchant(payoutWallet: Address, metadataHash: string) {
+    registerMerchant(
+      payoutWallet: Address,
+      reserveWallet: Address,
+      metadataHash: string
+    ) {
       return transport.write<void>({
         address,
         abi: renewProtocolAbi,
         functionName: "registerMerchant",
-        args: [payoutWallet, metadataHash],
+        args: [payoutWallet, reserveWallet, metadataHash],
+      });
+    },
+    setSubscriptionOperator(operator: Address, enabled: boolean) {
+      return transport.write<void>({
+        address,
+        abi: renewProtocolAbi,
+        functionName: "setSubscriptionOperator",
+        args: [operator, enabled],
       });
     },
     createPlan(input: {
@@ -24,6 +36,7 @@ export function createRenewProtocolClient(
       billingInterval: bigint;
       trialPeriod: number;
       retryWindow: number;
+      maxRetryCount: number;
       billingMode: number;
       usageRate: bigint;
     }) {
@@ -37,8 +50,37 @@ export function createRenewProtocolClient(
           input.billingInterval,
           input.trialPeriod,
           input.retryWindow,
+          input.maxRetryCount,
           input.billingMode,
           input.usageRate,
+        ],
+      });
+    },
+    updatePlan(input: {
+      planId: bigint;
+      usdPrice: bigint;
+      billingInterval: bigint;
+      trialPeriod: number;
+      retryWindow: number;
+      maxRetryCount: number;
+      billingMode: number;
+      usageRate: bigint;
+      active: boolean;
+    }) {
+      return transport.write<void>({
+        address,
+        abi: renewProtocolAbi,
+        functionName: "updatePlan",
+        args: [
+          input.planId,
+          input.usdPrice,
+          input.billingInterval,
+          input.trialPeriod,
+          input.retryWindow,
+          input.maxRetryCount,
+          input.billingMode,
+          input.usageRate,
+          input.active,
         ],
       });
     },
@@ -48,6 +90,7 @@ export function createRenewProtocolClient(
       billingCurrency: string;
       firstChargeAt: bigint;
       localAmountSnapshot: bigint;
+      mandateHash: string;
     }) {
       return transport.write<bigint>({
         address,
@@ -59,7 +102,40 @@ export function createRenewProtocolClient(
           input.billingCurrency,
           input.firstChargeAt,
           input.localAmountSnapshot,
+          input.mandateHash,
         ],
+      });
+    },
+    createSubscriptionForMerchant(input: {
+      merchant: Address;
+      planId: bigint;
+      customerRef: string;
+      billingCurrency: string;
+      firstChargeAt: bigint;
+      localAmountSnapshot: bigint;
+      mandateHash: string;
+    }) {
+      return transport.write<bigint>({
+        address,
+        abi: renewProtocolAbi,
+        functionName: "createSubscriptionForMerchant",
+        args: [
+          input.merchant,
+          input.planId,
+          input.customerRef,
+          input.billingCurrency,
+          input.firstChargeAt,
+          input.localAmountSnapshot,
+          input.mandateHash,
+        ],
+      });
+    },
+    updateSubscriptionMandateHash(subscriptionId: bigint, mandateHash: string) {
+      return transport.write<void>({
+        address,
+        abi: renewProtocolAbi,
+        functionName: "updateSubscriptionMandateHash",
+        args: [subscriptionId, mandateHash],
       });
     },
     executeCharge(input: {
@@ -68,6 +144,7 @@ export function createRenewProtocolClient(
       settlementSource: Address;
       localAmount: bigint;
       fxRate: bigint;
+      usageUnits: bigint;
       usdcAmount: bigint;
     }) {
       return transport.write<bigint>({
@@ -80,6 +157,7 @@ export function createRenewProtocolClient(
           input.settlementSource,
           input.localAmount,
           input.fxRate,
+          input.usageUnits,
           input.usdcAmount,
         ],
       });

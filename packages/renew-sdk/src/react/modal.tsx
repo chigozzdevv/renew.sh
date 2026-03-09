@@ -353,12 +353,32 @@ export type RenewCheckoutModalProps = {
   readonly onFailed?: UseRenewCheckoutSessionOptions["onFailed"];
 };
 
+function getSupportedMarkets(session: RenewCheckoutSession | null) {
+  return Array.isArray(session?.plan?.supportedMarkets)
+    ? session.plan.supportedMarkets
+    : [];
+}
+
+function getPlanName(session: RenewCheckoutSession | null) {
+  const value = session?.plan?.name;
+  return typeof value === "string" && value.trim() ? value : "Renew plan";
+}
+
+function getPlanUsdAmount(session: RenewCheckoutSession | null) {
+  const value = session?.plan?.usdAmount;
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function getPlanBillingIntervalDays(session: RenewCheckoutSession | null) {
+  const value = session?.plan?.billingIntervalDays;
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
+}
+
 function createInitialFormState(session: RenewCheckoutSession | null): FormState {
   return {
     name: session?.customer?.name ?? "",
     email: session?.customer?.email ?? "",
-    market:
-      session?.customer?.market ?? session?.plan.supportedMarkets[0] ?? "NGN",
+    market: session?.customer?.market ?? getSupportedMarkets(session)[0] ?? "NGN",
   };
 }
 
@@ -378,6 +398,22 @@ function formatInterval(days: number) {
 
 function humanizeValue(value: string) {
   return value.replace(/_/g, " ");
+}
+
+function getPrimarySectionContent(session: RenewCheckoutSession) {
+  if (session.nextAction === "wait_for_charge") {
+    return {
+      title: "Subscription scheduled",
+      copy:
+        "The subscription is already active on-chain. Payment instructions will appear when the first charge is due.",
+    };
+  }
+
+  return {
+    title: "Payment instructions",
+    copy:
+      "The checkout now reflects the server-approved charge state. In sandbox mode, provider confirmation stays backend-driven.",
+  };
 }
 
 export function RenewCheckoutModal({
@@ -487,7 +523,17 @@ export function RenewCheckoutModal({
   }
 
   const paymentInstructions = currentSession.paymentInstructions;
-  const supportedMarkets = currentSession.plan.supportedMarkets;
+  const supportedMarkets = getSupportedMarkets(currentSession);
+  const planName = getPlanName(currentSession);
+  const planUsdAmount = getPlanUsdAmount(currentSession);
+  const billingIntervalDays = getPlanBillingIntervalDays(currentSession);
+  const primarySection = getPrimarySectionContent(currentSession);
+  const marketOptions =
+    supportedMarkets.length > 0
+      ? supportedMarkets
+      : formState.market
+        ? [formState.market]
+        : [];
 
   const handleSubmitCustomer = async () => {
     const payload: SubmitCheckoutCustomerInput = {
@@ -517,10 +563,14 @@ export function RenewCheckoutModal({
           <div>
             <p className="renew-modal__eyebrow">Renew checkout</p>
             <div>
-              <h2 className="renew-modal__title">{currentSession.plan.name}</h2>
+              <h2 className="renew-modal__title">{planName}</h2>
               <p className="renew-modal__subtitle">
-                ${currentSession.plan.usdAmount.toFixed(2)} billed every{" "}
-                {formatInterval(currentSession.plan.billingIntervalDays)}
+                {planUsdAmount === null ? "Price pending" : `$${planUsdAmount.toFixed(2)}`}{" "}
+                {billingIntervalDays === null ? null : (
+                  <>
+                    billed every {formatInterval(billingIntervalDays)}
+                  </>
+                )}
                 {marketQuote ? ` · approx. ${marketQuote.localAmount.toFixed(2)} ${marketQuote.currency}` : ""}
               </p>
             </div>
@@ -553,7 +603,9 @@ export function RenewCheckoutModal({
                   <h3 className="renew-modal__section-title">Start the checkout</h3>
                   <p className="renew-modal__copy">
                     Enter customer details. Renew will create the customer,
-                    subscription, and charge from the server-approved plan snapshot.
+                    activate the subscription on-chain, and issue payment
+                    instructions when the first charge is due from the
+                    server-approved plan snapshot.
                   </p>
                 </div>
 
@@ -602,7 +654,7 @@ export function RenewCheckoutModal({
                     }
                     className="renew-modal__select"
                   >
-                    {supportedMarkets.map((market) => (
+                    {marketOptions.map((market) => (
                       <option key={market} value={market}>
                         {market}
                       </option>
@@ -632,7 +684,8 @@ export function RenewCheckoutModal({
                   disabled={
                     isSubmittingCustomer ||
                     !formState.name.trim() ||
-                    !formState.email.trim()
+                    !formState.email.trim() ||
+                    !formState.market
                   }
                   className="renew-modal__button renew-modal__button--brand"
                   style={hiddenButtonStyle}
@@ -643,73 +696,93 @@ export function RenewCheckoutModal({
             ) : (
               <div className="renew-modal__stack">
                 <div>
-                  <h3 className="renew-modal__section-title">Payment instructions</h3>
-                  <p className="renew-modal__copy">
-                    The checkout now uses the server-approved charge state. In sandbox
-                    mode, provider confirmation stays backend-driven.
-                  </p>
+                  <h3 className="renew-modal__section-title">{primarySection.title}</h3>
+                  <p className="renew-modal__copy">{primarySection.copy}</p>
                 </div>
 
-                <div className="renew-modal__meta-grid renew-modal__meta-grid--two">
-                  <div className="renew-modal__card">
-                    <p className="renew-modal__card-label">Charge amount</p>
-                    <p className="renew-modal__card-value renew-modal__card-value--lg">
-                      {paymentInstructions?.localAmount?.toFixed(2) ?? "--"}{" "}
-                      {paymentInstructions?.billingCurrency ?? ""}
-                    </p>
-                  </div>
+                {currentSession.nextAction === "wait_for_charge" ? (
+                  <div className="renew-modal__instruction-card">
+                    <div className="renew-modal__grid">
+                      <div>
+                        <p className="renew-modal__card-label">What happens next</p>
+                        <p className="renew-modal__card-value renew-modal__card-value--md">
+                          Renew will create payment instructions automatically when the
+                          first billing cycle becomes due.
+                        </p>
+                      </div>
 
-                  <div className="renew-modal__card">
-                    <p className="renew-modal__card-label">Reference</p>
-                    <p className="renew-modal__card-value renew-modal__card-value--md">
-                      {paymentInstructions?.reference ??
-                        currentSession.charge?.externalChargeId ??
-                        "--"}
-                    </p>
+                      <div>
+                        <p className="renew-modal__card-label">Current customer</p>
+                        <p className="renew-modal__card-value renew-modal__card-value--md">
+                          {currentSession.customer?.email ?? "Pending customer details"}
+                        </p>
+                      </div>
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <>
+                    <div className="renew-modal__meta-grid renew-modal__meta-grid--two">
+                      <div className="renew-modal__card">
+                        <p className="renew-modal__card-label">Charge amount</p>
+                        <p className="renew-modal__card-value renew-modal__card-value--lg">
+                          {paymentInstructions?.localAmount?.toFixed(2) ?? "--"}{" "}
+                          {paymentInstructions?.billingCurrency ?? ""}
+                        </p>
+                      </div>
 
-                <div className="renew-modal__instruction-card">
-                  <div className="renew-modal__grid renew-modal__grid--two">
-                    <div>
-                      <p className="renew-modal__card-label">Account name</p>
-                      <p className="renew-modal__card-value renew-modal__card-value--md">
-                        {paymentInstructions?.bankInfo?.accountName ?? "--"}
-                      </p>
+                      <div className="renew-modal__card">
+                        <p className="renew-modal__card-label">Reference</p>
+                        <p className="renew-modal__card-value renew-modal__card-value--md">
+                          {paymentInstructions?.reference ??
+                            currentSession.charge?.externalChargeId ??
+                            "--"}
+                        </p>
+                      </div>
                     </div>
 
-                    <div>
-                      <p className="renew-modal__card-label">Bank</p>
-                      <p className="renew-modal__card-value renew-modal__card-value--md">
-                        {paymentInstructions?.bankInfo?.name ?? "--"}
-                      </p>
+                    <div className="renew-modal__instruction-card">
+                      <div className="renew-modal__grid renew-modal__grid--two">
+                        <div>
+                          <p className="renew-modal__card-label">Account name</p>
+                          <p className="renew-modal__card-value renew-modal__card-value--md">
+                            {paymentInstructions?.bankInfo?.accountName ?? "--"}
+                          </p>
+                        </div>
+
+                        <div>
+                          <p className="renew-modal__card-label">Bank</p>
+                          <p className="renew-modal__card-value renew-modal__card-value--md">
+                            {paymentInstructions?.bankInfo?.name ?? "--"}
+                          </p>
+                        </div>
+
+                        <div style={{ gridColumn: "1 / -1" }}>
+                          <p className="renew-modal__card-label">Account number</p>
+                          <p
+                            className="renew-modal__card-value renew-modal__card-value--md"
+                            style={{ letterSpacing: "0.08em" }}
+                          >
+                            {paymentInstructions?.bankInfo?.accountNumber ?? "--"}
+                          </p>
+                        </div>
+                      </div>
                     </div>
 
-                    <div style={{ gridColumn: "1 / -1" }}>
-                      <p className="renew-modal__card-label">Account number</p>
-                      <p
-                        className="renew-modal__card-value renew-modal__card-value--md"
-                        style={{ letterSpacing: "0.08em" }}
+                    {currentSession.testMode.canCompletePayment ? (
+                      <button
+                        type="button"
+                        onClick={() => void completeTestPayment()}
+                        disabled={isCompletingTestPayment}
+                        className="renew-modal__button renew-modal__button--brand"
+                        style={hiddenButtonStyle}
                       >
-                        {paymentInstructions?.bankInfo?.accountNumber ?? "--"}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {currentSession.testMode.canCompletePayment ? (
-                  <button
-                    type="button"
-                    onClick={() => void completeTestPayment()}
-                    disabled={isCompletingTestPayment}
-                    className="renew-modal__button renew-modal__button--brand"
-                    style={hiddenButtonStyle}
-                  >
-                    {isCompletingTestPayment
-                      ? "Completing sandbox payment..."
-                      : "Complete sandbox payment"}
-                  </button>
-                ) : null}
+                        {isCompletingTestPayment
+                          ? "Completing sandbox payment..."
+                          : "Complete sandbox payment"}
+                      </button>
+                    ) : null}
+                  </>
+                )}
               </div>
             )}
 

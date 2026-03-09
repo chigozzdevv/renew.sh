@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { Suspense, useState } from "react";
 
 import { Container } from "@/components/ui/container";
 import { Logo } from "@/components/shared/logo";
@@ -39,7 +39,7 @@ function toErrorMessage(error: unknown) {
   return "Unable to sign in.";
 }
 
-export default function LoginPage() {
+function LoginPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const nextPath = getNextPath(searchParams.get("next"));
@@ -155,5 +155,13 @@ export default function LoginPage() {
         </section>
       </Container>
     </main>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginPageContent />
+    </Suspense>
   );
 }

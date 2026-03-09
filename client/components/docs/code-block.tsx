@@ -280,10 +280,8 @@ function getLanguageLabel(language: CodeLanguage) {
 }
 
 export function CodeBlock({
-  label,
   language,
   code,
-  filename,
   className,
 }: CodeBlockProps) {
   const [copied, setCopied] = useState(false);
@@ -307,15 +305,9 @@ export function CodeBlock({
       )}
     >
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/8 bg-white/[0.03] px-4 py-3 sm:px-5">
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold tracking-[-0.02em] text-white">
-            {label}
-          </p>
-          <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.22em] text-white/42">
-            <span>{getLanguageLabel(language)}</span>
-            {filename ? <span>{filename}</span> : null}
-          </div>
-        </div>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/48">
+          {getLanguageLabel(language)}
+        </p>
 
         <button
           type="button"

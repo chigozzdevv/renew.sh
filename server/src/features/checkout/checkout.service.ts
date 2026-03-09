@@ -2,7 +2,6 @@ import { createHash, randomBytes } from "crypto";
 
 import { HttpError } from "@/shared/errors/http-error";
 
-import { runSubscriptionChargeJob } from "@/features/charges/charge.service";
 import { ChargeModel, type ChargeDocument } from "@/features/charges/charge.model";
 import { CheckoutSessionModel } from "@/features/checkout/checkout-session.model";
 import type {
@@ -21,6 +20,10 @@ import {
   type SettlementDocument,
 } from "@/features/settlements/settlement.model";
 import { SubscriptionModel } from "@/features/subscriptions/subscription.model";
+import {
+  ensureMerchantSubscriptionOperatorReady,
+  queueSubscriptionProtocolCreate,
+} from "@/features/treasury/treasury.service";
 import type { RuntimeMode } from "@/shared/constants/runtime-mode";
 import {
   createRuntimeModeCondition,
@@ -169,6 +172,10 @@ async function ensurePlanForCheckout(
     throw new HttpError(409, "Plan is not active.");
   }
 
+  if (!plan.protocolPlanId || plan.protocolSyncStatus !== "synced") {
+    throw new HttpError(409, "Plan is not active on-chain.");
+  }
+
   return plan;
 }
 
@@ -285,6 +292,10 @@ function toCheckoutSessionResponse(input: {
   const { session, charge, settlement } = input;
   const runtimeEnvironment = session.environment === "live" ? "live" : "test";
   const environment = toPublicEnvironment(runtimeEnvironment);
+  const planSnapshot = session.planSnapshot;
+  const supportedMarkets = Array.isArray(planSnapshot.supportedMarkets)
+    ? [...planSnapshot.supportedMarkets]
+    : [];
 
   return {
     id: session._id.toString(),
@@ -300,7 +311,14 @@ function toCheckoutSessionResponse(input: {
     }),
     plan: {
       id: session.planId.toString(),
-      ...session.planSnapshot,
+      planCode: planSnapshot.planCode,
+      name: planSnapshot.name,
+      usdAmount: planSnapshot.usdAmount,
+      billingIntervalDays: planSnapshot.billingIntervalDays,
+      trialDays: planSnapshot.trialDays,
+      retryWindowHours: planSnapshot.retryWindowHours,
+      billingMode: planSnapshot.billingMode,
+      supportedMarkets,
     },
     customer:
       session.customerDraft && session.customerDraft.email
@@ -375,6 +393,7 @@ export async function listCheckoutPlans(context: CheckoutContext) {
     merchantId: context.merchantId,
     ...createRuntimeModeCondition("environment", context.environment),
     status: "active",
+    protocolSyncStatus: "synced",
   })
     .sort({ createdAt: -1 })
     .exec();
@@ -398,6 +417,21 @@ export async function createCheckoutSession(
   context: CheckoutContext
 ) {
   await ensureMerchantForCheckout(context.merchantId, context.environment);
+  const operatorReadiness = await ensureMerchantSubscriptionOperatorReady({
+    merchantId: context.merchantId,
+    actor: context.label,
+    environment: context.environment,
+  });
+
+  if (!operatorReadiness.ready) {
+    throw new HttpError(
+      409,
+      operatorReadiness.merchantReady
+        ? "Merchant must approve the Renew subscription operator before checkout can be opened."
+        : "Merchant treasury is not ready for automated on-chain checkout."
+    );
+  }
+
   const plan = await ensurePlanForCheckout(
     input.planId,
     context.merchantId,
@@ -512,15 +546,39 @@ export async function submitCheckoutCustomer(
     paymentAccountType: input.paymentAccountType,
     paymentAccountNumber: input.paymentAccountNumber ?? null,
     paymentNetworkId: input.paymentNetworkId ?? null,
-    status: "active",
+    status: "pending_activation",
+    pendingStatus: "active",
+    protocolSyncStatus: "pending_activation",
     nextChargeAt,
   });
 
+  const activationOperation = await queueSubscriptionProtocolCreate({
+    merchantId: merchant._id.toString(),
+    actor: customer.email,
+    environment: runtimeEnvironment,
+    subscriptionId: subscription._id.toString(),
+    checkoutSessionId: session._id.toString(),
+    triggerInitialCharge: true,
+  });
+
+  if (!activationOperation) {
+    await SubscriptionModel.findByIdAndDelete(subscription._id).exec();
+    throw new HttpError(
+      409,
+      "Subscription could not be created on-chain for this checkout."
+    );
+  }
+
+  const persistedSubscription = await SubscriptionModel.findById(subscription._id)
+    .select({ nextChargeAt: 1 })
+    .exec();
+
   customer.subscriptionCount += 1;
-  customer.nextRenewalAt = subscription.nextChargeAt;
+  customer.nextRenewalAt = persistedSubscription?.nextChargeAt ?? subscription.nextChargeAt;
   await customer.save();
 
-  session.customerDraft = {
+  const refreshedSession = await ensureCheckoutSession(sessionId);
+  refreshedSession.customerDraft = {
     name: customer.name,
     email: customer.email,
     market: input.market,
@@ -528,89 +586,15 @@ export async function submitCheckoutCustomer(
     paymentAccountNumber: input.paymentAccountNumber ?? null,
     paymentNetworkId: input.paymentNetworkId ?? null,
   };
-  session.customerId = customer._id;
-  session.subscriptionId = subscription._id;
-  session.submittedAt = new Date();
+  refreshedSession.customerId = customer._id;
+  refreshedSession.subscriptionId = subscription._id;
+  refreshedSession.submittedAt = refreshedSession.submittedAt ?? new Date();
 
-  const chargeResult = await runSubscriptionChargeJob({
-    subscriptionId: subscription._id.toString(),
-  });
-  const createdCharge =
-    "chargeId" in chargeResult && chargeResult.chargeId
-      ? await ChargeModel.findById(chargeResult.chargeId)
-          .select({ usdcAmount: 1, feeAmount: 1, status: 1, localAmount: 1 })
-          .lean()
-          .exec()
-      : null;
-
-  if ("chargeId" in chargeResult && chargeResult.chargeId) {
-    session.chargeId = new Types.ObjectId(chargeResult.chargeId);
-    session.settlementId =
-      "settlementId" in chargeResult && chargeResult.settlementId
-        ? new Types.ObjectId(chargeResult.settlementId)
-        : null;
-    session.paymentSnapshot = {
-      externalChargeId:
-        "externalChargeId" in chargeResult ? chargeResult.externalChargeId ?? null : null,
-      billingCurrency: input.market,
-      localAmount: createdCharge?.localAmount ?? null,
-      usdcAmount: createdCharge?.usdcAmount ?? null,
-      feeAmount: createdCharge?.feeAmount ?? null,
-      status:
-        createdCharge?.status ??
-        ("collectionStatus" in chargeResult ? chargeResult.collectionStatus ?? "pending" : "pending"),
-      collectionId:
-        "collection" in chargeResult
-          ? toNullableString((chargeResult.collection as Record<string, unknown>).id)
-          : null,
-      collectionSequenceId:
-        "collection" in chargeResult
-          ? toNullableString((chargeResult.collection as Record<string, unknown>).sequenceId)
-          : null,
-      collectionReference:
-        "collection" in chargeResult
-          ? toNullableString((chargeResult.collection as Record<string, unknown>).reference)
-          : null,
-      depositId:
-        "collection" in chargeResult
-          ? toNullableString((chargeResult.collection as Record<string, unknown>).depositId)
-          : null,
-      expiresAt:
-        "collection" in chargeResult &&
-        (chargeResult.collection as Record<string, unknown>).expiresAt
-          ? new Date((chargeResult.collection as Record<string, unknown>).expiresAt as string)
-          : null,
-      bankInfo:
-        "collection" in chargeResult &&
-        typeof (chargeResult.collection as Record<string, unknown>).bankInfo === "object" &&
-        (chargeResult.collection as Record<string, unknown>).bankInfo !== null
-          ? {
-              name: toNullableString(
-                ((chargeResult.collection as Record<string, unknown>).bankInfo as Record<
-                  string,
-                  unknown
-                >).name
-              ),
-              accountNumber: toNullableString(
-                ((chargeResult.collection as Record<string, unknown>).bankInfo as Record<
-                  string,
-                  unknown
-                >).accountNumber
-              ),
-              accountName: toNullableString(
-                ((chargeResult.collection as Record<string, unknown>).bankInfo as Record<
-                  string,
-                  unknown
-                >).accountName
-              ),
-            }
-          : null,
-    };
+  if (!refreshedSession.chargeId) {
+    refreshedSession.status = "scheduled";
   }
 
-  session.status =
-    "skipped" in chargeResult && chargeResult.skipped ? "scheduled" : "pending_payment";
-  await session.save();
+  await refreshedSession.save();
 
   return getCheckoutSession(sessionId);
 }

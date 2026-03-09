@@ -41,6 +41,12 @@ export const createSettlementSchema = z.object({
   bridgeSourceTxHash: z.string().trim().min(1).nullable().optional(),
   bridgeReceiveTxHash: z.string().trim().min(1).nullable().optional(),
   creditTxHash: z.string().trim().min(1).nullable().optional(),
+  protocolExecutionKind: z
+    .enum(["subscription_charge", "settlement_credit"])
+    .nullable()
+    .optional(),
+  protocolAmountUsdc: z.coerce.number().positive().nullable().optional(),
+  protocolChargeId: z.string().trim().min(1).nullable().optional(),
   submittedAt: z.coerce.date().nullable().optional(),
   bridgeAttestedAt: z.coerce.date().nullable().optional(),
   scheduledFor: z.coerce.date(),
@@ -62,6 +68,12 @@ export const updateSettlementSchema = z.object({
   bridgeSourceTxHash: z.string().trim().min(1).nullable().optional(),
   bridgeReceiveTxHash: z.string().trim().min(1).nullable().optional(),
   creditTxHash: z.string().trim().min(1).nullable().optional(),
+  protocolExecutionKind: z
+    .enum(["subscription_charge", "settlement_credit"])
+    .nullable()
+    .optional(),
+  protocolAmountUsdc: z.coerce.number().positive().nullable().optional(),
+  protocolChargeId: z.string().trim().min(1).nullable().optional(),
   submittedAt: z.coerce.date().nullable().optional(),
   bridgeAttestedAt: z.coerce.date().nullable().optional(),
   sourceChargeId: objectIdSchema.nullable().optional(),

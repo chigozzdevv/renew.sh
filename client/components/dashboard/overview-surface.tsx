@@ -68,7 +68,7 @@ export function OverviewSurface() {
         />
       </StatGrid>
 
-      <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+      <div className="grid gap-4 items-stretch xl:grid-cols-2">
         <Card title="Market mix" description="Real customer volume concentration by billing market.">
           <div className="space-y-4">
             {data.marketMix.length === 0 ? (
@@ -133,7 +133,7 @@ export function OverviewSurface() {
         </Card>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="grid gap-4 items-stretch xl:grid-cols-2">
         <Card title="Settlement snapshot" description="Current net pending vs settled volume in the selected environment.">
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="rounded-2xl border border-[color:var(--line)] bg-white px-4 py-4">

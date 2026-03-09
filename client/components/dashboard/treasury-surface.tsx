@@ -150,8 +150,52 @@ function getWalletProvider() {
   return window.ethereum;
 }
 
-async function connectWallet(expectedWallet?: string) {
+const TARGET_CHAINS: Record<"live" | "test", {
+  chainId: string;
+  chainName: string;
+  nativeCurrency: { name: string; symbol: string; decimals: number };
+  rpcUrls: string[];
+  blockExplorerUrls: string[];
+}> = {
+  live: {
+    chainId: "0xa86a", // 43114
+    chainName: "Avalanche C-Chain",
+    nativeCurrency: { name: "AVAX", symbol: "AVAX", decimals: 18 },
+    rpcUrls: ["https://api.avax.network/ext/bc/C/rpc"],
+    blockExplorerUrls: ["https://snowtrace.io/"],
+  },
+  test: {
+    chainId: "0xa869", // 43113
+    chainName: "Avalanche Fuji",
+    nativeCurrency: { name: "AVAX", symbol: "AVAX", decimals: 18 },
+    rpcUrls: ["https://api.avax-test.network/ext/bc/C/rpc"],
+    blockExplorerUrls: ["https://testnet.snowtrace.io/"],
+  },
+};
+
+async function connectWallet(mode: "live" | "test", expectedWallet?: string) {
   const provider = getWalletProvider();
+  const targetChain = TARGET_CHAINS[mode];
+
+  try {
+    const currentChainId = await provider.request({ method: "eth_chainId" });
+    if (currentChainId !== targetChain.chainId && currentChainId !== parseInt(targetChain.chainId, 16)) {
+      await provider.request({
+        method: "wallet_switchEthereumChain",
+        params: [{ chainId: targetChain.chainId }],
+      });
+    }
+  } catch (error: any) {
+    if (error?.code === 4902 || error?.data?.originalError?.code === 4902) {
+      await provider.request({
+        method: "wallet_addEthereumChain",
+        params: [targetChain],
+      });
+    } else {
+      throw new Error("Failed to switch to the required network.");
+    }
+  }
+
   const accounts = (await provider.request({
     method: "eth_requestAccounts",
   })) as string[];
@@ -243,15 +287,15 @@ export function TreasuryPageSurface() {
     () =>
       account
         ? account.ownerAddresses.map((walletAddress) => {
-            const signer = signerByWallet.get(normalizeAddress(walletAddress)) ?? null;
-            const member = signer ? teamMap.get(signer.teamMemberId) ?? null : null;
+          const signer = signerByWallet.get(normalizeAddress(walletAddress)) ?? null;
+          const member = signer ? teamMap.get(signer.teamMemberId) ?? null : null;
 
-            return {
-              walletAddress,
-              signer,
-              member,
-            };
-          })
+          return {
+            walletAddress,
+            signer,
+            member,
+          };
+        })
         : [],
     [account, signerByWallet, teamMap]
   );
@@ -278,9 +322,9 @@ export function TreasuryPageSurface() {
 
   const currentSigner = user
     ? signers.find(
-        (signer) =>
-          signer.teamMemberId === user.teamMemberId && signer.status === "active"
-      ) ?? null
+      (signer) =>
+        signer.teamMemberId === user.teamMemberId && signer.status === "active"
+    ) ?? null
     : null;
 
   const canCurrentUserApprove =
@@ -372,7 +416,7 @@ export function TreasuryPageSurface() {
     }
 
     await runMutation(async () => {
-      const { provider, walletAddress } = await connectWallet();
+      const { provider, walletAddress } = await connectWallet(mode);
       const challenge = await createTreasurySignerChallenge({
         token,
         merchantId: user.merchantId,
@@ -438,6 +482,7 @@ export function TreasuryPageSurface() {
 
     await runMutation(async () => {
       const { provider, walletAddress } = await connectWallet(
+        mode,
         currentSigner.walletAddress
       );
       const payload = await getTreasuryOperationSigningPayload({
@@ -454,6 +499,7 @@ export function TreasuryPageSurface() {
         operationId,
         signature,
       });
+      window.dispatchEvent(new Event("treasury-updated"));
     }, "Treasury operation approved.");
   }
 
@@ -469,6 +515,7 @@ export function TreasuryPageSurface() {
         reason: rejectReason.trim(),
       });
       setRejectReason("");
+      window.dispatchEvent(new Event("treasury-updated"));
     }, "Treasury operation rejected.");
   }
 
@@ -482,6 +529,7 @@ export function TreasuryPageSurface() {
         token,
         operationId,
       });
+      window.dispatchEvent(new Event("treasury-updated"));
     }, "Treasury operation submitted.");
   }
 

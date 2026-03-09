@@ -4,20 +4,6 @@ import { useDashboardSession } from "@/components/dashboard/session-provider";
 import { useWorkspaceMode } from "@/components/dashboard/mode-provider";
 import { Badge, Button } from "@/components/dashboard/ui";
 
-const rolloutChecks = [
-  {
-    label: "Security audit",
-    detail: "This must be completed before merchant KYB and operator KYC can open.",
-  },
-  {
-    label: "Mainnet deployment",
-    detail: "This must be completed before live billing, treasury, and settlement access can unlock.",
-  },
-  {
-    label: "Live onboarding",
-    detail: "Merchant KYB and operator KYC will open after the audit and mainnet launch are complete.",
-  },
-];
 
 export function LiveOnboardingGate() {
   const { user } = useDashboardSession();
@@ -61,43 +47,6 @@ export function LiveOnboardingGate() {
             </div>
           </div>
 
-          <div className="min-w-[280px] max-w-[320px] rounded-[1.9rem] border border-white/70 bg-white/72 p-5 shadow-[0_16px_40px_rgba(16,32,20,0.05)]">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--brand)]">
-              Rollout status
-            </p>
-            <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">
-              Live access opens in three steps.
-            </p>
-            <div className="mt-5 space-y-0">
-              {rolloutChecks.map((item, index) => (
-                <div
-                  key={item.label}
-                  className="relative flex gap-4 pb-5 last:pb-0"
-                >
-                  <div className="relative flex w-9 shrink-0 flex-col items-center">
-                    <span className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#0c4a27]/12 bg-[#edf7eb] text-sm font-semibold text-[color:var(--brand)]">
-                      {index + 1}
-                    </span>
-                    {index < rolloutChecks.length - 1 ? (
-                      <span className="mt-2 h-full w-px bg-gradient-to-b from-[#cfe3c4] to-transparent" />
-                    ) : null}
-                  </div>
-
-                  <div className="min-w-0 flex-1 rounded-[1.4rem] border border-[color:var(--line)] bg-[#f8faf7] px-4 py-4">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--muted)]">
-                      Step {index + 1}
-                    </p>
-                    <p className="mt-2 text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)]">
-                      {item.label}
-                    </p>
-                    <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">
-                      {item.detail}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
         </div>
       </div>
 

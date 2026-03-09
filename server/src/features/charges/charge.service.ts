@@ -5,6 +5,7 @@ import { queueNames } from "@/shared/workers/queue-names";
 import { ChargeModel } from "@/features/charges/charge.model";
 import { emitChargeWebhookEventForStatusChange } from "@/features/developers/developer-webhook-delivery.service";
 import { assertMerchantKybApprovedForLive } from "@/features/kyc/kyc.service";
+import { recordFailedProtocolCharge } from "@/features/settlements/cctp.service";
 import { createSettlement } from "@/features/settlements/settlement.service";
 import { getTreasuryByMerchantId } from "@/features/treasury/treasury.service";
 import type {
@@ -40,6 +41,9 @@ function toChargeResponse(document: {
   feeAmount: number;
   status: string;
   failureCode?: string | null;
+  protocolChargeId?: string | null;
+  protocolSyncStatus?: string | null;
+  protocolTxHash?: string | null;
   processedAt: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -56,6 +60,11 @@ function toChargeResponse(document: {
     feeAmount: document.feeAmount,
     status: document.status,
     failureCode: document.failureCode ?? null,
+    onchain: {
+      id: document.protocolChargeId ?? null,
+      status: document.protocolSyncStatus ?? "not_synced",
+      txHash: document.protocolTxHash ?? null,
+    },
     processedAt: document.processedAt,
     createdAt: document.createdAt,
     updatedAt: document.updatedAt,
@@ -94,6 +103,16 @@ function toNullableString(value: unknown) {
 
   const normalized = value.trim();
   return normalized.length > 0 ? normalized : null;
+}
+
+function toProtocolFailureCode(value: string) {
+  const normalized = value
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+
+  return (normalized || "COLLECTION_FAILED").slice(0, 32);
 }
 
 async function ensureChargeScope(
@@ -158,6 +177,9 @@ export async function createCharge(input: CreateChargeInput) {
     feeAmount: input.feeAmount,
     status: input.status,
     failureCode: input.failureCode ?? null,
+    protocolChargeId: null,
+    protocolSyncStatus: "not_synced",
+    protocolTxHash: null,
     processedAt: input.processedAt ?? new Date(),
   });
 
@@ -241,6 +263,13 @@ export async function updateCharge(
 
   if (input.failureCode !== undefined) {
     charge.failureCode = input.failureCode ?? null;
+  }
+
+  if (input.status === "settled") {
+    charge.protocolSyncStatus =
+      charge.protocolSyncStatus === "not_synced"
+        ? "settlement_credited"
+        : charge.protocolSyncStatus;
   }
 
   if (input.processedAt !== undefined) {
@@ -341,6 +370,33 @@ export async function runSubscriptionChargeJob(input: { subscriptionId: string }
 
   if (plan.status !== "active") {
     throw new HttpError(409, "Plan is not active.");
+  }
+
+  if (!plan.protocolPlanId || plan.protocolSyncStatus !== "synced") {
+    return {
+      skipped: true,
+      reason: "Plan is waiting for on-chain activation.",
+      subscriptionId: subscription._id.toString(),
+    };
+  }
+
+  if (plan.billingMode === "metered") {
+    throw new HttpError(
+      409,
+      "Metered subscriptions require usage units before a charge can be executed."
+    );
+  }
+
+  if (
+    !subscription.protocolSubscriptionId ||
+    subscription.protocolSyncStatus !== "synced" ||
+    subscription.status === "pending_activation"
+  ) {
+    return {
+      skipped: true,
+      reason: "Subscription is waiting for on-chain activation.",
+      subscriptionId: subscription._id.toString(),
+    };
   }
 
   if (subscription.status === "paused" || subscription.status === "cancelled") {
@@ -470,6 +526,12 @@ export async function runSubscriptionChargeJob(input: { subscriptionId: string }
       feeAmount,
       status: "failed",
       failureCode: "collection_failed",
+      protocolChargeId: null,
+      protocolSyncStatus:
+        subscription.protocolSubscriptionId && subscription.protocolSyncStatus === "synced"
+          ? "pending_failure_record"
+          : "blocked_subscription_sync",
+      protocolTxHash: null,
       processedAt: now,
     });
 
@@ -478,6 +540,29 @@ export async function runSubscriptionChargeJob(input: { subscriptionId: string }
       now.getTime() + plan.retryWindowHours * 60 * 60 * 1000
     );
     await subscription.save();
+
+    if (
+      subscription.protocolSubscriptionId &&
+      subscription.protocolSyncStatus === "synced"
+    ) {
+      const protocolFailure = await recordFailedProtocolCharge({
+        environment,
+        protocolSubscriptionId: subscription.protocolSubscriptionId,
+        externalChargeId,
+        failureCode: toProtocolFailureCode("collection_failed"),
+      }).catch(() => null);
+
+      if (protocolFailure) {
+        failedCharge.protocolChargeId = protocolFailure.protocolChargeId;
+        failedCharge.protocolSyncStatus = "failed_recorded";
+        failedCharge.protocolTxHash = protocolFailure.txHash;
+        await failedCharge.save();
+      } else {
+        failedCharge.protocolSyncStatus = "protocol_error";
+        await failedCharge.save();
+      }
+    }
+
     await emitChargeWebhookEventForStatusChange({
       previousStatus: null,
       chargeId: failedCharge._id.toString(),
@@ -503,11 +588,14 @@ export async function runSubscriptionChargeJob(input: { subscriptionId: string }
     localAmount,
     fxRate,
     usdcAmount,
-    feeAmount,
-    status: "pending",
-    failureCode: null,
-    processedAt: now,
-  });
+      feeAmount,
+      status: "pending",
+      failureCode: null,
+      protocolChargeId: null,
+      protocolSyncStatus: "pending_execution",
+      protocolTxHash: null,
+      processedAt: now,
+    });
 
   const settlement = await createSettlement({
     merchantId: merchant._id.toString(),

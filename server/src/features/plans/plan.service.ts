@@ -2,6 +2,7 @@ import { HttpError } from "@/shared/errors/http-error";
 
 import { MerchantModel } from "@/features/merchants/merchant.model";
 import { PlanModel } from "@/features/plans/plan.model";
+import { queuePlanProtocolSync } from "@/features/treasury/treasury.service";
 import type {
   CreatePlanInput,
   ListPlansQuery,
@@ -23,6 +24,11 @@ function toPlanResponse(document: {
   billingMode: string;
   supportedMarkets: string[];
   status: string;
+  pendingStatus?: string | null;
+  protocolPlanId?: string | null;
+  protocolOperationId?: { toString(): string } | null;
+  protocolSyncStatus?: string | null;
+  protocolTxHash?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }) {
@@ -39,6 +45,13 @@ function toPlanResponse(document: {
     billingMode: document.billingMode,
     supportedMarkets: document.supportedMarkets,
     status: document.status,
+    pendingStatus: document.pendingStatus ?? null,
+    onchain: {
+      id: document.protocolPlanId ?? null,
+      status: document.protocolSyncStatus ?? "not_synced",
+      operationId: document.protocolOperationId?.toString() ?? null,
+      txHash: document.protocolTxHash ?? null,
+    },
     createdAt: document.createdAt,
     updatedAt: document.updatedAt,
   };
@@ -70,7 +83,65 @@ async function ensurePlanScope(
   return plan;
 }
 
-export async function createPlan(input: CreatePlanInput) {
+function toRuntimeMode(value: string): RuntimeMode {
+  return value === "live" ? "live" : "test";
+}
+
+function resolvePlanCreateState(inputStatus: CreatePlanInput["status"]) {
+  if (inputStatus === "active") {
+    return {
+      status: "draft",
+      pendingStatus: "active",
+      shouldQueueProtocolCreate: true,
+      protocolSyncStatus: "pending_activation",
+    } as const;
+  }
+
+  return {
+    status: inputStatus,
+    pendingStatus: null,
+    shouldQueueProtocolCreate: false,
+    protocolSyncStatus: "not_synced",
+  } as const;
+}
+
+function resolvePlanUpdateState(input: {
+  currentStatus: string;
+  currentPendingStatus?: string | null;
+  nextStatus?: string;
+}) {
+  if (input.nextStatus === undefined) {
+    return {
+      status: input.currentStatus,
+      pendingStatus: input.currentPendingStatus ?? null,
+      shouldQueueProtocolSync: input.currentStatus === "active",
+    } as const;
+  }
+
+  if (input.nextStatus === "active" && input.currentStatus !== "active") {
+    return {
+      status: input.currentStatus === "archived" ? "archived" : "draft",
+      pendingStatus: "active",
+      shouldQueueProtocolSync: true,
+    } as const;
+  }
+
+  if (input.nextStatus === "archived" && input.currentStatus === "active") {
+    return {
+      status: "active",
+      pendingStatus: "archived",
+      shouldQueueProtocolSync: true,
+    } as const;
+  }
+
+  return {
+    status: input.nextStatus,
+    pendingStatus: null,
+    shouldQueueProtocolSync: input.nextStatus === "active",
+  } as const;
+}
+
+export async function createPlan(input: CreatePlanInput, actor = "system") {
   const merchant = await MerchantModel.findById(input.merchantId).exec();
 
   if (!merchant) {
@@ -88,6 +159,7 @@ export async function createPlan(input: CreatePlanInput) {
     );
   }
 
+  const requestedState = resolvePlanCreateState(input.status);
   const createdPlan = await PlanModel.create({
     merchantId: input.merchantId,
     environment: input.environment,
@@ -100,10 +172,35 @@ export async function createPlan(input: CreatePlanInput) {
     retryWindowHours: input.retryWindowHours,
     billingMode: input.billingMode,
     supportedMarkets: input.supportedMarkets,
-    status: input.status,
+    status: requestedState.status,
+    pendingStatus: requestedState.pendingStatus,
+    protocolSyncStatus: requestedState.protocolSyncStatus,
   });
 
-  return toPlanResponse(createdPlan);
+  if (requestedState.shouldQueueProtocolCreate) {
+    const activationOperation = await queuePlanProtocolSync({
+      merchantId: input.merchantId,
+      actor,
+      environment: input.environment,
+      planId: createdPlan._id.toString(),
+    });
+
+    if (!activationOperation) {
+      await PlanModel.findByIdAndDelete(createdPlan._id).exec();
+      throw new HttpError(
+        409,
+        "Plan activation could not be queued for treasury approval."
+      );
+    }
+  }
+
+  const refreshedPlan = await ensurePlanScope(
+    createdPlan._id.toString(),
+    input.merchantId,
+    input.environment
+  );
+
+  return toPlanResponse(refreshedPlan);
 }
 
 export async function listPlans(query: ListPlansQuery) {
@@ -158,10 +255,27 @@ export async function updatePlan(
   planId: string,
   input: UpdatePlanInput,
   merchantId?: string,
-  environment?: RuntimeMode
+  environment?: RuntimeMode,
+  actor = "system"
 ) {
   const plan = await ensurePlanScope(planId, merchantId, environment);
   const merchant = await MerchantModel.findById(plan.merchantId).exec();
+  const previousSnapshot = {
+    planCode: plan.planCode,
+    name: plan.name,
+    usdAmount: plan.usdAmount,
+    usageRate: plan.usageRate ?? null,
+    billingIntervalDays: plan.billingIntervalDays,
+    trialDays: plan.trialDays,
+    retryWindowHours: plan.retryWindowHours,
+    billingMode: plan.billingMode,
+    supportedMarkets: [...plan.supportedMarkets],
+    status: plan.status,
+    pendingStatus: plan.pendingStatus ?? null,
+    protocolOperationId: plan.protocolOperationId ?? null,
+    protocolSyncStatus: plan.protocolSyncStatus ?? null,
+    protocolTxHash: plan.protocolTxHash ?? null,
+  };
 
   if (!merchant) {
     throw new HttpError(404, "Merchant was not found.");
@@ -205,10 +319,60 @@ export async function updatePlan(
     plan.supportedMarkets = input.supportedMarkets;
   }
   if (input.status !== undefined) {
-    plan.status = input.status;
+    const requestedState = resolvePlanUpdateState({
+      currentStatus: plan.status,
+      currentPendingStatus: plan.pendingStatus ?? null,
+      nextStatus: input.status,
+    });
+    plan.status = requestedState.status;
+    plan.pendingStatus = requestedState.pendingStatus;
   }
 
   await plan.save();
+  const runtimeEnvironment = environment ?? toRuntimeMode(plan.environment);
+  const shouldQueueProtocolSync =
+    plan.status === "active" || plan.pendingStatus === "active" || plan.pendingStatus === "archived";
 
-  return toPlanResponse(plan);
+  try {
+    if (shouldQueueProtocolSync) {
+      const syncOperation = await queuePlanProtocolSync({
+        merchantId: plan.merchantId.toString(),
+        actor,
+        environment: runtimeEnvironment,
+        planId: plan._id.toString(),
+      });
+
+      if (!syncOperation) {
+        throw new HttpError(
+          409,
+          "Plan protocol sync could not be queued for treasury approval."
+        );
+      }
+    }
+  } catch (error) {
+    plan.planCode = previousSnapshot.planCode;
+    plan.name = previousSnapshot.name;
+    plan.usdAmount = previousSnapshot.usdAmount;
+    plan.usageRate = previousSnapshot.usageRate;
+    plan.billingIntervalDays = previousSnapshot.billingIntervalDays;
+    plan.trialDays = previousSnapshot.trialDays;
+    plan.retryWindowHours = previousSnapshot.retryWindowHours;
+    plan.billingMode = previousSnapshot.billingMode;
+    plan.supportedMarkets = previousSnapshot.supportedMarkets;
+    plan.status = previousSnapshot.status;
+    plan.pendingStatus = previousSnapshot.pendingStatus;
+    plan.protocolOperationId = previousSnapshot.protocolOperationId;
+    plan.protocolSyncStatus = previousSnapshot.protocolSyncStatus;
+    plan.protocolTxHash = previousSnapshot.protocolTxHash;
+    await plan.save();
+    throw error;
+  }
+
+  const refreshedPlan = await ensurePlanScope(
+    plan._id.toString(),
+    plan.merchantId.toString(),
+    runtimeEnvironment
+  );
+
+  return toPlanResponse(refreshedPlan);
 }

@@ -9,9 +9,11 @@ import { ChargeModel } from "@/features/charges/charge.model";
 import { emitChargeWebhookEventForStatusChange } from "@/features/developers/developer-webhook-delivery.service";
 import { assertMerchantKybApprovedForLive } from "@/features/kyc/kyc.service";
 import { MerchantModel } from "@/features/merchants/merchant.model";
+import { PlanModel } from "@/features/plans/plan.model";
 import { SettingModel } from "@/features/settings/setting.model";
 import { bridgeSettlementToAvalanche } from "@/features/settlements/cctp.service";
 import { SettlementModel } from "@/features/settlements/settlement.model";
+import { SubscriptionModel } from "@/features/subscriptions/subscription.model";
 import {
   approveTreasuryOperation,
   createSettlementSweepOperation,
@@ -58,6 +60,9 @@ function toSettlementResponse(document: {
   bridgeSourceTxHash?: string | null;
   bridgeReceiveTxHash?: string | null;
   creditTxHash?: string | null;
+  protocolExecutionKind?: string | null;
+  protocolAmountUsdc?: number | null;
+  protocolChargeId?: string | null;
   submittedAt?: Date | null;
   bridgeAttestedAt?: Date | null;
   scheduledFor: Date;
@@ -81,6 +86,12 @@ function toSettlementResponse(document: {
     bridgeSourceTxHash: document.bridgeSourceTxHash ?? null,
     bridgeReceiveTxHash: document.bridgeReceiveTxHash ?? null,
     creditTxHash: document.creditTxHash ?? null,
+    onchain: {
+      id: document.protocolChargeId ?? null,
+      executionKind: document.protocolExecutionKind ?? null,
+      amountUsdc: document.protocolAmountUsdc ?? null,
+      txHash: document.creditTxHash ?? null,
+    },
     submittedAt: document.submittedAt ?? null,
     bridgeAttestedAt: document.bridgeAttestedAt ?? null,
     scheduledFor: document.scheduledFor,
@@ -275,6 +286,12 @@ export async function createSettlement(input: CreateSettlementInput) {
     destinationWallet: input.destinationWallet.toLowerCase(),
     status: input.status,
     txHash: input.txHash ?? null,
+    bridgeSourceTxHash: input.bridgeSourceTxHash ?? null,
+    bridgeReceiveTxHash: input.bridgeReceiveTxHash ?? null,
+    creditTxHash: input.creditTxHash ?? null,
+    protocolExecutionKind: input.protocolExecutionKind ?? null,
+    protocolAmountUsdc: input.protocolAmountUsdc ?? null,
+    protocolChargeId: input.protocolChargeId ?? null,
     submittedAt: input.submittedAt ?? null,
     scheduledFor: input.scheduledFor,
     settledAt: input.settledAt ?? null,
@@ -377,6 +394,18 @@ export async function updateSettlement(
 
   if (input.creditTxHash !== undefined) {
     settlement.creditTxHash = input.creditTxHash ?? null;
+  }
+
+  if (input.protocolExecutionKind !== undefined) {
+    settlement.protocolExecutionKind = input.protocolExecutionKind ?? null;
+  }
+
+  if (input.protocolAmountUsdc !== undefined) {
+    settlement.protocolAmountUsdc = input.protocolAmountUsdc ?? null;
+  }
+
+  if (input.protocolChargeId !== undefined) {
+    settlement.protocolChargeId = input.protocolChargeId ?? null;
   }
 
   if (input.submittedAt !== undefined) {
@@ -795,19 +824,60 @@ export async function runSettlementBridgeJob(input: { settlementId: string }) {
     );
   }
 
+  const subscription = await SubscriptionModel.findById(sourceCharge.subscriptionId).exec();
+  const plan = subscription ? await PlanModel.findById(subscription.planId).exec() : null;
+
+  if (!subscription || !plan) {
+    throw new HttpError(
+      409,
+      "Settlement charge is missing its activated subscription context."
+    );
+  }
+
+  if (
+    subscription.status !== "active" ||
+    !subscription.protocolSubscriptionId ||
+    subscription.protocolSyncStatus !== "synced"
+  ) {
+    throw new HttpError(
+      409,
+      "Subscription must be active on-chain before settlement execution."
+    );
+  }
+
+  if (plan.billingMode !== "fixed") {
+    throw new HttpError(
+      409,
+      "Metered subscriptions require usage units before settlement execution."
+    );
+  }
+
+  const protocolAmountUsdc = sourceCharge.usdcAmount;
   const bridgeResult = await bridgeSettlementToAvalanche({
-    merchantAddress: treasurySafeAddress,
+    mode: "subscription_charge",
     externalChargeId: sourceCharge.externalChargeId,
-    netUsdc: settlement.netUsdc,
+    protocolSubscriptionId: subscription.protocolSubscriptionId,
+    localAmount: sourceCharge.localAmount,
+    fxRate: sourceCharge.fxRate,
+    usageUnits: 0,
+    usdcAmount: sourceCharge.usdcAmount,
   });
 
   settlement.status = "confirming";
   settlement.bridgeSourceTxHash = bridgeResult.bridgeSourceTxHash;
   settlement.bridgeReceiveTxHash = bridgeResult.bridgeReceiveTxHash;
   settlement.creditTxHash = bridgeResult.creditTxHash;
+  settlement.protocolExecutionKind = bridgeResult.protocolExecutionKind;
+  settlement.protocolAmountUsdc = protocolAmountUsdc;
+  settlement.protocolChargeId = bridgeResult.protocolChargeId ?? null;
   settlement.bridgeAttestedAt = bridgeResult.attestedAt;
   settlement.submittedAt = settlement.submittedAt ?? new Date();
   await settlement.save();
+
+  sourceCharge.protocolChargeId = bridgeResult.protocolChargeId ?? null;
+  sourceCharge.protocolTxHash = bridgeResult.creditTxHash;
+  sourceCharge.protocolSyncStatus = "executed";
+  await sourceCharge.save();
 
   await syncLinkedChargeFromSettlement(settlement);
 

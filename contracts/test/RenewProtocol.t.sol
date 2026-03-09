@@ -67,6 +67,122 @@ contract RenewProtocolTest {
         assert(subscription.maxRetryCountSnapshot == 3);
     }
 
+    function testAuthorizedSubscriptionOperatorCanCreateSubscriptionForMerchant() public {
+        vm.prank(MERCHANT);
+        uint256 planId = protocol.createPlan(
+            bytes32("OP_PLAN"),
+            5_000e6,
+            30 days,
+            0,
+            2 days,
+            3,
+            RenewProtocol.BillingMode.Fixed,
+            0
+        );
+
+        vm.prank(MERCHANT);
+        protocol.setSubscriptionOperator(OPERATOR, true);
+
+        vm.prank(OPERATOR);
+        uint256 subscriptionId = protocol.createSubscriptionForMerchant(
+            MERCHANT,
+            planId,
+            bytes32("cust_op"),
+            bytes32("NGN"),
+            uint64(block.timestamp),
+            5_400e6,
+            bytes32("mandate_operator")
+        );
+
+        RenewProtocol.Subscription memory subscription = protocol.getSubscription(subscriptionId);
+
+        assert(subscription.merchant == MERCHANT);
+        assert(subscription.planId == planId);
+        assert(subscription.status == RenewProtocol.SubscriptionStatus.Active);
+    }
+
+    function testRejectsUnauthorizedSubscriptionOperator() public {
+        vm.prank(MERCHANT);
+        uint256 planId = protocol.createPlan(
+            bytes32("OP_LOCK"),
+            5_000e6,
+            30 days,
+            0,
+            2 days,
+            3,
+            RenewProtocol.BillingMode.Fixed,
+            0
+        );
+
+        vm.prank(OPERATOR);
+        (bool success,) = address(protocol).call(
+            abi.encodeWithSelector(
+                RenewProtocol.createSubscriptionForMerchant.selector,
+                MERCHANT,
+                planId,
+                bytes32("cust_fail"),
+                bytes32("NGN"),
+                uint64(block.timestamp),
+                uint128(5_400e6),
+                bytes32("mandate_fail")
+            )
+        );
+
+        assert(!success);
+    }
+
+    function testAuthorizedSubscriptionOperatorCanManageLifecycle() public {
+        vm.prank(MERCHANT);
+        uint256 planId = protocol.createPlan(
+            bytes32("OP_LIFE"),
+            5_000e6,
+            30 days,
+            0,
+            2 days,
+            3,
+            RenewProtocol.BillingMode.Fixed,
+            0
+        );
+
+        vm.prank(MERCHANT);
+        uint256 subscriptionId = protocol.createSubscription(
+            planId,
+            bytes32("cust_life"),
+            bytes32("NGN"),
+            uint64(block.timestamp),
+            5_200e6,
+            bytes32("mandate_initial")
+        );
+
+        vm.prank(MERCHANT);
+        protocol.setSubscriptionOperator(OPERATOR, true);
+
+        vm.prank(OPERATOR);
+        protocol.pauseSubscription(subscriptionId);
+
+        RenewProtocol.Subscription memory subscription = protocol.getSubscription(subscriptionId);
+        assert(subscription.status == RenewProtocol.SubscriptionStatus.Paused);
+
+        vm.prank(OPERATOR);
+        protocol.updateSubscriptionMandateHash(subscriptionId, bytes32("mandate_next"));
+
+        subscription = protocol.getSubscription(subscriptionId);
+        assert(subscription.mandateHash == bytes32("mandate_next"));
+
+        vm.prank(OPERATOR);
+        protocol.resumeSubscription(subscriptionId, uint64(block.timestamp + 10 days));
+
+        subscription = protocol.getSubscription(subscriptionId);
+        assert(subscription.status == RenewProtocol.SubscriptionStatus.Active);
+        assert(subscription.nextChargeAt == uint64(block.timestamp + 10 days));
+
+        vm.prank(OPERATOR);
+        protocol.cancelSubscription(subscriptionId);
+
+        subscription = protocol.getSubscription(subscriptionId);
+        assert(subscription.status == RenewProtocol.SubscriptionStatus.Cancelled);
+    }
+
     function testExecutesFixedChargeAndCreditsVault() public {
         vm.prank(MERCHANT);
         uint256 planId = protocol.createPlan(

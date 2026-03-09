@@ -90,6 +90,7 @@ contract RenewProtocol {
     error InvalidChargeAmount();
     error NotOwner();
     error NotChargeOperator();
+    error NotSubscriptionOperator();
     error MerchantAlreadyRegistered();
     error MerchantNotRegistered();
     error MerchantInactive();
@@ -107,6 +108,11 @@ contract RenewProtocol {
     error TransferFailed();
 
     event ChargeOperatorUpdated(address indexed operator, bool enabled);
+    event SubscriptionOperatorUpdated(
+        address indexed merchant,
+        address indexed operator,
+        bool enabled
+    );
     event MerchantRegistered(
         address indexed merchant,
         address indexed payoutWallet,
@@ -191,6 +197,7 @@ contract RenewProtocol {
     mapping(address => Merchant) private merchants;
     mapping(address => bool) private merchantExists;
     mapping(address => bool) public chargeOperators;
+    mapping(address => mapping(address => bool)) public subscriptionOperators;
 
     mapping(uint256 => Plan) private plans;
     mapping(uint256 => Subscription) private subscriptions;
@@ -211,6 +218,15 @@ contract RenewProtocol {
     modifier onlyRegisteredMerchant() {
         if (!merchantExists[msg.sender]) revert MerchantNotRegistered();
         if (!merchants[msg.sender].active) revert MerchantInactive();
+        _;
+    }
+
+    modifier onlyAuthorizedSubscriptionOperator(address merchant) {
+        if (!merchantExists[merchant]) revert MerchantNotRegistered();
+        if (!merchants[merchant].active) revert MerchantInactive();
+        if (msg.sender != merchant && !subscriptionOperators[merchant][msg.sender]) {
+            revert NotSubscriptionOperator();
+        }
         _;
     }
 
@@ -238,6 +254,14 @@ contract RenewProtocol {
         chargeOperators[operator] = enabled;
 
         emit ChargeOperatorUpdated(operator, enabled);
+    }
+
+    function setSubscriptionOperator(address operator, bool enabled) external onlyRegisteredMerchant {
+        if (operator == address(0)) revert InvalidAddress();
+
+        subscriptionOperators[msg.sender][operator] = enabled;
+
+        emit SubscriptionOperatorUpdated(msg.sender, operator, enabled);
     }
 
     function updateProtocolFee(uint16 feeBps) external onlyOwner {
@@ -415,10 +439,52 @@ contract RenewProtocol {
         uint128 localAmountSnapshot,
         bytes32 mandateHash
     ) external onlyRegisteredMerchant returns (uint256 subscriptionId) {
+        return
+            _createSubscription(
+                msg.sender,
+                planId,
+                customerRef,
+                billingCurrency,
+                firstChargeAt,
+                localAmountSnapshot,
+                mandateHash
+            );
+    }
+
+    function createSubscriptionForMerchant(
+        address merchant,
+        uint256 planId,
+        bytes32 customerRef,
+        bytes32 billingCurrency,
+        uint64 firstChargeAt,
+        uint128 localAmountSnapshot,
+        bytes32 mandateHash
+    ) external onlyAuthorizedSubscriptionOperator(merchant) returns (uint256 subscriptionId) {
+        return
+            _createSubscription(
+                merchant,
+                planId,
+                customerRef,
+                billingCurrency,
+                firstChargeAt,
+                localAmountSnapshot,
+                mandateHash
+            );
+    }
+
+    function _createSubscription(
+        address merchant,
+        uint256 planId,
+        bytes32 customerRef,
+        bytes32 billingCurrency,
+        uint64 firstChargeAt,
+        uint128 localAmountSnapshot,
+        bytes32 mandateHash
+    ) private returns (uint256 subscriptionId) {
         Plan storage plan = plans[planId];
 
         if (plan.merchant == address(0)) revert PlanNotFound();
-        if (plan.merchant != msg.sender) revert PlanOwnershipMismatch();
+        if (plan.merchant != merchant) revert PlanOwnershipMismatch();
         if (!plan.active) revert InvalidInput();
         if (customerRef == bytes32(0) || billingCurrency == bytes32(0) || mandateHash == bytes32(0)) {
             revert InvalidInput();
@@ -431,7 +497,7 @@ contract RenewProtocol {
 
         subscriptionId = nextSubscriptionId++;
         subscriptions[subscriptionId] = Subscription({
-            merchant: msg.sender,
+            merchant: merchant,
             planId: planId,
             customerRef: customerRef,
             billingCurrency: billingCurrency,
@@ -453,7 +519,7 @@ contract RenewProtocol {
 
         emit SubscriptionCreated(
             subscriptionId,
-            msg.sender,
+            merchant,
             planId,
             customerRef,
             scheduleStart,
@@ -464,21 +530,22 @@ contract RenewProtocol {
     function updateSubscriptionMandateHash(
         uint256 subscriptionId,
         bytes32 mandateHash
-    ) external onlyRegisteredMerchant {
+    ) external {
         if (mandateHash == bytes32(0)) revert InvalidInput();
 
-        Subscription storage subscription = _getMerchantSubscription(subscriptionId, msg.sender);
+        Subscription storage subscription = _getAuthorizedSubscription(subscriptionId);
         subscription.mandateHash = mandateHash;
 
         emit SubscriptionMandateUpdated(subscriptionId, mandateHash);
     }
 
-    function pauseSubscription(uint256 subscriptionId) external onlyRegisteredMerchant {
-        _setSubscriptionStatus(subscriptionId, SubscriptionStatus.Paused);
+    function pauseSubscription(uint256 subscriptionId) external {
+        Subscription storage subscription = _getAuthorizedSubscription(subscriptionId);
+        _setSubscriptionStatus(subscription, subscriptionId, SubscriptionStatus.Paused);
     }
 
-    function resumeSubscription(uint256 subscriptionId, uint64 nextChargeAt) external onlyRegisteredMerchant {
-        Subscription storage subscription = _getMerchantSubscription(subscriptionId, msg.sender);
+    function resumeSubscription(uint256 subscriptionId, uint64 nextChargeAt) external {
+        Subscription storage subscription = _getAuthorizedSubscription(subscriptionId);
 
         if (subscription.status == SubscriptionStatus.Cancelled) revert InvalidInput();
 
@@ -490,8 +557,9 @@ contract RenewProtocol {
         emit SubscriptionStatusUpdated(subscriptionId, SubscriptionStatus.Active);
     }
 
-    function cancelSubscription(uint256 subscriptionId) external onlyRegisteredMerchant {
-        _setSubscriptionStatus(subscriptionId, SubscriptionStatus.Cancelled);
+    function cancelSubscription(uint256 subscriptionId) external {
+        Subscription storage subscription = _getAuthorizedSubscription(subscriptionId);
+        _setSubscriptionStatus(subscription, subscriptionId, SubscriptionStatus.Cancelled);
     }
 
     function executeCharge(
@@ -712,9 +780,11 @@ contract RenewProtocol {
         return charge;
     }
 
-    function _setSubscriptionStatus(uint256 subscriptionId, SubscriptionStatus status) private {
-        Subscription storage subscription = _getMerchantSubscription(subscriptionId, msg.sender);
-
+    function _setSubscriptionStatus(
+        Subscription storage subscription,
+        uint256 subscriptionId,
+        SubscriptionStatus status
+    ) private {
         subscription.status = status;
         if (status != SubscriptionStatus.Active) {
             subscription.retryAvailableAt = 0;
@@ -722,6 +792,21 @@ contract RenewProtocol {
         }
 
         emit SubscriptionStatusUpdated(subscriptionId, status);
+    }
+
+    function _getAuthorizedSubscription(
+        uint256 subscriptionId
+    ) private view returns (Subscription storage subscription) {
+        subscription = subscriptions[subscriptionId];
+        if (subscription.merchant == address(0)) revert SubscriptionNotFound();
+        if (!merchantExists[subscription.merchant]) revert MerchantNotRegistered();
+        if (!merchants[subscription.merchant].active) revert MerchantInactive();
+        if (
+            msg.sender != subscription.merchant &&
+            !subscriptionOperators[subscription.merchant][msg.sender]
+        ) {
+            revert NotSubscriptionOperator();
+        }
     }
 
     function _getMerchantSubscription(

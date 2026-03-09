@@ -27,6 +27,7 @@ const encodeContractCall = encodeFunctionData as (input: unknown) => Hex;
 
 const renewProtocolAdminAbi = parseAbi([
   "function registerMerchant(address payoutWallet,address reserveWallet,bytes32 metadataHash)",
+  "function subscriptionOperators(address merchant,address operator) view returns (bool)",
 ]);
 
 const erc20Abi = parseAbi([
@@ -65,6 +66,93 @@ type SubscriptionChargeResult = {
   settlementStatus: string;
 };
 
+async function approveAndExecuteTreasuryOperation(input: {
+  token: string;
+  operationId: string;
+  ownerPrivateKey: Hex;
+}) {
+  const ownerAccount = privateKeyToAccount(input.ownerPrivateKey);
+  const signingPayloadResponse = await apiRequest<{
+    operation: { id: string; safeTxHash: string; safeNonce: number };
+    signingPayload: {
+      safeAddress: string;
+      safeTxHash: string;
+      safeNonce: number;
+      typedData: {
+        domain: Record<string, unknown>;
+        types: Record<string, Array<{ name: string; type: string }>>;
+        primaryType: string;
+        message: Record<string, unknown>;
+      };
+    };
+  }>(`/v1/treasury/operations/${input.operationId}/signing-payload`, {
+    method: "GET",
+    token: input.token,
+  });
+
+  const typedData = signingPayloadResponse.data.signingPayload.typedData;
+  const signTypedData = ownerAccount.signTypedData as (
+    payload: unknown
+  ) => Promise<Hex>;
+  const treasurySignature = await signTypedData({
+    domain: typedData.domain as never,
+    types: typedData.types as never,
+    primaryType: typedData.primaryType as never,
+    message: typedData.message as never,
+  });
+
+  const approved = await apiRequest<{
+    id: string;
+    status: string;
+    approvedCount: number;
+    threshold: number;
+    safeTxHash: string | null;
+  }>(`/v1/treasury/operations/${input.operationId}/approve`, {
+    method: "POST",
+    token: input.token,
+    body: {
+      signature: treasurySignature,
+    },
+  });
+
+  const executed = await apiRequest<{
+    id: string;
+    status: string;
+    txHash: string | null;
+  }>(`/v1/treasury/operations/${input.operationId}/execute`, {
+    method: "POST",
+    token: input.token,
+    body: {},
+  });
+
+  return {
+    approved: approved.data,
+    executed: executed.data,
+  };
+}
+
+async function getLatestTreasuryOperationByKind(input: {
+  token: string;
+  merchantId: string;
+  kind: string;
+}) {
+  const treasury = await apiRequest<{
+    operations: Array<{
+      id: string;
+      kind: string;
+      status: string;
+      createdAt: string;
+    }>;
+  }>(`/v1/treasury/${input.merchantId}?environment=test`, {
+    method: "GET",
+    token: input.token,
+  });
+
+  return (
+    treasury.data.operations.find((operation) => operation.kind === input.kind) ?? null
+  );
+}
+
 function generateEphemeralPrivateKey(): Hex {
   return `0x${randomBytes(32).toString("hex")}` as Hex;
 }
@@ -75,7 +163,7 @@ function getBaseUrl() {
 }
 
 function getE2EPlanUsdAmount() {
-  const raw = process.env.E2E_PLAN_USD_AMOUNT?.trim() || "25";
+  const raw = process.env.E2E_PLAN_USD_AMOUNT?.trim() || "1";
   const amount = Number(raw);
 
   if (!Number.isFinite(amount) || amount <= 0) {
@@ -265,14 +353,33 @@ async function waitForSettledState(input: {
 
   for (let attempt = 0; attempt < 10; attempt += 1) {
     const [settlement, charge] = await Promise.all([
-      apiRequest<{ id: string; status: string; txHash: string | null }>(
+      apiRequest<{
+        id: string;
+        status: string;
+        txHash: string | null;
+        onchain?: {
+          id: string | null;
+          executionKind: string | null;
+          amountUsdc: number | null;
+          txHash: string | null;
+        };
+      }>(
         `/v1/settlements/${input.settlementId}?environment=test`,
         {
           method: "GET",
           token: input.token,
         }
       ),
-      apiRequest<{ id: string; status: string; failureCode: string | null }>(
+      apiRequest<{
+        id: string;
+        status: string;
+        failureCode: string | null;
+        onchain?: {
+          id: string | null;
+          status: string;
+          txHash: string | null;
+        };
+      }>(
         `/v1/charges/${input.chargeId}?environment=test`,
         {
           method: "GET",
@@ -668,7 +775,18 @@ async function main() {
   }
 
   console.log("7. Creating a sandbox plan.");
-  const plan = await apiRequest<{ id: string; name: string }>("/v1/plans", {
+  const plan = await apiRequest<{
+    id: string;
+    name: string;
+    status: string;
+    pendingStatus: string | null;
+    onchain: {
+      id: string | null;
+      operationId: string | null;
+      status: string;
+      txHash: string | null;
+    };
+  }>("/v1/plans", {
     method: "POST",
     token,
     body: {
@@ -685,6 +803,85 @@ async function main() {
       status: "active",
     },
   });
+
+  if (!plan.data.onchain.operationId) {
+    throw new Error("Plan activation did not create a treasury operation.");
+  }
+
+  const operatorAuthorization = await getLatestTreasuryOperationByKind({
+    token,
+    merchantId: seeded.merchantId,
+    kind: "subscription_operator_authorize",
+  });
+
+  if (
+    operatorAuthorization &&
+    (operatorAuthorization.status === "pending_signatures" ||
+      operatorAuthorization.status === "approved")
+  ) {
+  console.log("7b. Approving the one-time subscription operator authorization.");
+    const executedOperatorAuthorization = await approveAndExecuteTreasuryOperation({
+      token,
+      operationId: operatorAuthorization.id,
+      ownerPrivateKey: seeded.ownerPrivateKey,
+    });
+
+    if (executedOperatorAuthorization.executed.status !== "executed") {
+      throw new Error("Subscription operator authorization did not execute successfully.");
+    }
+
+    const protocolClient = createPublicClient({
+      transport: http(getTestRpcUrl()),
+    });
+    const operatorAuthorized = await protocolClient.readContract({
+      address: getProtocolAddress(),
+      abi: renewProtocolAdminAbi,
+      functionName: "subscriptionOperators",
+      args: [
+        treasury.data.safeAddress as Address,
+        privateKeyToAccount(getExecutorPrivateKey()).address,
+      ],
+    });
+
+    if (!operatorAuthorized) {
+      throw new Error("Subscription operator authorization did not persist on-chain.");
+    }
+  }
+
+  console.log("7c. Approving and executing the plan activation.");
+  const executedPlanOperation = await approveAndExecuteTreasuryOperation({
+    token,
+    operationId: plan.data.onchain.operationId,
+    ownerPrivateKey: seeded.ownerPrivateKey,
+  });
+
+  if (executedPlanOperation.executed.status !== "executed") {
+    throw new Error("Plan activation did not execute successfully.");
+  }
+
+  const activatedPlan = await apiRequest<{
+    id: string;
+    status: string;
+    pendingStatus: string | null;
+    onchain: {
+      id: string | null;
+      operationId: string | null;
+      status: string;
+      txHash: string | null;
+    };
+  }>(`/v1/plans/${plan.data.id}?environment=test`, {
+    method: "GET",
+    token,
+  });
+
+  if (
+    activatedPlan.data.status !== "active" ||
+    activatedPlan.data.onchain.status !== "synced" ||
+    !activatedPlan.data.onchain.id ||
+    !activatedPlan.data.onchain.txHash
+  ) {
+    throw new Error("Plan was not activated on-chain.");
+  }
 
   console.log("8. Creating a sandbox server key and checkout session.");
   const developerKey = await apiRequest<{
@@ -778,7 +975,18 @@ async function main() {
     },
   });
 
-  const subscription = await apiRequest<{ id: string; customerRef: string }>(
+  const subscription = await apiRequest<{
+    id: string;
+    customerRef: string;
+    status: string;
+    pendingStatus: string | null;
+    onchain: {
+      id: string | null;
+      operationId: string | null;
+      status: string;
+      txHash: string | null;
+    };
+  }>(
     "/v1/subscriptions",
     {
       method: "POST",
@@ -799,6 +1007,15 @@ async function main() {
       },
     }
   );
+
+  if (
+    subscription.data.status !== "active" ||
+    subscription.data.onchain.status !== "synced" ||
+    !subscription.data.onchain.id ||
+    !subscription.data.onchain.txHash
+  ) {
+    throw new Error("Subscription was not created directly on-chain.");
+  }
 
   console.log("10. Running the subscription charge flow.");
   const queuedCharge = await apiRequest<{
@@ -866,59 +1083,15 @@ async function main() {
   });
 
   console.log("13. Signing and approving the treasury operation.");
-  const signingPayloadResponse = await apiRequest<{
-    operation: { id: string; safeTxHash: string; safeNonce: number };
-    signingPayload: {
-      safeAddress: string;
-      safeTxHash: string;
-      safeNonce: number;
-      typedData: {
-        domain: Record<string, unknown>;
-        types: Record<string, Array<{ name: string; type: string }>>;
-        primaryType: string;
-        message: Record<string, unknown>;
-      };
-    };
-  }>(`/v1/treasury/operations/${requestedSweep.data.id}/signing-payload`, {
-    method: "GET",
+  const sweepExecution = await approveAndExecuteTreasuryOperation({
     token,
+    operationId: requestedSweep.data.id,
+    ownerPrivateKey: seeded.ownerPrivateKey,
   });
-
-  const typedData = signingPayloadResponse.data.signingPayload.typedData;
-  const signTypedData = ownerAccount.signTypedData as (
-    payload: unknown
-  ) => Promise<Hex>;
-  const treasurySignature = await signTypedData({
-    domain: typedData.domain as never,
-    types: typedData.types as never,
-    primaryType: typedData.primaryType as never,
-    message: typedData.message as never,
-  });
-
-  const approvedOperation = await apiRequest<{
-    id: string;
-    status: string;
-    approvedCount: number;
-    threshold: number;
-    safeTxHash: string | null;
-  }>(`/v1/treasury/operations/${requestedSweep.data.id}/approve`, {
-    method: "POST",
-    token,
-    body: {
-      signature: treasurySignature,
-    },
-  });
+  const approvedOperation = { data: sweepExecution.approved };
 
   console.log("14. Executing the treasury operation.");
-  const executedOperation = await apiRequest<{
-    id: string;
-    status: string;
-    txHash: string | null;
-  }>(`/v1/treasury/operations/${requestedSweep.data.id}/execute`, {
-    method: "POST",
-    token,
-    body: {},
-  });
+  const executedOperation = { data: sweepExecution.executed };
 
   console.log("15. Asserting final API state.");
   const finalCharge = await apiRequest<{ id: string; status: string; failureCode: string | null }>(
@@ -983,6 +1156,12 @@ async function main() {
     bridgeSourceTxHash: string | null;
     bridgeReceiveTxHash: string | null;
     creditTxHash: string | null;
+    onchain?: {
+      id: string | null;
+      executionKind: string | null;
+      amountUsdc: number | null;
+      txHash: string | null;
+    };
   }>(`/v1/settlements/${chargeResult.settlementId}?environment=test`, {
     method: "GET",
     token,
@@ -996,7 +1175,11 @@ async function main() {
         teamMemberId: seeded.teamMemberId,
         safeAddress: finalTreasury.data.account.safeAddress,
         planId: plan.data.id,
+        protocolPlanId: activatedPlan.data.onchain.id,
+        planTxHash: activatedPlan.data.onchain.txHash,
         subscriptionId: subscription.data.id,
+        protocolSubscriptionId: subscription.data.onchain.id,
+        subscriptionTxHash: subscription.data.onchain.txHash,
         chargeId: chargeResult.chargeId,
         settlementId: chargeResult.settlementId,
         treasuryOperationId: requestedSweep.data.id,
@@ -1004,6 +1187,11 @@ async function main() {
         bridgeSourceTxHash: finalSettlement.data.bridgeSourceTxHash,
         bridgeReceiveTxHash: finalSettlement.data.bridgeReceiveTxHash,
         creditTxHash: finalSettlement.data.creditTxHash,
+        protocolChargeId: settledState.charge.onchain?.id ?? finalSettlement.data.onchain?.id ?? null,
+        protocolChargeTxHash:
+          settledState.charge.onchain?.txHash ?? finalSettlement.data.onchain?.txHash ?? null,
+        protocolChargeStatus: settledState.charge.onchain?.status ?? null,
+        protocolExecutionKind: finalSettlement.data.onchain?.executionKind ?? null,
         chargeStatus: settledState.charge.status,
         settlementStatus: settledState.settlement.status,
       },

@@ -14,7 +14,7 @@ export const createSubscriptionSchema = z.object({
   paymentAccountNumber: z.string().trim().min(6).max(24).nullable().optional(),
   paymentNetworkId: z.string().trim().min(2).max(120).nullable().optional(),
   status: z
-    .enum(["active", "paused", "cancelled", "past_due"])
+    .enum(["pending_activation", "active", "paused", "cancelled", "past_due"])
     .default("active"),
   nextChargeAt: z.coerce.date(),
 });
@@ -23,12 +23,16 @@ export const listSubscriptionsQuerySchema = z.object({
   merchantId: z.string().trim().min(1).optional(),
   environment: environmentInputSchema.optional(),
   planId: z.string().trim().min(1).optional(),
-  status: z.enum(["active", "paused", "cancelled", "past_due"]).optional(),
+  status: z
+    .enum(["pending_activation", "active", "paused", "cancelled", "past_due"])
+    .optional(),
   search: z.string().trim().min(1).optional(),
 });
 
 export const updateSubscriptionSchema = z.object({
-  status: z.enum(["active", "paused", "cancelled", "past_due"]).optional(),
+  status: z
+    .enum(["pending_activation", "active", "paused", "cancelled", "past_due"])
+    .optional(),
   nextChargeAt: z.coerce.date().optional(),
   retryAvailableAt: z.coerce.date().nullable().optional(),
   lastChargeAt: z.coerce.date().nullable().optional(),

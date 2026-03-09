@@ -5,7 +5,13 @@ import { useEffect, useMemo, useState } from "react";
 import { useWorkspaceMode } from "@/components/dashboard/mode-provider";
 import { MarketMultiSelect } from "@/components/dashboard/market-controls";
 import { useDashboardSession } from "@/components/dashboard/session-provider";
-import { StatusBadge, formatCurrency, toErrorMessage } from "@/components/dashboard/surface-utils";
+import {
+  StatusBadge,
+  formatCurrency,
+  formatTxHash,
+  getAvalancheTxUrl,
+  toErrorMessage,
+} from "@/components/dashboard/surface-utils";
 import { useAuthedResource } from "@/components/dashboard/use-authed-resource";
 import {
   Button,
@@ -40,13 +46,45 @@ export function PlansSurface() {
     name: "",
     usdAmount: "",
     usageRate: "",
+    intervalPreset: "monthly" as string,
     billingIntervalDays: "",
     trialDays: "",
+    retryPreset: "24" as string,
     retryWindowHours: "",
     billingMode: "fixed" as PlanRecord["billingMode"],
     supportedMarkets: [] as string[],
     status: "draft" as PlanRecord["status"],
   });
+
+  const BILLING_INTERVALS: Record<string, { label: string; days: number }> = {
+    weekly: { label: "Weekly", days: 7 },
+    monthly: { label: "Monthly", days: 30 },
+    quarterly: { label: "Quarterly", days: 90 },
+    annually: { label: "Annually", days: 365 },
+    custom: { label: "Custom", days: 0 },
+  };
+
+  const RETRY_WINDOWS: Record<string, { label: string; hours: number }> = {
+    "12": { label: "12 hours", hours: 12 },
+    "24": { label: "24 hours", hours: 24 },
+    "48": { label: "48 hours", hours: 48 },
+    "72": { label: "72 hours", hours: 72 },
+    custom: { label: "Custom", hours: 0 },
+  };
+
+  function resolvedIntervalDays(): number {
+    if (draft.intervalPreset === "custom") {
+      return Number.parseInt(draft.billingIntervalDays, 10) || 0;
+    }
+    return BILLING_INTERVALS[draft.intervalPreset]?.days ?? 30;
+  }
+
+  function resolvedRetryHours(): number {
+    if (draft.retryPreset === "custom") {
+      return Number.parseInt(draft.retryWindowHours, 10) || 24;
+    }
+    return RETRY_WINDOWS[draft.retryPreset]?.hours ?? 24;
+  }
 
   const { data, isLoading, error, reload } = useAuthedResource(
     async ({ token, merchantId }) =>
@@ -140,11 +178,9 @@ export function PlansSurface() {
         name: draft.name.trim(),
         usdAmount: Number(draft.usdAmount),
         usageRate: draft.usageRate.trim() ? Number(draft.usageRate) : null,
-        billingIntervalDays: Number(draft.billingIntervalDays),
+        billingIntervalDays: resolvedIntervalDays(),
         trialDays: draft.trialDays.trim() ? Number(draft.trialDays) : 0,
-        retryWindowHours: draft.retryWindowHours.trim()
-          ? Number(draft.retryWindowHours)
-          : 24,
+        retryWindowHours: resolvedRetryHours(),
         billingMode: draft.billingMode,
         supportedMarkets: draft.supportedMarkets,
         status: draft.status,
@@ -155,8 +191,10 @@ export function PlansSurface() {
         name: "",
         usdAmount: "",
         usageRate: "",
+        intervalPreset: "monthly",
         billingIntervalDays: "",
         trialDays: "",
+        retryPreset: "24",
         retryWindowHours: "",
         billingMode: "fixed",
         supportedMarkets: [],
@@ -235,51 +273,160 @@ export function PlansSurface() {
             </div>
 
             {showCreate ? (
-              <div className="grid gap-3 rounded-2xl border border-[color:var(--line)] bg-[#f7faf6] p-4 md:grid-cols-2">
-                <Input placeholder="Plan code" value={draft.planCode} onChange={(event) => setDraft((current) => ({ ...current, planCode: event.target.value }))} />
-                <Input placeholder="Plan name" value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} />
-                <Input placeholder="USD amount" value={draft.usdAmount} onChange={(event) => setDraft((current) => ({ ...current, usdAmount: event.target.value }))} />
-                <Select value={draft.billingMode} onChange={(event) => setDraft((current) => ({ ...current, billingMode: event.target.value as PlanRecord["billingMode"] }))}>
-                  <option value="fixed">Fixed</option>
-                  <option value="metered">Metered</option>
-                </Select>
-                <Input placeholder="Billing interval (days)" value={draft.billingIntervalDays} onChange={(event) => setDraft((current) => ({ ...current, billingIntervalDays: event.target.value }))} />
-                <Input placeholder="Usage rate (optional)" value={draft.usageRate} onChange={(event) => setDraft((current) => ({ ...current, usageRate: event.target.value }))} />
-                <Input placeholder="Trial days (defaults to 0)" value={draft.trialDays} onChange={(event) => setDraft((current) => ({ ...current, trialDays: event.target.value }))} />
-                <Input placeholder="Retry window (hours, defaults to 24)" value={draft.retryWindowHours} onChange={(event) => setDraft((current) => ({ ...current, retryWindowHours: event.target.value }))} />
-                <div className="space-y-3 md:col-span-2">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--muted)]">
-                    Billing currencies
-                  </p>
-                  <MarketMultiSelect
-                    options={merchantMarketOptions}
-                    value={draft.supportedMarkets}
-                    onChange={(supportedMarkets) =>
-                      setDraft((current) => ({ ...current, supportedMarkets }))
-                    }
-                    allLabel="All merchant markets"
-                  />
-                </div>
-                <Select value={draft.status} onChange={(event) => setDraft((current) => ({ ...current, status: event.target.value as PlanRecord["status"] }))}>
-                  <option value="draft">Draft</option>
-                  <option value="active">Active</option>
-                  <option value="archived">Archived</option>
-                </Select>
-                <div className="md:col-span-2">
-                  <Button
-                    tone="brand"
-                    disabled={
-                      isBusy === "create-plan" ||
-                      !draft.planCode.trim() ||
-                      !draft.name.trim() ||
-                      !draft.usdAmount.trim() ||
-                      !draft.billingIntervalDays.trim() ||
-                      draft.supportedMarkets.length === 0
-                    }
-                    onClick={() => void handleCreate()}
-                  >
-                    {isBusy === "create-plan" ? "Saving..." : "Save plan"}
-                  </Button>
+              <div className="space-y-5 rounded-2xl border border-[color:var(--line)] bg-[#f7faf6] p-5">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--muted)]">
+                  New plan
+                </p>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold text-[color:var(--muted)]">Plan name</label>
+                    <Input placeholder="e.g. Pro Monthly" value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold text-[color:var(--muted)]">
+                      Plan ID
+                      <span className="ml-1.5 font-normal normal-case tracking-normal text-[color:var(--muted)]/70">
+                        — short API reference code
+                      </span>
+                    </label>
+                    <Input
+                      placeholder="e.g. PRO_NGN_M"
+                      value={draft.planCode}
+                      onChange={(event) =>
+                        setDraft((current) => ({ ...current, planCode: event.target.value.toUpperCase() }))
+                      }
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold text-[color:var(--muted)]">Price (USD)</label>
+                    <Input placeholder="e.g. 9.99" value={draft.usdAmount} onChange={(event) => setDraft((current) => ({ ...current, usdAmount: event.target.value }))} />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold text-[color:var(--muted)]">Billing mode</label>
+                    <Select value={draft.billingMode} onChange={(event) => setDraft((current) => ({ ...current, billingMode: event.target.value as PlanRecord["billingMode"] }))}>
+                      <option value="fixed">Fixed — same charge every cycle</option>
+                      <option value="metered">Metered — charges based on usage</option>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-1.5 md:col-span-2">
+                    <label className="block text-xs font-semibold text-[color:var(--muted)]">
+                      Billing interval
+                      {draft.intervalPreset !== "custom" && (
+                        <span className="ml-1.5 font-normal normal-case tracking-normal text-[color:var(--muted)]/70">
+                          — {BILLING_INTERVALS[draft.intervalPreset]?.days ?? 0} days
+                        </span>
+                      )}
+                    </label>
+                    <div className="flex gap-2">
+                      <Select
+                        value={draft.intervalPreset}
+                        onChange={(event) =>
+                          setDraft((current) => ({
+                            ...current,
+                            intervalPreset: event.target.value,
+                            billingIntervalDays: "",
+                          }))
+                        }
+                      >
+                        {Object.entries(BILLING_INTERVALS).map(([key, { label }]) => (
+                          <option key={key} value={key}>{label}</option>
+                        ))}
+                      </Select>
+                      {draft.intervalPreset === "custom" ? (
+                        <Input
+                          placeholder="Days"
+                          value={draft.billingIntervalDays}
+                          onChange={(event) =>
+                            setDraft((current) => ({ ...current, billingIntervalDays: event.target.value }))
+                          }
+                        />
+                      ) : null}
+                    </div>
+                  </div>
+
+                  {draft.billingMode === "metered" ? (
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-semibold text-[color:var(--muted)]">Usage rate (per unit)</label>
+                      <Input placeholder="e.g. 0.05" value={draft.usageRate} onChange={(event) => setDraft((current) => ({ ...current, usageRate: event.target.value }))} />
+                    </div>
+                  ) : null}
+
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold text-[color:var(--muted)]">Trial period</label>
+                    <Input placeholder="Days (0 = no trial)" value={draft.trialDays} onChange={(event) => setDraft((current) => ({ ...current, trialDays: event.target.value }))} />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold text-[color:var(--muted)]">Retry window</label>
+                    <div className="flex gap-2">
+                      <Select
+                        value={draft.retryPreset}
+                        onChange={(event) =>
+                          setDraft((current) => ({
+                            ...current,
+                            retryPreset: event.target.value,
+                            retryWindowHours: "",
+                          }))
+                        }
+                      >
+                        {Object.entries(RETRY_WINDOWS).map(([key, { label }]) => (
+                          <option key={key} value={key}>{label}</option>
+                        ))}
+                      </Select>
+                      {draft.retryPreset === "custom" ? (
+                        <Input
+                          placeholder="Hours"
+                          value={draft.retryWindowHours}
+                          onChange={(event) =>
+                            setDraft((current) => ({ ...current, retryWindowHours: event.target.value }))
+                          }
+                        />
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5 md:col-span-2">
+                    <label className="block text-xs font-semibold text-[color:var(--muted)]">Billing markets</label>
+                    <MarketMultiSelect
+                      options={merchantMarketOptions}
+                      value={draft.supportedMarkets}
+                      onChange={(supportedMarkets) =>
+                        setDraft((current) => ({ ...current, supportedMarkets }))
+                      }
+                      allLabel="All merchant markets"
+                      placeholder="Select billing markets"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold text-[color:var(--muted)]">Initial status</label>
+                    <Select value={draft.status} onChange={(event) => setDraft((current) => ({ ...current, status: event.target.value as PlanRecord["status"] }))}>
+                      <option value="draft">Draft — not yet live</option>
+                      <option value="active">Active — open for checkout</option>
+                    </Select>
+                  </div>
+
+                  <div className="flex items-end md:col-span-2">
+                    <Button
+                      tone="brand"
+                      disabled={
+                        isBusy === "create-plan" ||
+                        !draft.planCode.trim() ||
+                        !draft.name.trim() ||
+                        !draft.usdAmount.trim() ||
+                        (draft.intervalPreset === "custom" && !draft.billingIntervalDays.trim()) ||
+                        draft.supportedMarkets.length === 0
+                      }
+                      onClick={() => void handleCreate()}
+                    >
+                      {isBusy === "create-plan" ? "Saving..." : "Save plan"}
+                    </Button>
+                  </div>
                 </div>
               </div>
             ) : null}
@@ -289,15 +436,24 @@ export function PlansSurface() {
 
             <Table columns={["Plan", "Mode", "Price", "Markets", "Status"]}>
               {plans.map((plan) => (
-                <button key={plan.id} type="button" className="text-left" onClick={() => setSelectedId(plan.id)}>
-                  <TableRow columns={5}>
+                <button key={plan.id} type="button" className="text-left outline-none" onClick={() => setSelectedId(plan.id)}>
+                  <TableRow columns={5} selected={selectedPlan?.id === plan.id}>
                     <div>
                       <p className="text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)]">{plan.name}</p>
                       <p className="mt-1 text-sm text-[color:var(--muted)]">{plan.planCode}</p>
                     </div>
                     <p className="text-sm text-[color:var(--muted)]">{plan.billingMode}</p>
                     <p className="text-sm text-[color:var(--muted)]">{formatCurrency(plan.usdAmount, "USD")}</p>
-                    <p className="text-sm text-[color:var(--muted)]">{plan.supportedMarkets.join(", ")}</p>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-sm text-[color:var(--muted)]">
+                        {plan.supportedMarkets.slice(0, 2).join(", ")}
+                      </span>
+                      {plan.supportedMarkets.length > 2 ? (
+                        <span className="inline-flex items-center rounded-full bg-[#e8f0e4] px-1.5 py-0.5 text-[11px] font-semibold text-[color:var(--brand)]">
+                          +{plan.supportedMarkets.length - 2}
+                        </span>
+                      ) : null}
+                    </div>
                     <div><StatusBadge value={plan.status} /></div>
                   </TableRow>
                 </button>
@@ -311,6 +467,18 @@ export function PlansSurface() {
           description={
             selectedPlan?.planCode ?? "Select a plan to inspect current billing rules."
           }
+          action={
+            selectedPlan?.onchain.txHash ? (
+              <a
+                href={getAvalancheTxUrl(mode, selectedPlan.onchain.txHash)}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center justify-center rounded-2xl border border-white/12 bg-white/6 px-4 py-3 text-sm font-semibold tracking-[-0.02em] text-white transition-colors hover:bg-white/10"
+              >
+                View tx ↗
+              </a>
+            ) : null
+          }
         >
           {selectedPlan ? (
             <div className="space-y-4">
@@ -318,6 +486,10 @@ export function PlansSurface() {
                 <DarkField
                   label="USD price"
                   value={formatCurrency(selectedPlan.usdAmount, "USD")}
+                />
+                <DarkField
+                  label="Status"
+                  value={<StatusBadge value={selectedPlan.status} />}
                 />
                 <DarkField label="Mode" value={selectedPlan.billingMode} />
                 <DarkField
@@ -330,36 +502,62 @@ export function PlansSurface() {
                   value={`${selectedPlan.retryWindowHours} hours`}
                 />
                 <DarkField
+                  label="Onchain status"
+                  value={<StatusBadge value={selectedPlan.onchain.status} />}
+                />
+                <DarkField
+                  label="Protocol plan"
+                  value={selectedPlan.onchain.id ?? "Pending"}
+                />
+                <DarkField
                   label="Markets"
-                  value={selectedPlan.supportedMarkets.join(", ")}
+                  value={
+                    <div className="flex flex-wrap gap-1 pt-0.5">
+                      {selectedPlan.supportedMarkets.map((m) => (
+                        <span
+                          key={m}
+                          className="inline-flex items-center rounded-lg border border-white/12 bg-white/8 px-2 py-0.5 text-xs font-semibold text-white/80"
+                        >
+                          {m}
+                        </span>
+                      ))}
+                    </div>
+                  }
+                />
+                <DarkField
+                  label="Latest tx"
+                  value={
+                    selectedPlan.onchain.txHash ? (
+                      <a
+                        href={getAvalancheTxUrl(mode, selectedPlan.onchain.txHash)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-white underline decoration-white/35 underline-offset-4 transition-colors hover:text-[#d9f6bc]"
+                      >
+                        {formatTxHash(selectedPlan.onchain.txHash)}
+                      </a>
+                    ) : (
+                      "Waiting for execution"
+                    )
+                  }
                 />
               </div>
 
-              <div className="flex flex-wrap gap-3">
-                <Button
-                  tone={selectedPlan.status === "active" ? "darkNeutral" : "darkBrand"}
+              <div className="grid gap-3 md:grid-cols-2">
+                <Select
+                  value={selectedPlan.status}
                   disabled={isBusy === "update-plan"}
-                  onClick={() =>
+                  className="border-white/12 bg-white/6 text-white focus:border-[#d9f6bc]"
+                  onChange={(event) =>
                     void handleStatusChange(
-                      selectedPlan.status === "active" ? "archived" : "active"
+                      event.target.value as PlanRecord["status"]
                     )
                   }
                 >
-                  {isBusy === "update-plan"
-                    ? "Saving..."
-                    : selectedPlan.status === "active"
-                      ? "Archive plan"
-                      : "Activate plan"}
-                </Button>
-                {selectedPlan.status !== "draft" ? null : (
-                  <Button
-                    tone="darkNeutral"
-                    disabled={isBusy === "update-plan"}
-                    onClick={() => void handleStatusChange("draft")}
-                  >
-                    Keep draft
-                  </Button>
-                )}
+                  <option value="draft">Draft</option>
+                  <option value="active">Active</option>
+                  <option value="archived">Archived</option>
+                </Select>
               </div>
             </div>
           ) : (

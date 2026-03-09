@@ -61,6 +61,22 @@ const chargeSchema = new Schema(
       trim: true,
       default: null,
     },
+    protocolChargeId: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    protocolSyncStatus: {
+      type: String,
+      trim: true,
+      default: "not_synced",
+    },
+    protocolTxHash: {
+      type: String,
+      trim: true,
+      lowercase: true,
+      default: null,
+    },
     processedAt: {
       type: Date,
       required: true,

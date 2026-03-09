@@ -7,8 +7,11 @@ import { emitChargeWebhookEventForStatusChange } from "@/features/developers/dev
 import { PaymentRailEventModel } from "@/features/payment-rails/payment-rail-event.model";
 import { ChannelModel } from "@/features/payment-rails/channel.model";
 import { NetworkModel } from "@/features/payment-rails/network.model";
+import { PlanModel } from "@/features/plans/plan.model";
+import { recordFailedProtocolCharge } from "@/features/settlements/cctp.service";
 import { SettlementModel } from "@/features/settlements/settlement.model";
 import { queueSettlementBridge } from "@/features/settlements/settlement.service";
+import { SubscriptionModel } from "@/features/subscriptions/subscription.model";
 import type {
   CreateWidgetQuoteInput,
   ListChannelsQuery,
@@ -32,6 +35,16 @@ function toSafeNumber(value: unknown, fallback = 0) {
   const numeric = Number(value);
 
   return Number.isFinite(numeric) ? numeric : fallback;
+}
+
+function toProtocolFailureCode(value: string) {
+  const normalized = value
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+
+  return (normalized || "COLLECTION_FAILED").slice(0, 32);
 }
 
 async function ensureSandboxPaymentRailsSeeded(environment: RuntimeMode) {
@@ -838,6 +851,41 @@ export async function processYellowCardWebhook(
       linkedSettlement.status = "failed";
       linkedSettlement.settledAt = null;
       await linkedSettlement.save();
+    }
+
+    const subscription = await SubscriptionModel.findById(charge.subscriptionId).exec();
+    const plan = subscription ? await PlanModel.findById(subscription.planId).exec() : null;
+
+    if (subscription && plan) {
+      subscription.status = "past_due";
+      subscription.retryAvailableAt = new Date(
+        now.getTime() + plan.retryWindowHours * 60 * 60 * 1000
+      );
+      await subscription.save();
+
+      if (
+        subscription.protocolSubscriptionId &&
+        subscription.protocolSyncStatus === "synced" &&
+        !charge.protocolTxHash &&
+        charge.protocolSyncStatus !== "failed_recorded" &&
+        charge.protocolSyncStatus !== "executed" &&
+        charge.protocolSyncStatus !== "settlement_credited"
+      ) {
+        const protocolFailure = await recordFailedProtocolCharge({
+          environment,
+          protocolSubscriptionId: subscription.protocolSubscriptionId,
+          externalChargeId: charge.externalChargeId,
+          failureCode: toProtocolFailureCode(state),
+        }).catch(() => null);
+
+        if (protocolFailure) {
+          charge.protocolChargeId = protocolFailure.protocolChargeId;
+          charge.protocolSyncStatus = "failed_recorded";
+          charge.protocolTxHash = protocolFailure.txHash;
+        } else {
+          charge.protocolSyncStatus = "protocol_error";
+        }
+      }
     }
   } else if (
     state.includes("complete") ||

@@ -1,7 +1,7 @@
 "use client";
 
 import { fetchApi } from "@/lib/api";
-import { loadPlans, type PlanRecord } from "@/lib/plans";
+import { loadPlans, type OnchainRecord, type PlanRecord } from "@/lib/plans";
 
 export type SubscriptionRecord = {
   id: string;
@@ -14,10 +14,12 @@ export type SubscriptionRecord = {
   paymentAccountType: "bank" | "momo";
   paymentAccountNumber: string | null;
   paymentNetworkId: string | null;
-  status: "active" | "paused" | "cancelled" | "past_due";
+  status: "pending_activation" | "active" | "paused" | "cancelled" | "past_due";
+  pendingStatus?: "active" | "paused" | "cancelled" | "past_due" | null;
   nextChargeAt: string;
   lastChargeAt: string | null;
   retryAvailableAt: string | null;
+  onchain: OnchainRecord;
   createdAt: string;
   updatedAt: string;
 };

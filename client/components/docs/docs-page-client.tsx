@@ -76,6 +76,7 @@ function matchesSearch(page: DocsPage, query: string) {
       section.title,
       ...section.paragraphs,
       ...(section.bullets ?? []),
+      ...(section.steps ?? []),
       ...(section.note ? [section.note] : []),
       ...(section.references?.flatMap((reference) => [
         reference.label,
@@ -112,6 +113,25 @@ function buildSidebarGroups(pages: DocsPage[], query: string) {
   })) satisfies SidebarGroup[];
 }
 
+function renderInlineCode(text: string) {
+  const parts = text.split(/(`[^`]+`)/g).filter(Boolean);
+
+  return parts.map((part, index) => {
+    if (part.startsWith("`") && part.endsWith("`") && part.length > 2) {
+      return (
+        <code
+          key={`${part}-${index}`}
+          className="rounded-md border border-black/8 bg-black/[0.045] px-1.5 py-0.5 font-mono text-[0.92em] text-[color:var(--ink)]"
+        >
+          {part.slice(1, -1)}
+        </code>
+      );
+    }
+
+    return <span key={`${part}-${index}`}>{part}</span>;
+  });
+}
+
 function ReferenceCard({ reference }: { reference: DocsReference }) {
   return (
     <div className="rounded-[1.25rem] border border-black/6 bg-white/82 p-4">
@@ -130,7 +150,7 @@ function ReferenceCard({ reference }: { reference: DocsReference }) {
             {reference.value}
           </p>
           <p className="mt-1 text-sm leading-6 text-[color:var(--muted)]">
-            {reference.detail}
+            {renderInlineCode(reference.detail)}
           </p>
         </div>
       </div>
@@ -146,6 +166,9 @@ export function DocsPageClient() {
   const [searchQuery, setSearchQuery] = useState("");
   const [copiedPage, setCopiedPage] = useState(false);
   const [activeSectionId, setActiveSectionId] = useState("");
+  const [expandedStepSections, setExpandedStepSections] = useState<
+    Record<string, boolean>
+  >({});
 
   const requestedPage = getDocsPage(searchParams.get("page"));
   const requestedCategory = searchParams.get("category");
@@ -298,6 +321,13 @@ export function DocsPageClient() {
     } catch {
       setCopiedPage(false);
     }
+  }
+
+  function toggleSectionSteps(sectionId: string) {
+    setExpandedStepSections((current) => ({
+      ...current,
+      [sectionId]: !current[sectionId],
+    }));
   }
 
   function handleSearchSubmit() {
@@ -507,11 +537,19 @@ export function DocsPageClient() {
 
             <div className="mt-8 space-y-10">
               {selectedPage.sections.map((section) => (
-                <section
-                  key={section.id}
-                  id={section.id}
-                  className="scroll-mt-40"
-                >
+                <section key={section.id} id={section.id} className="scroll-mt-40">
+                  {(() => {
+                    const stepCount = section.steps?.length ?? 0;
+                    const collapsedStepCount = Math.ceil(stepCount / 2);
+                    const isExpanded = expandedStepSections[section.id] ?? false;
+                    const canToggleSteps = stepCount > collapsedStepCount;
+                    const visibleSteps =
+                      section.steps && canToggleSteps && !isExpanded
+                        ? section.steps.slice(0, collapsedStepCount)
+                        : section.steps;
+
+                    return (
+                      <>
                   <h2 className="text-[1.85rem] font-semibold leading-[1.02] tracking-[-0.05em] text-[color:var(--ink)] sm:text-[2.2rem]">
                     {section.title}
                   </h2>
@@ -522,7 +560,7 @@ export function DocsPageClient() {
                         key={`${section.id}-${paragraph}`}
                         className="max-w-3xl text-sm leading-7 text-[color:var(--muted)] sm:text-[15px]"
                       >
-                        {paragraph}
+                        {renderInlineCode(paragraph)}
                       </p>
                     ))}
                   </div>
@@ -536,17 +574,47 @@ export function DocsPageClient() {
                         >
                           <span className="mt-2 h-2.5 w-2.5 shrink-0 rounded-full bg-[#0c4a27]" />
                           <span className="text-sm leading-6 text-[color:var(--ink)]">
-                            {bullet}
+                            {renderInlineCode(bullet)}
                           </span>
                         </li>
                       ))}
                     </ul>
                   ) : null}
 
+                  {visibleSteps?.length ? (
+                    <ol className="mt-5 space-y-3">
+                      {visibleSteps.map((step, index) => (
+                        <li
+                          key={`${section.id}-${step}`}
+                          className="flex items-start gap-4 rounded-[1.1rem] border border-black/6 bg-white/76 px-4 py-3"
+                        >
+                          <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#0c4a27] text-xs font-semibold text-white">
+                            {index + 1}
+                          </span>
+                          <span className="pt-0.5 text-sm leading-6 text-[color:var(--ink)]">
+                            {renderInlineCode(step)}
+                          </span>
+                        </li>
+                      ))}
+                    </ol>
+                  ) : null}
+
+                  {canToggleSteps ? (
+                    <div className="mt-4">
+                      <button
+                        type="button"
+                        onClick={() => toggleSectionSteps(section.id)}
+                        className="inline-flex items-center rounded-full border border-black/8 bg-white/88 px-4 py-2 text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)] transition-colors hover:bg-white"
+                      >
+                        {isExpanded ? "Show less" : "View all"}
+                      </button>
+                    </div>
+                  ) : null}
+
                   {section.note ? (
                     <div className="mt-5 rounded-[1.2rem] border border-[#0c4a27]/10 bg-[#0c4a27]/8 px-4 py-3">
                       <p className="text-sm leading-6 text-[color:var(--ink)]">
-                        {section.note}
+                        {renderInlineCode(section.note)}
                       </p>
                     </div>
                   ) : null}
@@ -565,17 +633,27 @@ export function DocsPageClient() {
                   {section.samples?.length ? (
                     <div className="mt-6 space-y-4">
                       {section.samples.map((sample) => (
-                        <CodeBlock
+                        <div
                           key={`${section.id}-${sample.label}-${sample.filename ?? "sample"}`}
-                          label={sample.label}
-                          language={sample.language}
-                          filename={sample.filename}
-                          code={sample.code}
-                        />
+                          className="space-y-2"
+                        >
+                          <p className="text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)]">
+                            {sample.label}
+                          </p>
+                          <CodeBlock
+                            label={sample.label}
+                            language={sample.language}
+                            filename={sample.filename}
+                            code={sample.code}
+                          />
+                        </div>
                       ))}
                     </div>
                   ) : section.sample ? (
-                    <div className="mt-6">
+                    <div className="mt-6 space-y-2">
+                      <p className="text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)]">
+                        {section.sample.label}
+                      </p>
                       <CodeBlock
                         label={section.sample.label}
                         language={section.sample.language}
@@ -584,6 +662,9 @@ export function DocsPageClient() {
                       />
                     </div>
                   ) : null}
+                      </>
+                    );
+                  })()}
                 </section>
               ))}
             </div>

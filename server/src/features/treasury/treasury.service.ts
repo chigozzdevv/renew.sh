@@ -7,11 +7,31 @@ import { getProtocolRuntimeConfig } from "@/config/protocol.config";
 import { getSafeConfig } from "@/config/safe.config";
 import { appendAuditLog } from "@/features/audit/audit.service";
 import { ChargeModel } from "@/features/charges/charge.model";
+import { CheckoutSessionModel } from "@/features/checkout/checkout-session.model";
 import { assertMerchantKybApprovedForLive } from "@/features/kyc/kyc.service";
 import { MerchantModel } from "@/features/merchants/merchant.model";
+import { PlanModel } from "@/features/plans/plan.model";
 import { SettingModel } from "@/features/settings/setting.model";
+import { SubscriptionModel } from "@/features/subscriptions/subscription.model";
 import { TeamMemberModel } from "@/features/teams/team.model";
 import { createSafeProvider } from "@/features/treasury/providers/safe/safe.factory";
+import {
+  cancelProtocolSubscription,
+  createProtocolSubscriptionForMerchant,
+  deriveProtocolMandateHash,
+  encodeMerchantRegisterCall,
+  encodePlanCreateCall,
+  encodePlanUpdateCall,
+  encodeSetSubscriptionOperatorCall,
+  pauseProtocolSubscription,
+  resumeProtocolSubscription,
+  extractPlanIdFromTransaction,
+  extractSubscriptionIdFromTransaction,
+  getRenewSubscriptionOperatorAddress,
+  isMerchantSubscriptionOperatorAuthorized,
+  isProtocolMerchantRegistered,
+  updateProtocolSubscriptionMandate,
+} from "@/features/treasury/protocol-sync";
 import {
   encodePayoutWalletChangeConfirmCall,
   encodePayoutWalletChangeRequestCall,
@@ -45,8 +65,155 @@ const renewProtocolReadAbi = parseAbi([
   "function protocolFeeBps() view returns (uint16)",
 ]);
 
+type SubscriptionChargeJobResult = Awaited<
+  ReturnType<typeof import("@/features/charges/charge.service").runSubscriptionChargeJob>
+>;
+
 function normalizeAddress(value: string) {
   return value.trim().toLowerCase();
+}
+
+function toNullableString(value: unknown) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
+async function syncCheckoutSessionWithChargeResult(input: {
+  checkoutSessionId: string;
+  billingCurrency: string;
+  chargeResult: SubscriptionChargeJobResult;
+}) {
+  const session = await CheckoutSessionModel.findById(input.checkoutSessionId).exec();
+
+  if (!session) {
+    return;
+  }
+
+  session.status =
+    "skipped" in input.chargeResult && input.chargeResult.skipped
+      ? "scheduled"
+      : "chargeId" in input.chargeResult && input.chargeResult.chargeId
+        ? "pending_payment"
+        : "scheduled";
+
+  if ("chargeId" in input.chargeResult && input.chargeResult.chargeId) {
+    const createdCharge = await ChargeModel.findById(input.chargeResult.chargeId)
+      .select({ usdcAmount: 1, feeAmount: 1, status: 1, localAmount: 1 })
+      .lean()
+      .exec();
+
+    session.chargeId = new Types.ObjectId(input.chargeResult.chargeId);
+    session.settlementId =
+      "settlementId" in input.chargeResult && input.chargeResult.settlementId
+        ? new Types.ObjectId(input.chargeResult.settlementId)
+        : null;
+    session.paymentSnapshot = {
+      externalChargeId:
+        "externalChargeId" in input.chargeResult
+          ? input.chargeResult.externalChargeId ?? null
+          : null,
+      billingCurrency: input.billingCurrency,
+      localAmount: createdCharge?.localAmount ?? null,
+      usdcAmount: createdCharge?.usdcAmount ?? null,
+      feeAmount: createdCharge?.feeAmount ?? null,
+      status:
+        createdCharge?.status ??
+        ("collectionStatus" in input.chargeResult
+          ? input.chargeResult.collectionStatus ?? "pending"
+          : "pending"),
+      collectionId:
+        "collection" in input.chargeResult
+          ? toNullableString(
+              (input.chargeResult.collection as Record<string, unknown>).id
+            )
+          : null,
+      collectionSequenceId:
+        "collection" in input.chargeResult
+          ? toNullableString(
+              (input.chargeResult.collection as Record<string, unknown>).sequenceId
+            )
+          : null,
+      collectionReference:
+        "collection" in input.chargeResult
+          ? toNullableString(
+              (input.chargeResult.collection as Record<string, unknown>).reference
+            )
+          : null,
+      depositId:
+        "collection" in input.chargeResult
+          ? toNullableString(
+              (input.chargeResult.collection as Record<string, unknown>).depositId
+            )
+          : null,
+      expiresAt:
+        "collection" in input.chargeResult &&
+        (input.chargeResult.collection as Record<string, unknown>).expiresAt
+          ? new Date(
+              (input.chargeResult.collection as Record<string, unknown>).expiresAt as string
+            )
+          : null,
+      bankInfo:
+        "collection" in input.chargeResult &&
+        typeof (input.chargeResult.collection as Record<string, unknown>).bankInfo ===
+          "object" &&
+        (input.chargeResult.collection as Record<string, unknown>).bankInfo !== null
+          ? {
+              name: toNullableString(
+                ((input.chargeResult.collection as Record<string, unknown>).bankInfo as Record<
+                  string,
+                  unknown
+                >).name
+              ),
+              accountNumber: toNullableString(
+                ((input.chargeResult.collection as Record<string, unknown>).bankInfo as Record<
+                  string,
+                  unknown
+                >).accountNumber
+              ),
+              accountName: toNullableString(
+                ((input.chargeResult.collection as Record<string, unknown>).bankInfo as Record<
+                  string,
+                  unknown
+                >).accountName
+              ),
+            }
+          : null,
+    };
+    session.failureReason = null;
+  }
+
+  await session.save();
+}
+
+function mapRetryPolicyToMaxRetryCount(input: {
+  autoRetries?: boolean | null;
+  retryPolicy?: string | null;
+}) {
+  if (!input.autoRetries) {
+    return 0;
+  }
+
+  switch ((input.retryPolicy ?? "").trim()) {
+    case "No automatic retries":
+      return 0;
+    case "2 retries over 3 days":
+      return 2;
+    default:
+      return 3;
+  }
+}
+
+async function getMerchantMaxRetryCount(merchantId: string) {
+  const setting = await SettingModel.findOne({ merchantId })
+    .select({ autoRetries: 1, retryPolicy: 1 })
+    .lean()
+    .exec();
+
+  return mapRetryPolicyToMaxRetryCount(setting ?? {});
 }
 
 async function getProtocolFeeBps(environment: RuntimeMode) {
@@ -495,6 +662,58 @@ async function findTreasurySignerBinding(input: {
   }).exec();
 }
 
+async function syncLinkedProtocolRecordState(input: {
+  operation: Awaited<ReturnType<typeof loadOperationWithTreasury>>["operation"];
+  status: string;
+  txHash?: string | null;
+}) {
+  const metadata = (input.operation.metadata ?? {}) as Record<string, unknown>;
+  const entityType = String(metadata.entityType ?? "").trim();
+
+  if (entityType === "plan") {
+    const planId = String(metadata.planId ?? "").trim();
+
+    if (!planId) {
+      return;
+    }
+
+    const plan = await PlanModel.findById(planId).exec();
+
+    if (!plan) {
+      return;
+    }
+
+    plan.protocolOperationId = input.operation._id;
+    plan.protocolSyncStatus = input.status;
+    if (input.txHash !== undefined) {
+      plan.protocolTxHash = input.txHash ?? null;
+    }
+    await plan.save();
+    return;
+  }
+
+  if (entityType === "subscription") {
+    const subscriptionId = String(metadata.subscriptionId ?? "").trim();
+
+    if (!subscriptionId) {
+      return;
+    }
+
+    const subscription = await SubscriptionModel.findById(subscriptionId).exec();
+
+    if (!subscription) {
+      return;
+    }
+
+    subscription.protocolOperationId = input.operation._id;
+    subscription.protocolSyncStatus = input.status;
+    if (input.txHash !== undefined) {
+      subscription.protocolTxHash = input.txHash ?? null;
+    }
+    await subscription.save();
+  }
+}
+
 async function applyExecutedOperationEffects(input: {
   operation: Awaited<ReturnType<typeof loadOperationWithTreasury>>["operation"];
   treasuryAccount: Awaited<ReturnType<typeof loadOperationWithTreasury>>["treasuryAccount"];
@@ -508,6 +727,208 @@ async function applyExecutedOperationEffects(input: {
       status: "settled",
       txHash: input.operation.txHash ?? null,
     });
+    return;
+  }
+
+  if (input.operation.kind === "merchant_register") {
+    await queueMerchantSubscriptionOperatorAuthorization({
+      merchantId,
+      actor: "system",
+      environment: toStoredRuntimeMode(input.treasuryAccount.environment),
+    }).catch(() => null);
+
+    const pendingPlans = await PlanModel.find({
+      merchantId,
+      ...createRuntimeModeCondition(
+        "environment",
+        toStoredRuntimeMode(input.treasuryAccount.environment)
+      ),
+      protocolPlanId: null,
+      $or: [{ status: "active" }, { pendingStatus: "active" }],
+    })
+      .select({ _id: 1 })
+      .lean()
+      .exec();
+
+    for (const plan of pendingPlans) {
+      await queuePlanProtocolSync({
+        merchantId,
+        actor: "system",
+        environment: toStoredRuntimeMode(input.treasuryAccount.environment),
+        planId: plan._id.toString(),
+      }).catch(() => null);
+    }
+    return;
+  }
+
+  if (input.operation.kind === "subscription_operator_authorize") {
+    const pendingSubscriptions = await SubscriptionModel.find({
+      merchantId,
+      ...createRuntimeModeCondition(
+        "environment",
+        toStoredRuntimeMode(input.treasuryAccount.environment)
+      ),
+      status: "pending_activation",
+      protocolSubscriptionId: null,
+    })
+      .select({ _id: 1 })
+      .lean()
+      .exec();
+
+    for (const subscription of pendingSubscriptions) {
+      await queueSubscriptionProtocolCreate({
+        merchantId,
+        actor: "system",
+        environment: toStoredRuntimeMode(input.treasuryAccount.environment),
+        subscriptionId: subscription._id.toString(),
+      }).catch(() => null);
+    }
+
+    return;
+  }
+
+  if (input.operation.kind === "plan_create") {
+    const planId = await extractPlanIdFromTransaction(
+      toStoredRuntimeMode(input.treasuryAccount.environment),
+      input.operation.txHash!
+    );
+    const metadata = (input.operation.metadata ?? {}) as Record<string, unknown>;
+    const localPlanId = String(metadata.planId ?? "").trim();
+
+    if (localPlanId) {
+      const plan = await PlanModel.findById(localPlanId).exec();
+
+      if (plan) {
+        plan.protocolPlanId = planId;
+        plan.protocolOperationId = input.operation._id;
+        plan.status = String(metadata.targetStatus ?? plan.pendingStatus ?? "active").trim() || "active";
+        plan.pendingStatus = null;
+        plan.protocolSyncStatus = "synced";
+        plan.protocolTxHash = input.operation.txHash ?? null;
+        await plan.save();
+
+        const subscriptions = await SubscriptionModel.find({
+          merchantId,
+          planId: plan._id,
+          ...createRuntimeModeCondition(
+            "environment",
+            toStoredRuntimeMode(input.treasuryAccount.environment)
+          ),
+          status: "pending_activation",
+          protocolSubscriptionId: null,
+        })
+          .select({ _id: 1 })
+          .lean()
+          .exec();
+
+        for (const subscription of subscriptions) {
+          await queueSubscriptionProtocolCreate({
+            merchantId,
+            actor: "system",
+            environment: toStoredRuntimeMode(input.treasuryAccount.environment),
+            subscriptionId: subscription._id.toString(),
+          }).catch(() => null);
+        }
+      }
+    }
+    return;
+  }
+
+  if (input.operation.kind === "plan_update") {
+    const localPlanId = String(metadata.planId ?? "").trim();
+
+    if (localPlanId) {
+      const plan = await PlanModel.findById(localPlanId).exec();
+
+      if (plan) {
+        plan.protocolOperationId = input.operation._id;
+        plan.protocolSyncStatus = "synced";
+        plan.protocolTxHash = input.operation.txHash ?? null;
+        const targetStatus = String(metadata.targetStatus ?? plan.pendingStatus ?? plan.status).trim();
+        if (targetStatus === "active" || targetStatus === "archived" || targetStatus === "draft") {
+          plan.status = targetStatus;
+        }
+        plan.pendingStatus = null;
+        await plan.save();
+      }
+    }
+    return;
+  }
+
+  if (input.operation.kind === "subscription_create") {
+    const protocolSubscriptionId = await extractSubscriptionIdFromTransaction(
+      toStoredRuntimeMode(input.treasuryAccount.environment),
+      input.operation.txHash!
+    );
+    const metadata = (input.operation.metadata ?? {}) as Record<string, unknown>;
+    const localSubscriptionId = String(metadata.subscriptionId ?? "").trim();
+
+    if (localSubscriptionId) {
+      const subscription = await SubscriptionModel.findById(localSubscriptionId).exec();
+
+      if (subscription) {
+        subscription.protocolSubscriptionId = protocolSubscriptionId;
+        subscription.protocolOperationId = input.operation._id;
+        subscription.status = "active";
+        subscription.pendingStatus = null;
+        subscription.protocolSyncStatus = "synced";
+        subscription.protocolTxHash = input.operation.txHash ?? null;
+        await subscription.save();
+
+        if (metadata.triggerInitialCharge === true) {
+          const { runSubscriptionChargeJob } = await import(
+            "@/features/charges/charge.service"
+          );
+          const chargeResult = await runSubscriptionChargeJob({
+            subscriptionId: subscription._id.toString(),
+          });
+          const checkoutSessionId = String(metadata.checkoutSessionId ?? "").trim();
+
+          if (checkoutSessionId) {
+            await syncCheckoutSessionWithChargeResult({
+              checkoutSessionId,
+              billingCurrency: subscription.billingCurrency,
+              chargeResult,
+            });
+          }
+        }
+      }
+    }
+    return;
+  }
+
+  if (
+    input.operation.kind === "subscription_pause" ||
+    input.operation.kind === "subscription_resume" ||
+    input.operation.kind === "subscription_cancel" ||
+    input.operation.kind === "subscription_mandate_update"
+  ) {
+    const localSubscriptionId = String(metadata.subscriptionId ?? "").trim();
+
+    if (localSubscriptionId) {
+      const subscription = await SubscriptionModel.findById(localSubscriptionId).exec();
+
+      if (subscription) {
+        subscription.protocolOperationId = input.operation._id;
+        subscription.protocolSyncStatus = "synced";
+        subscription.protocolTxHash = input.operation.txHash ?? null;
+
+        if (input.operation.kind === "subscription_pause") {
+          subscription.status = "paused";
+          subscription.pendingStatus = null;
+        } else if (input.operation.kind === "subscription_resume") {
+          subscription.status = "active";
+          subscription.pendingStatus = null;
+        } else if (input.operation.kind === "subscription_cancel") {
+          subscription.status = "cancelled";
+          subscription.pendingStatus = null;
+        } else if (input.operation.kind === "subscription_mandate_update") {
+          subscription.pendingStatus = null;
+        }
+
+        await subscription.save();
+      }
+    }
     return;
   }
 
@@ -894,6 +1315,14 @@ export async function bootstrapTreasuryAccount(input: {
     userAgent: null,
   });
 
+  if (merchant.reserveWallet) {
+    await queueMerchantRegistrationOperation({
+      merchantId: input.merchantId,
+      actor: input.actor,
+      environment: input.payload.environment,
+    }).catch(() => null);
+  }
+
   return toTreasuryAccountResponse(treasuryAccount);
 }
 
@@ -936,7 +1365,13 @@ export async function createSettlementSweepOperation(input: {
   }
 
   const protocolAddress = getSafeConfig(input.environment).protocolAddress;
-  const grossBaseUnits = toUsdcBaseUnits(settlement.netUsdc);
+  const protocolAmountUsdc =
+    typeof settlement.protocolAmountUsdc === "number" &&
+    Number.isFinite(settlement.protocolAmountUsdc) &&
+    settlement.protocolAmountUsdc > 0
+      ? settlement.protocolAmountUsdc
+      : settlement.netUsdc;
+  const grossBaseUnits = toUsdcBaseUnits(protocolAmountUsdc);
   const protocolFeeBaseUnits =
     (grossBaseUnits * BigInt(protocolFeeBps)) / 10_000n;
   const withdrawBaseUnits = grossBaseUnits - protocolFeeBaseUnits;
@@ -967,10 +1402,12 @@ export async function createSettlementSweepOperation(input: {
     signatures: [],
     metadata: {
       batchRef: settlement.batchRef,
-      grossSettlementUsdc: settlement.netUsdc,
+      grossSettlementUsdc: protocolAmountUsdc,
       protocolFeeBps: Number(protocolFeeBps),
       protocolFeeUsdc: fromUsdcBaseUnits(protocolFeeBaseUnits),
       netUsdc: fromUsdcBaseUnits(withdrawBaseUnits),
+      protocolExecutionKind: settlement.protocolExecutionKind ?? "settlement_credit",
+      protocolChargeId: settlement.protocolChargeId ?? null,
       destinationWallet: treasuryAccount.payoutWallet,
     },
   });
@@ -1226,6 +1663,615 @@ async function createWalletOperation(input: {
   });
 
   return toTreasuryOperationResponse(operation);
+}
+
+export async function queueMerchantRegistrationOperation(input: {
+  merchantId: string;
+  actor: string;
+  environment: RuntimeMode;
+}) {
+  const [merchant, treasuryAccount] = await Promise.all([
+    getMerchantOrThrow(input.merchantId),
+    ensureTreasuryAccount(input.merchantId, input.environment),
+  ]);
+
+  if (!merchant.reserveWallet) {
+    return null;
+  }
+
+  if (
+    await isProtocolMerchantRegistered(
+      input.environment,
+      treasuryAccount.safeAddress
+    )
+  ) {
+    return null;
+  }
+
+  const existingOperation = await TreasuryOperationModel.findOne({
+    merchantId: input.merchantId,
+    ...createRuntimeModeCondition("environment", input.environment),
+    kind: "merchant_register",
+    status: { $in: ["pending_signatures", "approved"] },
+  }).exec();
+
+  if (existingOperation) {
+    return toTreasuryOperationResponse(existingOperation);
+  }
+
+  return createWalletOperation({
+    merchantId: input.merchantId,
+    actor: input.actor,
+    environment: input.environment,
+    kind: "merchant_register",
+    targetAddress: getSafeConfig(input.environment).protocolAddress,
+    data: encodeMerchantRegisterCall({
+      payoutWallet: merchant.payoutWallet,
+      reserveWallet: merchant.reserveWallet,
+      metadataHash: merchant.metadataHash,
+    }),
+    metadata: {
+      entityType: "merchant",
+      payoutWallet: merchant.payoutWallet,
+      reserveWallet: merchant.reserveWallet,
+      metadataHash: merchant.metadataHash,
+    },
+  });
+}
+
+async function ensureProtocolMerchantReady(input: {
+  merchantId: string;
+  actor: string;
+  environment: RuntimeMode;
+}) {
+  try {
+    const treasuryAccount = await ensureTreasuryAccount(
+      input.merchantId,
+      input.environment
+    );
+    const merchantRegistered = await isProtocolMerchantRegistered(
+      input.environment,
+      treasuryAccount.safeAddress
+    );
+
+    if (merchantRegistered) {
+      return {
+        ready: true as const,
+        treasuryAccount,
+        registrationOperation: null,
+      };
+    }
+
+    return {
+      ready: false as const,
+      treasuryAccount,
+      registrationOperation: await queueMerchantRegistrationOperation(input),
+    };
+  } catch (error) {
+    if (error instanceof HttpError && error.statusCode === 409) {
+      return {
+        ready: false as const,
+        treasuryAccount: null,
+        registrationOperation: null,
+      };
+    }
+
+    throw error;
+  }
+}
+
+async function queueMerchantSubscriptionOperatorAuthorization(input: {
+  merchantId: string;
+  actor: string;
+  environment: RuntimeMode;
+}) {
+  const treasuryAccount = await ensureTreasuryAccount(
+    input.merchantId,
+    input.environment
+  );
+
+  if (
+    !(await isProtocolMerchantRegistered(
+      input.environment,
+      treasuryAccount.safeAddress
+    ))
+  ) {
+    return null;
+  }
+
+  const operatorAddress = normalizeAddress(
+    getRenewSubscriptionOperatorAddress(input.environment)
+  );
+  const alreadyAuthorized = await isMerchantSubscriptionOperatorAuthorized({
+    environment: input.environment,
+    merchantAddress: treasuryAccount.safeAddress,
+    operatorAddress,
+  });
+
+  if (alreadyAuthorized) {
+    return null;
+  }
+
+  const existingOperation = await TreasuryOperationModel.findOne({
+    merchantId: input.merchantId,
+    ...createRuntimeModeCondition("environment", input.environment),
+    kind: "subscription_operator_authorize",
+    status: { $in: ["pending_signatures", "approved"] },
+    "metadata.operatorAddress": operatorAddress,
+  }).exec();
+
+  if (existingOperation) {
+    return toTreasuryOperationResponse(existingOperation);
+  }
+
+  return createWalletOperation({
+    merchantId: input.merchantId,
+    actor: input.actor,
+    environment: input.environment,
+    kind: "subscription_operator_authorize",
+    targetAddress: getSafeConfig(input.environment).protocolAddress,
+    data: encodeSetSubscriptionOperatorCall({
+      operator: operatorAddress,
+      enabled: true,
+    }),
+    metadata: {
+      entityType: "merchant",
+      operatorAddress,
+      enabled: true,
+    },
+  });
+}
+
+export async function ensureMerchantSubscriptionOperatorReady(input: {
+  merchantId: string;
+  actor: string;
+  environment: RuntimeMode;
+}) {
+  const readiness = await ensureProtocolMerchantReady(input);
+
+  if (!readiness.treasuryAccount) {
+    return {
+      ready: false as const,
+      merchantReady: false as const,
+      treasuryAccount: null,
+      registrationOperation: readiness.registrationOperation,
+      operatorAuthorizationOperation: null,
+      operatorAddress: null,
+    };
+  }
+
+  if (!readiness.ready) {
+    return {
+      ready: false as const,
+      merchantReady: false as const,
+      treasuryAccount: readiness.treasuryAccount,
+      registrationOperation: readiness.registrationOperation,
+      operatorAuthorizationOperation: null,
+      operatorAddress: null,
+    };
+  }
+
+  const operatorAddress = normalizeAddress(
+    getRenewSubscriptionOperatorAddress(input.environment)
+  );
+  const operatorAuthorized = await isMerchantSubscriptionOperatorAuthorized({
+    environment: input.environment,
+    merchantAddress: readiness.treasuryAccount.safeAddress,
+    operatorAddress,
+  });
+
+  if (operatorAuthorized) {
+    return {
+      ready: true as const,
+      merchantReady: true as const,
+      treasuryAccount: readiness.treasuryAccount,
+      registrationOperation: null,
+      operatorAuthorizationOperation: null,
+      operatorAddress,
+    };
+  }
+
+  return {
+    ready: false as const,
+    merchantReady: true as const,
+    treasuryAccount: readiness.treasuryAccount,
+    registrationOperation: null,
+    operatorAuthorizationOperation:
+      await queueMerchantSubscriptionOperatorAuthorization(input),
+    operatorAddress,
+  };
+}
+
+export async function queuePlanProtocolSync(input: {
+  merchantId: string;
+  actor: string;
+  environment: RuntimeMode;
+  planId: string;
+}) {
+  const plan = await PlanModel.findOne({
+    _id: input.planId,
+    merchantId: input.merchantId,
+    ...createRuntimeModeCondition("environment", input.environment),
+  }).exec();
+
+  if (!plan) {
+    throw new HttpError(404, "Plan was not found.");
+  }
+
+  const targetStatus = (plan.pendingStatus ?? plan.status).trim();
+
+  if (!plan.protocolPlanId && targetStatus !== "active") {
+    plan.protocolSyncStatus = "not_synced";
+    plan.protocolOperationId = null;
+    plan.protocolTxHash = null;
+    await plan.save();
+    return null;
+  }
+
+  const readiness = await ensureProtocolMerchantReady({
+    merchantId: input.merchantId,
+    actor: input.actor,
+    environment: input.environment,
+  });
+
+  if (!readiness.treasuryAccount) {
+    plan.protocolSyncStatus = "not_configured";
+    plan.protocolOperationId = null;
+    plan.protocolTxHash = null;
+    await plan.save();
+    return null;
+  }
+
+  if (!readiness.ready) {
+    plan.protocolSyncStatus = "blocked_merchant_registration";
+    plan.protocolOperationId = null;
+    plan.protocolTxHash = null;
+    await plan.save();
+    return readiness.registrationOperation;
+  }
+
+  await queueMerchantSubscriptionOperatorAuthorization({
+    merchantId: input.merchantId,
+    actor: input.actor,
+    environment: input.environment,
+  }).catch(() => null);
+
+  const maxRetryCount = await getMerchantMaxRetryCount(input.merchantId);
+  const operation = await createWalletOperation({
+    merchantId: input.merchantId,
+    actor: input.actor,
+    environment: input.environment,
+    kind: plan.protocolPlanId ? "plan_update" : "plan_create",
+    targetAddress: getSafeConfig(input.environment).protocolAddress,
+    data: plan.protocolPlanId
+      ? encodePlanUpdateCall({
+          protocolPlanId: plan.protocolPlanId,
+          usdAmount: plan.usdAmount,
+          billingIntervalDays: plan.billingIntervalDays,
+          trialDays: plan.trialDays,
+          retryWindowHours: plan.retryWindowHours,
+          maxRetryCount,
+          billingMode: plan.billingMode,
+          usageRate: plan.usageRate ?? null,
+          active: targetStatus === "active",
+        })
+      : encodePlanCreateCall({
+          planCode: plan.planCode,
+          usdAmount: plan.usdAmount,
+          billingIntervalDays: plan.billingIntervalDays,
+          trialDays: plan.trialDays,
+          retryWindowHours: plan.retryWindowHours,
+          maxRetryCount,
+          billingMode: plan.billingMode,
+          usageRate: plan.usageRate ?? null,
+        }),
+    metadata: {
+      entityType: "plan",
+      planId: plan._id.toString(),
+      status: plan.status,
+      targetStatus,
+      maxRetryCount,
+    },
+  });
+
+  plan.protocolOperationId = new Types.ObjectId(operation.id);
+  plan.protocolSyncStatus =
+    targetStatus === "active" && plan.status !== "active"
+      ? "pending_activation"
+      : targetStatus === "archived" && plan.status !== "archived"
+        ? "pending_archive"
+        : operation.status;
+  plan.protocolTxHash = operation.txHash ?? null;
+  await plan.save();
+
+  return operation;
+}
+
+export async function queueSubscriptionProtocolCreate(input: {
+  merchantId: string;
+  actor: string;
+  environment: RuntimeMode;
+  subscriptionId: string;
+  checkoutSessionId?: string;
+  triggerInitialCharge?: boolean;
+}) {
+  const subscription = await SubscriptionModel.findOne({
+    _id: input.subscriptionId,
+    merchantId: input.merchantId,
+    ...createRuntimeModeCondition("environment", input.environment),
+  }).exec();
+
+  if (!subscription) {
+    throw new HttpError(404, "Subscription was not found.");
+  }
+
+  if (subscription.status !== "pending_activation" && subscription.status !== "active") {
+    subscription.protocolSyncStatus = "not_synced";
+    subscription.protocolOperationId = null;
+    subscription.protocolTxHash = null;
+    await subscription.save();
+    return null;
+  }
+
+  const plan = await PlanModel.findOne({
+    _id: subscription.planId,
+    merchantId: input.merchantId,
+    ...createRuntimeModeCondition("environment", input.environment),
+  }).exec();
+
+  if (!plan) {
+    throw new HttpError(404, "Plan was not found.");
+  }
+
+  if (!plan.protocolPlanId || plan.protocolSyncStatus !== "synced" || plan.status !== "active") {
+    await queuePlanProtocolSync({
+      merchantId: input.merchantId,
+      actor: input.actor,
+      environment: input.environment,
+      planId: plan._id.toString(),
+    });
+    subscription.protocolSyncStatus = "blocked_plan_sync";
+    subscription.protocolOperationId = null;
+    subscription.protocolTxHash = null;
+    await subscription.save();
+    return null;
+  }
+
+  const readiness = await ensureMerchantSubscriptionOperatorReady({
+    merchantId: input.merchantId,
+    actor: input.actor,
+    environment: input.environment,
+  });
+
+  if (!readiness.treasuryAccount) {
+    subscription.protocolSyncStatus = "not_configured";
+    subscription.protocolOperationId = null;
+    subscription.protocolTxHash = null;
+    await subscription.save();
+    return null;
+  }
+
+  if (!readiness.ready) {
+    subscription.protocolSyncStatus = readiness.merchantReady
+      ? "blocked_operator_authorization"
+      : "blocked_merchant_registration";
+    subscription.protocolOperationId = null;
+    subscription.protocolTxHash = null;
+    await subscription.save();
+    return null;
+  }
+
+  const mandateHash = deriveProtocolMandateHash({
+    customerRef: subscription.customerRef,
+    paymentAccountType: subscription.paymentAccountType,
+    paymentAccountNumber: subscription.paymentAccountNumber ?? null,
+    paymentNetworkId: subscription.paymentNetworkId ?? null,
+  });
+
+  const createdOnchain = await createProtocolSubscriptionForMerchant({
+    environment: input.environment,
+    merchantAddress: readiness.treasuryAccount.safeAddress,
+    protocolPlanId: plan.protocolPlanId,
+    customerRef: subscription.customerRef,
+    billingCurrency: subscription.billingCurrency,
+    nextChargeAt: subscription.nextChargeAt,
+    localAmount: subscription.localAmount,
+    mandateHash,
+  });
+
+  if (!createdOnchain.protocolSubscriptionId) {
+    throw new HttpError(
+      502,
+      "Protocol subscription creation completed without a subscription id."
+    );
+  }
+
+  subscription.protocolSubscriptionId = createdOnchain.protocolSubscriptionId;
+  subscription.protocolOperationId = null;
+  subscription.status = "active";
+  subscription.pendingStatus = null;
+  subscription.protocolSyncStatus = "synced";
+  subscription.protocolTxHash = createdOnchain.txHash;
+  await subscription.save();
+
+  if (input.triggerInitialCharge === true) {
+    const { runSubscriptionChargeJob } = await import(
+      "@/features/charges/charge.service"
+    );
+    const chargeResult = await runSubscriptionChargeJob({
+      subscriptionId: subscription._id.toString(),
+    });
+
+    if (input.checkoutSessionId) {
+      await syncCheckoutSessionWithChargeResult({
+        checkoutSessionId: input.checkoutSessionId,
+        billingCurrency: subscription.billingCurrency,
+        chargeResult,
+      });
+    }
+  }
+
+  return {
+    protocolSubscriptionId: createdOnchain.protocolSubscriptionId,
+    txHash: createdOnchain.txHash,
+  };
+}
+
+async function queueSubscriptionProtocolOperation(input: {
+  merchantId: string;
+  actor: string;
+  environment: RuntimeMode;
+  subscriptionId: string;
+  kind:
+    | "subscription_pause"
+    | "subscription_resume"
+    | "subscription_cancel"
+    | "subscription_mandate_update";
+}) {
+  const subscription = await SubscriptionModel.findOne({
+    _id: input.subscriptionId,
+    merchantId: input.merchantId,
+    ...createRuntimeModeCondition("environment", input.environment),
+  }).exec();
+
+  if (!subscription) {
+    throw new HttpError(404, "Subscription was not found.");
+  }
+
+  if (!subscription.protocolSubscriptionId) {
+    return queueSubscriptionProtocolCreate({
+      merchantId: input.merchantId,
+      actor: input.actor,
+      environment: input.environment,
+      subscriptionId: input.subscriptionId,
+    });
+  }
+
+  const readiness = await ensureMerchantSubscriptionOperatorReady({
+    merchantId: input.merchantId,
+    actor: input.actor,
+    environment: input.environment,
+  });
+
+  if (!readiness.treasuryAccount) {
+    subscription.protocolSyncStatus = "not_configured";
+    subscription.protocolOperationId = null;
+    subscription.protocolTxHash = null;
+    await subscription.save();
+    return null;
+  }
+
+  if (!readiness.ready) {
+    subscription.protocolSyncStatus = readiness.merchantReady
+      ? "blocked_operator_authorization"
+      : "blocked_merchant_registration";
+    subscription.protocolOperationId = null;
+    subscription.protocolTxHash = null;
+    await subscription.save();
+    return null;
+  }
+
+  const mandateHash = deriveProtocolMandateHash({
+    customerRef: subscription.customerRef,
+    paymentAccountType: subscription.paymentAccountType,
+    paymentAccountNumber: subscription.paymentAccountNumber ?? null,
+    paymentNetworkId: subscription.paymentNetworkId ?? null,
+  });
+  const execution =
+    input.kind === "subscription_pause"
+      ? await pauseProtocolSubscription({
+          environment: input.environment,
+          merchantAddress: readiness.treasuryAccount.safeAddress,
+          protocolSubscriptionId: subscription.protocolSubscriptionId,
+        })
+      : input.kind === "subscription_resume"
+        ? await resumeProtocolSubscription({
+            environment: input.environment,
+            merchantAddress: readiness.treasuryAccount.safeAddress,
+            protocolSubscriptionId: subscription.protocolSubscriptionId,
+            nextChargeAt: subscription.nextChargeAt,
+          })
+        : input.kind === "subscription_cancel"
+          ? await cancelProtocolSubscription({
+              environment: input.environment,
+              merchantAddress: readiness.treasuryAccount.safeAddress,
+              protocolSubscriptionId: subscription.protocolSubscriptionId,
+            })
+          : await updateProtocolSubscriptionMandate({
+              environment: input.environment,
+              merchantAddress: readiness.treasuryAccount.safeAddress,
+              protocolSubscriptionId: subscription.protocolSubscriptionId,
+              mandateHash,
+            });
+
+  subscription.protocolOperationId = null;
+  subscription.protocolSyncStatus = "synced";
+  subscription.protocolTxHash = execution.txHash;
+
+  if (input.kind === "subscription_pause") {
+    subscription.status = "paused";
+    subscription.pendingStatus = null;
+  } else if (input.kind === "subscription_resume") {
+    subscription.status = "active";
+    subscription.pendingStatus = null;
+  } else if (input.kind === "subscription_cancel") {
+    subscription.status = "cancelled";
+    subscription.pendingStatus = null;
+  } else {
+    subscription.pendingStatus = null;
+  }
+
+  await subscription.save();
+
+  return execution;
+}
+
+export async function queueSubscriptionProtocolPause(input: {
+  merchantId: string;
+  actor: string;
+  environment: RuntimeMode;
+  subscriptionId: string;
+}) {
+  return queueSubscriptionProtocolOperation({
+    ...input,
+    kind: "subscription_pause",
+  });
+}
+
+export async function queueSubscriptionProtocolResume(input: {
+  merchantId: string;
+  actor: string;
+  environment: RuntimeMode;
+  subscriptionId: string;
+}) {
+  return queueSubscriptionProtocolOperation({
+    ...input,
+    kind: "subscription_resume",
+  });
+}
+
+export async function queueSubscriptionProtocolCancel(input: {
+  merchantId: string;
+  actor: string;
+  environment: RuntimeMode;
+  subscriptionId: string;
+}) {
+  return queueSubscriptionProtocolOperation({
+    ...input,
+    kind: "subscription_cancel",
+  });
+}
+
+export async function queueSubscriptionProtocolMandateUpdate(input: {
+  merchantId: string;
+  actor: string;
+  environment: RuntimeMode;
+  subscriptionId: string;
+}) {
+  return queueSubscriptionProtocolOperation({
+    ...input,
+    kind: "subscription_mandate_update",
+  });
 }
 
 async function createSafeGovernanceOperation(input: {
@@ -1581,6 +2627,10 @@ export async function approveTreasuryOperation(input: {
       ? "approved"
       : "pending_signatures";
   await operation.save();
+  await syncLinkedProtocolRecordState({
+    operation,
+    status: operation.status,
+  });
 
   signerBinding.lastApprovedAt = new Date();
   await signerBinding.save();
@@ -1625,6 +2675,11 @@ export async function rejectTreasuryOperation(input: {
   operation.rejectionReason = input.payload.reason;
   operation.rejectedAt = new Date();
   await operation.save();
+  await syncLinkedProtocolRecordState({
+    operation,
+    status: "rejected",
+    txHash: null,
+  });
 
   await appendAuditLog({
     merchantId: input.merchantId,

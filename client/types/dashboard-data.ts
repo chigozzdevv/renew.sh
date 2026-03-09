@@ -56,6 +56,13 @@ export type PlanRecord = {
   billingMode: string;
   supportedMarkets: string[];
   status: string;
+  pendingStatus: string | null;
+  onchain: {
+    id: string | null;
+    status: string;
+    operationId: string | null;
+    txHash: string | null;
+  };
 };
 
 export type SubscriptionRecord = {
@@ -70,9 +77,16 @@ export type SubscriptionRecord = {
   paymentAccountNumber: string | null;
   paymentNetworkId: string | null;
   status: string;
+  pendingStatus: string | null;
   nextChargeAt: string;
   lastChargeAt: string | null;
   retryAvailableAt: string | null;
+  onchain: {
+    id: string | null;
+    status: string;
+    operationId: string | null;
+    txHash: string | null;
+  };
 };
 
 export type ChargeRecord = {

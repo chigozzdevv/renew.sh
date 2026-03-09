@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 
 import { Badge } from "@/components/dashboard/ui";
-import { ApiError } from "@/lib/api";
+import { ApiError, type WorkspaceMode } from "@/lib/api";
 
 export function formatDate(value: string | null) {
   if (!value) {
@@ -44,6 +44,23 @@ export function formatCompactNumber(value: number) {
     notation: "compact",
     maximumFractionDigits: 1,
   }).format(value);
+}
+
+export function formatTxHash(value: string) {
+  if (value.length <= 16) {
+    return value;
+  }
+
+  return `${value.slice(0, 10)}...${value.slice(-8)}`;
+}
+
+export function getAvalancheTxUrl(mode: WorkspaceMode, txHash: string) {
+  const baseUrl =
+    mode === "live"
+      ? "https://subnets.avax.network/c-chain/tx/"
+      : "https://subnets-test.avax.network/c-chain/tx/";
+
+  return `${baseUrl}${txHash}`;
 }
 
 export function statusTone(
