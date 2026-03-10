@@ -264,8 +264,8 @@ function tokenizeLine(line: string, language: CodeLanguage) {
 }
 
 function getLanguageLabel(language: CodeLanguage) {
-  if (language === "ts") {
-    return "TypeScript";
+  if (language === "ts" || language === "tsx") {
+    return language === "tsx" ? "TSX" : "TypeScript";
   }
 
   if (language === "json") {
@@ -328,13 +328,13 @@ export function CodeBlock({
               <span className="whitespace-pre">
                 {line.length > 0
                   ? tokenizeLine(line, language).map((token, tokenIndex) => (
-                      <span
-                        key={`${lineIndex}-${tokenIndex}-${token.value}`}
-                        className={tokenClassNames[token.type]}
-                      >
-                        {token.value}
-                      </span>
-                    ))
+                    <span
+                      key={`${lineIndex}-${tokenIndex}-${token.value}`}
+                      className={tokenClassNames[token.type]}
+                    >
+                      {token.value}
+                    </span>
+                  ))
                   : " "}
               </span>
             </span>

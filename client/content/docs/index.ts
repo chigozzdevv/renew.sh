@@ -1,6 +1,6 @@
-export type DocsCategoryId = "guides" | "api" | "sdk";
+export type DocsCategoryId = "api" | "sdk";
 
-export type CodeLanguage = "bash" | "ts" | "json" | "sol";
+export type CodeLanguage = "bash" | "ts" | "tsx" | "json" | "sol";
 
 export type DocsReference = {
   label: string;
@@ -43,13 +43,12 @@ export type DocsCategory = {
 };
 
 export const docsCategories: DocsCategory[] = [
-  { id: "guides", label: "Guides" },
-  { id: "api", label: "API Reference" },
-  { id: "sdk", label: "SDK Reference" },
+  { id: "api", label: "API" },
+  { id: "sdk", label: "SDK" },
 ];
 
 const docsPageOrder: Record<DocsCategoryId, string[]> = {
-  guides: [
+  api: [
     "guide-quickstart",
     "guide-auth",
     "guide-checkout",
@@ -58,18 +57,8 @@ const docsPageOrder: Record<DocsCategoryId, string[]> = {
     "guide-subscriptions",
     "guide-renewals",
     "guide-webhooks",
-    "guide-sdk",
   ],
-  api: [
-    "api-auth",
-    "api-checkout",
-    "api-plans",
-    "api-customers",
-    "api-subscriptions",
-    "api-renewals",
-    "api-webhooks",
-  ],
-  sdk: ["sdk-overview", "sdk-clients"],
+  sdk: ["sdk-overview", "sdk-server", "sdk-react", "sdk-core"],
 };
 
 function createJsonSample(
@@ -88,7 +77,7 @@ function createJsonSample(
 export const docsPages: DocsPage[] = [
   {
     id: "guide-quickstart",
-    category: "guides",
+    category: "api",
     group: "Start here",
     navTitle: "Quickstart",
     title: "Quickstart",
@@ -195,7 +184,7 @@ SERVER_KEY_PREFIX=rw_live_`,
   },
   {
     id: "guide-auth",
-    category: "guides",
+    category: "api",
     group: "Start here",
     navTitle: "Authentication",
     title: "Authentication",
@@ -247,7 +236,7 @@ SERVER_KEY_PREFIX=rw_live_`,
   },
   {
     id: "guide-checkout",
-    category: "guides",
+    category: "api",
     group: "Start here",
     navTitle: "Checkout flow",
     title: "Checkout flow",
@@ -413,7 +402,7 @@ SERVER_KEY_PREFIX=rw_live_`,
   },
   {
     id: "guide-customers",
-    category: "guides",
+    category: "api",
     group: "Billing operations",
     navTitle: "Customers",
     title: "Customers",
@@ -567,7 +556,7 @@ SERVER_KEY_PREFIX=rw_live_`,
   },
   {
     id: "guide-plans",
-    category: "guides",
+    category: "api",
     group: "Billing operations",
     navTitle: "Plans",
     title: "Plans",
@@ -708,7 +697,7 @@ SERVER_KEY_PREFIX=rw_live_`,
   },
   {
     id: "guide-subscriptions",
-    category: "guides",
+    category: "api",
     group: "Billing operations",
     navTitle: "Subscriptions",
     title: "Subscriptions",
@@ -857,7 +846,7 @@ SERVER_KEY_PREFIX=rw_live_`,
   },
   {
     id: "guide-renewals",
-    category: "guides",
+    category: "api",
     group: "Billing operations",
     navTitle: "Charges & renewals",
     title: "Charges & renewals",
@@ -960,7 +949,7 @@ SERVER_KEY_PREFIX=rw_live_`,
   },
   {
     id: "guide-webhooks",
-    category: "guides",
+    category: "api",
     group: "Integrations",
     navTitle: "Webhooks",
     title: "Webhooks",
@@ -1000,576 +989,13 @@ const isValid = verifyRenewWebhookSignature({
 });`,
         },
       },
-      {
-        id: "guide-webhooks-endpoints",
-        title: "Endpoints",
-        paragraphs: [
-          "The raw webhook secret is returned only when a webhook is created or rotated, so store it immediately.",
-        ],
-        references: [
-          {
-            label: "GET",
-            value: "/v1/developers/webhooks",
-            detail: "List webhooks.",
-          },
-          {
-            label: "POST",
-            value: "/v1/developers/webhooks",
-            detail: "Create a webhook and receive its secret once.",
-          },
-          {
-            label: "PATCH",
-            value: "/v1/developers/webhooks/:webhookId",
-            detail: "Update label, URL, events, retry policy, or status.",
-          },
-          {
-            label: "POST",
-            value: "/v1/developers/webhooks/:webhookId/rotate-secret",
-            detail: "Rotate the secret and receive the new raw value once.",
-          },
-          {
-            label: "POST",
-            value: "/v1/developers/webhooks/:webhookId/test",
-            detail: "Send a test delivery.",
-          },
-          {
-            label: "GET",
-            value: "/v1/developers/deliveries",
-            detail: "Inspect webhook delivery attempts.",
-          },
-        ],
-        samples: [
-          createJsonSample("Create webhook request", "create-webhook.request.json", {
-            method: "POST",
-            path: "/v1/developers/webhooks",
-            headers: {
-              Authorization: "Bearer {{RENEW_JWT}}",
-              "content-type": "application/json",
-            },
-            body: {
-              environment: "sandbox",
-              label: "Billing events",
-              endpointUrl: "https://api.acme.example/renew/webhooks",
-              eventTypes: ["charge.settled", "charge.failed"],
-              retryPolicy: "exponential",
-            },
-          }),
-          createJsonSample("Create webhook response", "create-webhook.response.json", {
-            success: true,
-            message: "Webhook created.",
-            data: {
-              webhook: {
-                id: "64f8cb9df1d2c11d0e63b8e1",
-                merchantId: "64f8c60af1d2c11d0e63b531",
-                label: "Billing events",
-                environment: "sandbox",
-                endpointUrl: "https://api.acme.example/renew/webhooks",
-                status: "active",
-                eventTypes: ["charge.settled", "charge.failed"],
-                retryPolicy: "exponential",
-                lastDeliveryAt: null,
-                disabledAt: null,
-                createdAt: "2026-03-09T11:00:00.000Z",
-                updatedAt: "2026-03-09T11:00:00.000Z",
-              },
-              secret: "whsec_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-            },
-          }),
-          createJsonSample("Send test delivery request", "test-delivery.request.json", {
-            method: "POST",
-            path: "/v1/developers/webhooks/64f8cb9df1d2c11d0e63b8e1/test",
-            headers: {
-              Authorization: "Bearer {{RENEW_JWT}}",
-              "content-type": "application/json",
-            },
-            body: {
-              environment: "sandbox",
-              eventType: "charge.settled",
-            },
-          }),
-          createJsonSample("Send test delivery response", "test-delivery.response.json", {
-            success: true,
-            message: "Webhook test delivery triggered.",
-            data: {
-              id: "64f8cc10f1d2c11d0e63b920",
-              merchantId: "64f8c60af1d2c11d0e63b531",
-              webhookId: "64f8cb9df1d2c11d0e63b8e1",
-              eventId: "evt_test_charge_settled_001",
-              environment: "sandbox",
-              eventType: "charge.settled",
-              status: "queued",
-              httpStatus: null,
-              attempts: 0,
-              payload: {
-                event: "charge.settled",
-              },
-              errorMessage: null,
-              deliveredAt: null,
-              createdAt: "2026-03-09T11:05:00.000Z",
-              updatedAt: "2026-03-09T11:05:00.000Z",
-            },
-          }),
-        ],
-      },
     ],
   },
-  {
-    id: "guide-sdk",
-    category: "guides",
-    group: "Optional SDK",
-    navTitle: "When to use it",
-    title: "When to use the SDK",
-    description:
-      "Use the SDK only when typed helpers are useful for your backend or React app.",
-    sections: [
-      {
-        id: "guide-sdk-when",
-        title: "Best fit",
-        paragraphs: [
-          "The platform API is enough for most integrations. Add the SDK when you want typed checkout helpers, webhook verification helpers, or contract clients.",
-        ],
-        bullets: [
-          "`@renew.sh/sdk` exports checkout clients, contract clients, events, and shared types.",
-          "`@renew.sh/sdk/server` adds server helpers and webhook utilities.",
-          "`@renew.sh/sdk/react` adds the checkout modal and session hook.",
-        ],
-      },
-      {
-        id: "guide-sdk-example",
-        title: "Server example",
-        paragraphs: [
-          "Use the server client when your backend already owns the server key and wants typed checkout helpers.",
-        ],
-        sample: {
-          label: "Create a sandbox checkout session",
-          language: "ts",
-          filename: "renew-server.ts",
-          code: `import { createRenewServerClient } from "@renew.sh/sdk/server";
 
-const renew = createRenewServerClient({
-  environment: "sandbox",
-  secretKey: process.env.RENEW_SECRET_KEY!,
-});
-
-const plans = await renew.listCheckoutPlans();
-
-const { session, clientSecret } = await renew.createCheckoutSession({
-  planId: plans[0].id,
-});`,
-        },
-      },
-    ],
-  },
-  {
-    id: "api-auth",
-    category: "api",
-    group: "Get started",
-    navTitle: "Server keys & environments",
-    title: "Authentication and environments",
-    description:
-      "Base URLs, public runtime endpoints, workspace auth, and server key management.",
-    sections: [
-      {
-        id: "api-auth-runtime",
-        title: "Base URLs and public endpoints",
-        paragraphs: [
-          "Use sandbox for development and `api.renew.sh` for live traffic.",
-        ],
-        references: [
-          {
-            label: "Sandbox",
-            value: "https://sandbox.renew.sh",
-            detail: "Use with `rw_test_` keys.",
-          },
-          {
-            label: "Live",
-            value: "https://api.renew.sh",
-            detail: "Use with `rw_live_` keys.",
-          },
-          {
-            label: "GET",
-            value: "/health",
-            detail: "Service health.",
-          },
-          {
-            label: "GET",
-            value: "/v1/protocol",
-            detail: "Runtime network and contract config.",
-          },
-        ],
-      },
-      {
-        id: "api-auth-workspace",
-        title: "Workspace auth",
-        paragraphs: [
-          "Workspace APIs use bearer JWTs.",
-        ],
-        references: [
-          {
-            label: "POST",
-            value: "/v1/auth/signup",
-            detail: "Create a workspace account.",
-          },
-          {
-            label: "POST",
-            value: "/v1/auth/login",
-            detail: "Create a workspace session.",
-          },
-          {
-            label: "POST",
-            value: "/v1/auth/activate-invite",
-            detail: "Activate an invite and set a password.",
-          },
-          {
-            label: "GET",
-            value: "/v1/auth/me",
-            detail: "Resolve the current workspace session.",
-          },
-        ],
-      },
-      {
-        id: "api-auth-keys",
-        title: "Developer keys",
-        paragraphs: [
-          "Server keys are for backend checkout calls only. The raw token is returned once when you create it.",
-        ],
-        references: [
-          {
-            label: "GET",
-            value: "/v1/developers/keys",
-            detail: "List server keys.",
-          },
-          {
-            label: "POST",
-            value: "/v1/developers/keys",
-            detail: "Create a server key and receive the raw token once.",
-          },
-          {
-            label: "POST",
-            value: "/v1/developers/keys/:developerKeyId/revoke",
-            detail: "Revoke a server key.",
-          },
-        ],
-      },
-    ],
-  },
-  {
-    id: "api-checkout",
-    category: "api",
-    group: "Integration",
-    navTitle: "Checkout",
-    title: "Checkout API",
-    description:
-      "Developer-key and client-secret endpoints for checkout.",
-    sections: [
-      {
-        id: "api-checkout-server",
-        title: "Backend endpoints",
-        paragraphs: [
-          "Start checkout with `x-renew-secret-key` or a bearer token that starts with `rw_`.",
-        ],
-        references: [
-          {
-            label: "GET",
-            value: "/v1/checkout/plans",
-            detail: "List active checkout plans.",
-          },
-          {
-            label: "POST",
-            value: "/v1/checkout/sessions",
-            detail: "Create a session with `planId` and optional `expiresInMinutes` or metadata.",
-          },
-        ],
-      },
-      {
-        id: "api-checkout-client",
-        title: "Customer session endpoints",
-        paragraphs: [
-          "Continue checkout with `x-renew-client-secret` or a bearer token that starts with `rcs_`.",
-        ],
-        references: [
-          {
-            label: "GET",
-            value: "/v1/checkout/sessions/:sessionId",
-            detail: "Read the current session.",
-          },
-          {
-            label: "GET",
-            value: "/v1/checkout/sessions/:sessionId/quote?market=NGN",
-            detail: "Quote a supported market for the session.",
-          },
-          {
-            label: "POST",
-            value: "/v1/checkout/sessions/:sessionId/customer",
-            detail: "Submit name, email, market, and payment routing fields.",
-          },
-          {
-            label: "POST",
-            value: "/v1/checkout/sessions/:sessionId/test-complete",
-            detail: "Complete a pending sandbox payment.",
-          },
-        ],
-        samples: [
-          createJsonSample("List plans", "checkout-plans.request.json", {
-            method: "GET",
-            url: "https://sandbox.renew.sh/v1/checkout/plans",
-            headers: {
-              "x-renew-secret-key": "rw_test_xxxxxxxxxxxxxxxxxxxxxxxx",
-            },
-          }),
-          createJsonSample("Read session", "checkout-session.request.json", {
-            method: "GET",
-            url: "https://sandbox.renew.sh/v1/checkout/sessions/64f8d430f1d2c11d0e63ba13",
-            headers: {
-              "x-renew-client-secret":
-                "rcs_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-            },
-          }),
-        ],
-      },
-    ],
-  },
-  {
-    id: "api-customers",
-    category: "api",
-    group: "Billing",
-    navTitle: "Customers",
-    title: "Customers API",
-    description:
-      "Workspace endpoints for customer records and lifecycle actions.",
-    sections: [
-      {
-        id: "api-customers-reference",
-        title: "Endpoints",
-        paragraphs: [
-          "List calls can filter by `merchantId`, `environment`, `status`, `market`, and `search`.",
-        ],
-        references: [
-          {
-            label: "GET",
-            value: "/v1/customers",
-            detail: "List customers.",
-          },
-          {
-            label: "POST",
-            value: "/v1/customers",
-            detail: "Create a customer.",
-          },
-          {
-            label: "GET",
-            value: "/v1/customers/:customerId",
-            detail: "Fetch one customer.",
-          },
-          {
-            label: "PATCH",
-            value: "/v1/customers/:customerId",
-            detail: "Update editable fields.",
-          },
-          {
-            label: "POST",
-            value: "/v1/customers/:customerId/pause",
-            detail: "Pause billing.",
-          },
-          {
-            label: "POST",
-            value: "/v1/customers/:customerId/resume",
-            detail: "Resume billing.",
-          },
-          {
-            label: "POST",
-            value: "/v1/customers/:customerId/blacklist",
-            detail: "Blacklist a customer.",
-          },
-        ],
-      },
-    ],
-  },
-  {
-    id: "api-plans",
-    category: "api",
-    group: "Billing",
-    navTitle: "Plans",
-    title: "Plans API",
-    description:
-      "Workspace endpoints for the plan catalog.",
-    sections: [
-      {
-        id: "api-plans-reference",
-        title: "Endpoints",
-        paragraphs: [
-          "Plan writes use sandbox or live via the `environment` field or query parameter.",
-        ],
-        references: [
-          {
-            label: "GET",
-            value: "/v1/plans",
-            detail: "List plans.",
-          },
-          {
-            label: "POST",
-            value: "/v1/plans",
-            detail: "Create a plan.",
-          },
-          {
-            label: "GET",
-            value: "/v1/plans/:planId",
-            detail: "Fetch one plan.",
-          },
-          {
-            label: "PATCH",
-            value: "/v1/plans/:planId",
-            detail: "Update a plan.",
-          },
-        ],
-        note:
-          "Checkout returns only plans that are active and synced for the target environment.",
-      },
-    ],
-  },
-  {
-    id: "api-subscriptions",
-    category: "api",
-    group: "Billing",
-    navTitle: "Subscriptions",
-    title: "Subscriptions API",
-    description:
-      "Workspace endpoints for direct subscription creation and updates.",
-    sections: [
-      {
-        id: "api-subscriptions-reference",
-        title: "Endpoints",
-        paragraphs: [
-          "Direct creation includes `planId`, `customerRef`, `customerName`, `billingCurrency`, `nextChargeAt`, and payment routing fields. `localAmount` is optional.",
-        ],
-        references: [
-          {
-            label: "GET",
-            value: "/v1/subscriptions",
-            detail: "List subscriptions.",
-          },
-          {
-            label: "POST",
-            value: "/v1/subscriptions",
-            detail: "Create a subscription.",
-          },
-          {
-            label: "GET",
-            value: "/v1/subscriptions/:subscriptionId",
-            detail: "Fetch one subscription.",
-          },
-          {
-            label: "PATCH",
-            value: "/v1/subscriptions/:subscriptionId",
-            detail: "Update status, timing, amount, or payment routing.",
-          },
-          {
-            label: "POST",
-            value: "/v1/subscriptions/:subscriptionId/queue-charge",
-            detail: "Queue the next charge.",
-          },
-        ],
-      },
-    ],
-  },
-  {
-    id: "api-renewals",
-    category: "api",
-    group: "Billing",
-    navTitle: "Renewals & charges",
-    title: "Charges API",
-    description:
-      "Charge endpoints for inspection, direct recording, updates, and retries.",
-    sections: [
-      {
-        id: "api-renewals-reference",
-        title: "Endpoints",
-        paragraphs: [
-          "For the normal renewal path, prefer `/v1/subscriptions/:subscriptionId/queue-charge`. Charge creation and retry in live mode are gated by merchant KYB approval.",
-        ],
-        references: [
-          {
-            label: "GET",
-            value: "/v1/charges",
-            detail: "List charges.",
-          },
-          {
-            label: "POST",
-            value: "/v1/charges",
-            detail: "Record a charge directly.",
-          },
-          {
-            label: "GET",
-            value: "/v1/charges/:chargeId",
-            detail: "Fetch one charge.",
-          },
-          {
-            label: "PATCH",
-            value: "/v1/charges/:chargeId",
-            detail: "Update a charge.",
-          },
-          {
-            label: "POST",
-            value: "/v1/charges/:chargeId/retry",
-            detail: "Retry a failed charge.",
-          },
-        ],
-      },
-    ],
-  },
-  {
-    id: "api-webhooks",
-    category: "api",
-    group: "Integration",
-    navTitle: "Webhooks",
-    title: "Webhooks API",
-    description:
-      "Webhook registration, updates, secret rotation, test delivery, and delivery logs.",
-    sections: [
-      {
-        id: "api-webhooks-reference",
-        title: "Endpoints",
-        paragraphs: [
-          "Supported event types are `charge.settled` and `charge.failed`.",
-        ],
-        references: [
-          {
-            label: "GET",
-            value: "/v1/developers/webhooks",
-            detail: "List webhooks.",
-          },
-          {
-            label: "POST",
-            value: "/v1/developers/webhooks",
-            detail: "Create a webhook and receive its secret once.",
-          },
-          {
-            label: "PATCH",
-            value: "/v1/developers/webhooks/:webhookId",
-            detail: "Update a webhook.",
-          },
-          {
-            label: "POST",
-            value: "/v1/developers/webhooks/:webhookId/rotate-secret",
-            detail: "Rotate the secret.",
-          },
-          {
-            label: "POST",
-            value: "/v1/developers/webhooks/:webhookId/test",
-            detail: "Trigger a test delivery.",
-          },
-          {
-            label: "GET",
-            value: "/v1/developers/deliveries",
-            detail: "List delivery attempts.",
-          },
-        ],
-      },
-    ],
-  },
   {
     id: "sdk-overview",
     category: "sdk",
-    group: "Optional SDK",
+    group: "Getting started",
     navTitle: "Overview",
     title: "SDK overview",
     description:
@@ -1638,9 +1064,154 @@ const { clientSecret, session } = await renew.createCheckoutSession({
     ],
   },
   {
-    id: "sdk-clients",
+    id: "sdk-server",
     category: "sdk",
-    group: "Optional SDK",
+    group: "Getting started",
+    navTitle: "Server SDK",
+    title: "Server checkout & webhooks",
+    description: "Backend helpers for session creation and signature verification.",
+    sections: [
+      {
+        id: "sdk-server-install",
+        title: "Installation",
+        paragraphs: [
+          "Install the main package, then import from the `/server` subpath.",
+        ],
+        sample: {
+          label: "Install",
+          language: "bash",
+          filename: "Terminal",
+          code: "npm install @renew.sh/sdk",
+        },
+      },
+      {
+        id: "sdk-server-checkout",
+        title: "Creating checkout sessions",
+        paragraphs: [
+          "Use the server client to fetch plans and spawn checkout sessions securely with your secret key.",
+        ],
+        sample: {
+          label: "Server checkout",
+          language: "ts",
+          filename: "renew.ts",
+          code: `import { createRenewServerClient } from "@renew.sh/sdk/server";
+
+const renew = createRenewServerClient({
+  environment: "sandbox", // or "live"
+  secretKey: process.env.RENEW_SECRET_KEY!,
+});
+
+// 1. Fetch available plans
+const plans = await renew.listCheckoutPlans();
+
+// 2. Create a session for the user
+const { session, clientSecret } = await renew.createCheckoutSession({
+  planId: plans[0].id,
+  metadata: { userId: "user_123" }
+});`,
+        },
+      },
+      {
+        id: "sdk-server-webhooks",
+        title: "Verifying webhooks",
+        paragraphs: [
+          "The server SDK includes helpers to validate incoming webhook payload signatures.",
+        ],
+        sample: {
+          label: "Webhook signature verification",
+          language: "ts",
+          filename: "webhook.ts",
+          code: `import {
+  renewWebhookHeaderNames,
+  verifyRenewWebhookSignature,
+} from "@renew.sh/sdk/server";
+
+const isValid = verifyRenewWebhookSignature({
+  payload: rawBody, // The unparsed string body
+  signingSecret: process.env.RENEW_WEBHOOK_SECRET!,
+  signatureHeader: request.headers.get(renewWebhookHeaderNames.signature),
+  timestampHeader: request.headers.get(renewWebhookHeaderNames.timestamp),
+});
+
+if (!isValid) {
+  throw new Error("Invalid signature");
+}`,
+        },
+      },
+    ],
+  },
+  {
+    id: "sdk-react",
+    category: "sdk",
+    group: "Getting started",
+    navTitle: "React SDK",
+    title: "React components & hooks",
+    description: "Drop-in UI components and React tracking hooks.",
+    sections: [
+      {
+        id: "sdk-react-modal",
+        title: "Checkout Modal",
+        paragraphs: [
+          "The `RenewCheckoutModal` provides a full, unbranded checkout flow. Simply pass the `clientSecret` from your backend.",
+        ],
+        sample: {
+          label: "Checkout Modal Example",
+          language: "tsx",
+          filename: "CheckoutButton.tsx",
+          code: `import { useState } from "react";
+import { RenewCheckoutModal } from "@renew.sh/sdk/react";
+
+export function CheckoutButton({ clientSecret }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <>
+      <button onClick={() => setOpen(true)}>Subscribe</button>
+
+      {open && (
+        <RenewCheckoutModal
+          clientSecret={clientSecret}
+          environment="sandbox" // or "live"
+          onClose={() => setOpen(false)}
+          onSuccess={() => console.log("Payment completed!")}
+        />
+      )}
+    </>
+  );
+}`,
+        },
+      },
+      {
+        id: "sdk-react-hooks",
+        title: "Client-side tracking",
+        paragraphs: [
+          "Use the `useRenewCheckoutSession` hook if you need to build a custom UI but still want to poll for session status updates.",
+        ],
+        sample: {
+          label: "Session hook",
+          language: "tsx",
+          filename: "CustomCheckout.tsx",
+          code: `import { useRenewCheckoutSession } from "@renew.sh/sdk/react";
+
+export function CustomCheckout({ clientSecret }) {
+  const { session, quote, submitCustomerData } = useRenewCheckoutSession({
+    environment: "sandbox",
+    clientSecret,
+    onSettled: () => alert("Payment successful!"),
+  });
+
+  if (!session) return <p>Loading...</p>;
+
+  return <div>Status: {session.status}</div>;
+}`,
+        },
+      },
+    ],
+  },
+  {
+    id: "sdk-core",
+    category: "sdk",
+    group: "Getting started",
     navTitle: "Clients, events, and types",
     title: "SDK exports",
     description:

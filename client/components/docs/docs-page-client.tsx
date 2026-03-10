@@ -12,6 +12,7 @@ import {
 import { CodeBlock } from "@/components/docs/code-block";
 import {
   docsCategories,
+  docsPages,
   getDocsCategoryForPage,
   getDocsPage,
   getDocsPages,
@@ -28,7 +29,7 @@ type SidebarGroup = {
   pages: DocsPage[];
 };
 
-const defaultCategory: DocsCategoryId = "guides";
+const defaultCategory: DocsCategoryId = "api";
 const defaultPageId =
   getDocsPage("guide-quickstart")?.id ?? getDocsPages(defaultCategory)[0]?.id ?? "";
 
@@ -181,7 +182,12 @@ export function DocsPageClient() {
     requestedPage && requestedPage.category === selectedCategory
       ? requestedPage
       : (pagesInCategory[0] ?? getDocsPage(defaultPageId));
-  const sidebarGroups = buildSidebarGroups(pagesInCategory, searchQuery);
+
+  const isSearching = searchQuery.trim().length > 0;
+  const sidebarGroups = buildSidebarGroups(
+    isSearching ? docsPages : pagesInCategory,
+    searchQuery
+  );
 
   useEffect(() => {
     if (!selectedPage) {
@@ -347,7 +353,7 @@ export function DocsPageClient() {
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#ffffff_0%,#ffffff_78%,#fbfcfa_100%)]">
       <div className="sticky top-0 z-20 border-b border-black/6 bg-[rgba(255,255,255,0.98)] backdrop-blur-xl">
-        <div className="px-4 py-4 sm:px-6 lg:px-7">
+        <div className="px-4 py-4 sm:px-6">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-center gap-3">
               <Link
@@ -419,7 +425,7 @@ export function DocsPageClient() {
             </div>
           </div>
 
-          <div className="mt-4 flex gap-6 overflow-x-auto border-t border-black/6 pt-3">
+          <div className="mt-4 flex gap-6 overflow-x-auto border-t border-black/6 pt-3 lg:pl-[2.75rem]">
             {docsCategories.map((category) => {
               const isActive = category.id === selectedCategory;
 
@@ -453,7 +459,7 @@ export function DocsPageClient() {
 
       <div className="grid lg:grid-cols-[18rem_minmax(0,1fr)_16rem]">
         <aside className="border-b border-black/6 lg:border-b-0 lg:border-r lg:border-black/6">
-          <div className="px-4 py-5 sm:px-6 lg:sticky lg:top-[7.75rem] lg:max-h-[calc(100vh-8.5rem)] lg:overflow-auto">
+          <div className="px-4 pb-5 pt-8 sm:px-6 lg:pb-5 lg:pt-8 lg:sticky lg:top-[7.75rem] lg:max-h-[calc(100vh-8.5rem)] lg:overflow-auto">
             {sidebarGroups.length === 0 ? (
               <div className="rounded-[1.25rem] border border-dashed border-black/8 bg-white/70 px-4 py-5">
                 <p className="text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)]">
@@ -550,118 +556,118 @@ export function DocsPageClient() {
 
                     return (
                       <>
-                  <h2 className="text-[1.85rem] font-semibold leading-[1.02] tracking-[-0.05em] text-[color:var(--ink)] sm:text-[2.2rem]">
-                    {section.title}
-                  </h2>
+                        <h2 className="text-[1.85rem] font-semibold leading-[1.02] tracking-[-0.05em] text-[color:var(--ink)] sm:text-[2.2rem]">
+                          {section.title}
+                        </h2>
 
-                  <div className="mt-4 space-y-4">
-                    {section.paragraphs.map((paragraph) => (
-                      <p
-                        key={`${section.id}-${paragraph}`}
-                        className="max-w-3xl text-sm leading-7 text-[color:var(--muted)] sm:text-[15px]"
-                      >
-                        {renderInlineCode(paragraph)}
-                      </p>
-                    ))}
-                  </div>
-
-                  {section.bullets?.length ? (
-                    <ul className="mt-5 grid gap-3">
-                      {section.bullets.map((bullet) => (
-                        <li
-                          key={`${section.id}-${bullet}`}
-                          className="flex items-start gap-3 rounded-[1.1rem] border border-black/6 bg-white/76 px-4 py-3"
-                        >
-                          <span className="mt-2 h-2.5 w-2.5 shrink-0 rounded-full bg-[#0c4a27]" />
-                          <span className="text-sm leading-6 text-[color:var(--ink)]">
-                            {renderInlineCode(bullet)}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
-
-                  {visibleSteps?.length ? (
-                    <ol className="mt-5 space-y-3">
-                      {visibleSteps.map((step, index) => (
-                        <li
-                          key={`${section.id}-${step}`}
-                          className="flex items-start gap-4 rounded-[1.1rem] border border-black/6 bg-white/76 px-4 py-3"
-                        >
-                          <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#0c4a27] text-xs font-semibold text-white">
-                            {index + 1}
-                          </span>
-                          <span className="pt-0.5 text-sm leading-6 text-[color:var(--ink)]">
-                            {renderInlineCode(step)}
-                          </span>
-                        </li>
-                      ))}
-                    </ol>
-                  ) : null}
-
-                  {canToggleSteps ? (
-                    <div className="mt-4">
-                      <button
-                        type="button"
-                        onClick={() => toggleSectionSteps(section.id)}
-                        className="inline-flex items-center rounded-full border border-black/8 bg-white/88 px-4 py-2 text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)] transition-colors hover:bg-white"
-                      >
-                        {isExpanded ? "Show less" : "View all"}
-                      </button>
-                    </div>
-                  ) : null}
-
-                  {section.note ? (
-                    <div className="mt-5 rounded-[1.2rem] border border-[#0c4a27]/10 bg-[#0c4a27]/8 px-4 py-3">
-                      <p className="text-sm leading-6 text-[color:var(--ink)]">
-                        {renderInlineCode(section.note)}
-                      </p>
-                    </div>
-                  ) : null}
-
-                  {section.references?.length ? (
-                    <div className="mt-5 grid gap-3 xl:grid-cols-2">
-                      {section.references.map((reference) => (
-                        <ReferenceCard
-                          key={`${section.id}-${reference.label}-${reference.value}`}
-                          reference={reference}
-                        />
-                      ))}
-                    </div>
-                  ) : null}
-
-                  {section.samples?.length ? (
-                    <div className="mt-6 space-y-4">
-                      {section.samples.map((sample) => (
-                        <div
-                          key={`${section.id}-${sample.label}-${sample.filename ?? "sample"}`}
-                          className="space-y-2"
-                        >
-                          <p className="text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)]">
-                            {sample.label}
-                          </p>
-                          <CodeBlock
-                            label={sample.label}
-                            language={sample.language}
-                            filename={sample.filename}
-                            code={sample.code}
-                          />
+                        <div className="mt-4 space-y-4">
+                          {section.paragraphs.map((paragraph) => (
+                            <p
+                              key={`${section.id}-${paragraph}`}
+                              className="max-w-3xl text-sm leading-7 text-[color:var(--muted)] sm:text-[15px]"
+                            >
+                              {renderInlineCode(paragraph)}
+                            </p>
+                          ))}
                         </div>
-                      ))}
-                    </div>
-                  ) : section.sample ? (
-                    <div className="mt-6 space-y-2">
-                      <p className="text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)]">
-                        {section.sample.label}
-                      </p>
-                      <CodeBlock
-                        label={section.sample.label}
-                        language={section.sample.language}
-                        filename={section.sample.filename}
-                        code={section.sample.code}
-                      />
-                    </div>
-                  ) : null}
+
+                        {section.bullets?.length ? (
+                          <ul className="mt-5 grid gap-3">
+                            {section.bullets.map((bullet) => (
+                              <li
+                                key={`${section.id}-${bullet}`}
+                                className="flex items-start gap-3 rounded-[1.1rem] border border-black/6 bg-white/76 px-4 py-3"
+                              >
+                                <span className="mt-2 h-2.5 w-2.5 shrink-0 rounded-full bg-[#0c4a27]" />
+                                <span className="text-sm leading-6 text-[color:var(--ink)]">
+                                  {renderInlineCode(bullet)}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : null}
+
+                        {visibleSteps?.length ? (
+                          <ol className="mt-5 space-y-3">
+                            {visibleSteps.map((step, index) => (
+                              <li
+                                key={`${section.id}-${step}`}
+                                className="flex items-start gap-4 rounded-[1.1rem] border border-black/6 bg-white/76 px-4 py-3"
+                              >
+                                <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#0c4a27] text-xs font-semibold text-white">
+                                  {index + 1}
+                                </span>
+                                <span className="pt-0.5 text-sm leading-6 text-[color:var(--ink)]">
+                                  {renderInlineCode(step)}
+                                </span>
+                              </li>
+                            ))}
+                          </ol>
+                        ) : null}
+
+                        {canToggleSteps ? (
+                          <div className="mt-4">
+                            <button
+                              type="button"
+                              onClick={() => toggleSectionSteps(section.id)}
+                              className="inline-flex items-center rounded-full border border-black/8 bg-white/88 px-4 py-2 text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)] transition-colors hover:bg-white"
+                            >
+                              {isExpanded ? "Show less" : "View all"}
+                            </button>
+                          </div>
+                        ) : null}
+
+                        {section.note ? (
+                          <div className="mt-5 rounded-[1.2rem] border border-[#0c4a27]/10 bg-[#0c4a27]/8 px-4 py-3">
+                            <p className="text-sm leading-6 text-[color:var(--ink)]">
+                              {renderInlineCode(section.note)}
+                            </p>
+                          </div>
+                        ) : null}
+
+                        {section.references?.length ? (
+                          <div className="mt-5 grid gap-3 xl:grid-cols-2">
+                            {section.references.map((reference) => (
+                              <ReferenceCard
+                                key={`${section.id}-${reference.label}-${reference.value}`}
+                                reference={reference}
+                              />
+                            ))}
+                          </div>
+                        ) : null}
+
+                        {section.samples?.length ? (
+                          <div className="mt-6 space-y-4">
+                            {section.samples.map((sample) => (
+                              <div
+                                key={`${section.id}-${sample.label}-${sample.filename ?? "sample"}`}
+                                className="space-y-2"
+                              >
+                                <p className="text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)]">
+                                  {sample.label}
+                                </p>
+                                <CodeBlock
+                                  label={sample.label}
+                                  language={sample.language}
+                                  filename={sample.filename}
+                                  code={sample.code}
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        ) : section.sample ? (
+                          <div className="mt-6 space-y-2">
+                            <p className="text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)]">
+                              {section.sample.label}
+                            </p>
+                            <CodeBlock
+                              label={section.sample.label}
+                              language={section.sample.language}
+                              filename={section.sample.filename}
+                              code={section.sample.code}
+                            />
+                          </div>
+                        ) : null}
                       </>
                     );
                   })()}
@@ -672,7 +678,7 @@ export function DocsPageClient() {
         </main>
 
         <aside className="hidden lg:block">
-          <div className="sticky top-[7.75rem] max-h-[calc(100vh-8.5rem)] overflow-auto px-4 py-6">
+          <div className="sticky top-[7.75rem] max-h-[calc(100vh-8.5rem)] overflow-auto px-4 pb-5 pt-8 lg:pb-5 lg:pt-8">
             <p className="text-sm font-semibold tracking-[-0.02em] text-[color:var(--ink)]">
               On this page
             </p>
