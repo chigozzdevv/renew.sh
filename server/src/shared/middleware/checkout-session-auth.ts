@@ -3,6 +3,7 @@ import type { NextFunction, Request, Response } from "express";
 
 import { CheckoutSessionModel } from "@/features/checkout/checkout-session.model";
 import { HttpError } from "@/shared/errors/http-error";
+import { getPublicApiHostForRuntimeMode, resolveRequestPublicApiRuntimeMode } from "@/shared/utils/public-api-host";
 
 function getCheckoutClientSecret(request: Request) {
   const explicitHeader = request.header("x-renew-client-secret");
@@ -54,7 +55,7 @@ export async function requireCheckoutSessionAuth(
       _id: sessionId,
       clientTokenHash: tokenHash,
     })
-      .select({ _id: 1, expiresAt: 1 })
+      .select({ _id: 1, environment: 1, expiresAt: 1 })
       .lean()
       .exec();
 
@@ -64,6 +65,16 @@ export async function requireCheckoutSessionAuth(
 
     if (session.expiresAt.getTime() <= Date.now()) {
       throw new HttpError(410, "Checkout session has expired.");
+    }
+
+    const sessionEnvironment = session.environment === "live" ? "live" : "test";
+    const requestedEnvironment = resolveRequestPublicApiRuntimeMode(request);
+
+    if (requestedEnvironment && requestedEnvironment !== sessionEnvironment) {
+      throw new HttpError(
+        403,
+        `This checkout session must be used with https://${getPublicApiHostForRuntimeMode(sessionEnvironment)}.`
+      );
     }
 
     request.checkoutSessionAuth = {

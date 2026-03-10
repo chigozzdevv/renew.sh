@@ -132,6 +132,7 @@ export async function getDashboardOverview(query: DashboardOverviewQuery) {
         $match: {
           merchantId: merchantObjectId,
           ...environmentMatch,
+          monthlyVolumeUsdc: { $gt: 0 },
         },
       },
       {
@@ -164,12 +165,12 @@ export async function getDashboardOverview(query: DashboardOverviewQuery) {
   const planIds = [...new Set(upcomingSubscriptions.map((subscription) => String(subscription.planId)))];
   const plans = planIds.length
     ? await PlanModel.find({
-        _id: { $in: planIds },
-        ...environmentMatch,
-      })
-        .select({ _id: 1, name: 1 })
-        .lean()
-        .exec()
+      _id: { $in: planIds },
+      ...environmentMatch,
+    })
+      .select({ _id: 1, name: 1 })
+      .lean()
+      .exec()
     : [];
   const planNameById = new Map(plans.map((plan) => [String(plan._id), plan.name]));
 

@@ -4,6 +4,7 @@ import type { NextFunction, Request, Response } from "express";
 import { DeveloperKeyModel } from "@/features/developers/developer-key.model";
 import { MerchantModel } from "@/features/merchants/merchant.model";
 import { HttpError } from "@/shared/errors/http-error";
+import { getPublicApiHostForRuntimeMode, resolveRequestPublicApiRuntimeMode } from "@/shared/utils/public-api-host";
 
 function getDeveloperKeyToken(request: Request) {
   const explicitHeader = request.header("x-renew-secret-key");
@@ -69,13 +70,23 @@ export async function requireDeveloperKeyAuth(
       throw new HttpError(409, "Merchant is not active.");
     }
 
+    const keyEnvironment = key.environment === "live" ? "live" : "test";
+    const requestedEnvironment = resolveRequestPublicApiRuntimeMode(request);
+
+    if (requestedEnvironment && requestedEnvironment !== keyEnvironment) {
+      throw new HttpError(
+        403,
+        `This Renew server key must be used with https://${getPublicApiHostForRuntimeMode(keyEnvironment)}.`
+      );
+    }
+
     key.lastUsedAt = new Date();
     await key.save();
 
     request.developerAuth = {
       developerKeyId: key._id.toString(),
       merchantId: key.merchantId.toString(),
-      environment: key.environment === "live" ? "live" : "test",
+      environment: keyEnvironment,
       label: key.label,
     };
 
