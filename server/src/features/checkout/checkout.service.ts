@@ -73,7 +73,7 @@ function deriveSessionStatus(input: {
   const chargeStatus = input.chargeStatus ?? null;
   const settlementStatus = input.settlementStatus ?? null;
 
-  if (chargeStatus === "settled" || chargeStatus === "awaiting_settlement" || settlementStatus === "settled") {
+  if (chargeStatus === "settled" || settlementStatus === "settled") {
     return "settled";
   }
 
@@ -655,5 +655,17 @@ export async function completeCheckoutTestPayment(sessionId: string) {
     },
   });
 
-  return getCheckoutSession(sessionId);
+  session.status = "settled";
+  session.completedAt = session.completedAt ?? new Date();
+  if (session.paymentSnapshot) {
+    session.paymentSnapshot.status = "settled";
+  }
+  await session.save();
+
+  const [charge, settlement] = await Promise.all([
+    session.chargeId ? ChargeModel.findById(session.chargeId).exec() : Promise.resolve(null),
+    session.settlementId ? SettlementModel.findById(session.settlementId).exec() : Promise.resolve(null),
+  ]);
+
+  return toCheckoutSessionResponse({ session, charge, settlement });
 }
