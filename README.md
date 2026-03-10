@@ -1,6 +1,6 @@
 # Renew
 
-**Stablecoin-native billing and settlement infrastructure.**
+**Fiat-in, USDC-settled billing infrastructure.**
 
 Renew lets businesses run recurring and usage-based billing in customers’ local fiat while settling in canonical USDC on Avalanche. It uses a hybrid architecture designed to keep customer payments simple and merchant settlement programmable: checkout, customer records, fiat collection, retries, FX logic, and provider webhooks run off-chain, while merchant registration, plans, subscriptions, charge execution, settlement credits, and merchant vault balances are anchored on-chain.
 
@@ -52,7 +52,7 @@ renew.sh/
 │       └── RenewVault.sol            # USDC custody and merchant balance accounting
 ├── packages/
 │   └── renew-sdk/      # Published SDK (@renew.sh/sdk)
-└── test/               # Integration tests
+└── scripts/            # Operational helpers (Fuji deploy + smoke test wrappers)
 ```
 
 ### Client — `client/`
@@ -212,13 +212,25 @@ The client references the SDK via `"@renew.sh/sdk": "file:../packages/renew-sdk"
 
 ### MVP Smoke Test
 
-The end-to-end smoke flow lives in [server/src/scripts/e2e-mvp.ts](/Users/chigozzdev/Desktop/renew.sh/server/src/scripts/e2e-mvp.ts). It expects:
+The core smoke flow lives in [server/src/scripts/e2e-mvp.ts](/Users/chigozzdev/Desktop/renew.sh/server/src/scripts/e2e-mvp.ts). The root wrapper script is [scripts/e2e-smoke.sh](/Users/chigozzdev/Desktop/renew.sh/scripts/e2e-smoke.sh). It expects:
 
 - a running server
 - MongoDB and Redis
 - deployed Fuji protocol and vault addresses
 - funded Fuji gas for the executor/deployer wallet
 - funded Sepolia gas and Circle test USDC for the CCTP source wallet
+
+Run it from the repo root with:
+
+```bash
+./scripts/e2e-smoke.sh
+```
+
+To provision or refresh the Fuji contract addresses used by the smoke test, use [scripts/deploy-fuji.sh](/Users/chigozzdev/Desktop/renew.sh/scripts/deploy-fuji.sh):
+
+```bash
+./scripts/deploy-fuji.sh
+```
 
 ---
 
