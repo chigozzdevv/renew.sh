@@ -4,7 +4,16 @@
 
 Renew lets businesses run recurring and usage-based billing in customers’ local fiat while settling in canonical USDC on Avalanche. It uses a hybrid architecture designed to keep customer payments simple and merchant settlement programmable: checkout, customer records, fiat collection, retries, FX logic, and provider webhooks run off-chain, while merchant registration, plans, subscriptions, charge execution, settlement credits, and merchant vault balances are anchored on-chain.
 
+## Quick Links
 
+- Website: [renew.sh](https://renew.sh)
+- Docs: [renew.sh/docs](https://renew.sh/docs)
+- Sandbox Playground: [renew.sh/playground](https://renew.sh/playground)
+- Demo Video: [Renew.sh MVP Demo](https://youtu.be/1cq97cRhWww)
+- SDK: [@renew.sh/sdk on npm](https://www.npmjs.com/package/@renew.sh/sdk)
+- Sandbox API: [sandbox.renew.sh](https://sandbox.renew.sh)
+- Live API: [api.renew.sh](https://api.renew.sh)
+- Contract Addresses (Fuji): [RenewProtocol](https://testnet.snowtrace.io/address/0x7D6fF5964D1dd7E1cc4614Ed25292142f24e0b9E) and [RenewVault](https://testnet.snowtrace.io/address/0xD118f9Acd6654Ff11543c39264Aa8Fd73923f58A)
 
 ---
 
