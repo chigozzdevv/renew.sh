@@ -73,7 +73,7 @@ function deriveSessionStatus(input: {
   const chargeStatus = input.chargeStatus ?? null;
   const settlementStatus = input.settlementStatus ?? null;
 
-  if (chargeStatus === "settled" || settlementStatus === "settled") {
+  if (chargeStatus === "settled" || chargeStatus === "awaiting_settlement" || settlementStatus === "settled") {
     return "settled";
   }
 
