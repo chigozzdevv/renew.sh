@@ -75,6 +75,9 @@ export function DashboardSessionProvider({
         setError("Dashboard session is missing. Sign in again.");
         setIsLoading(false);
       });
+      if (typeof window !== "undefined") {
+        window.location.href = "/login";
+      }
       return;
     }
 
@@ -94,6 +97,9 @@ export function DashboardSessionProvider({
 
       if (error instanceof ApiError && error.status === 401) {
         clearAccessToken();
+        if (typeof window !== "undefined") {
+          window.location.href = "/login";
+        }
       }
 
       startTransition(() => {

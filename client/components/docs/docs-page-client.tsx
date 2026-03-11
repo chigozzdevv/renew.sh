@@ -343,7 +343,7 @@ export function DocsPageClient() {
       return;
     }
 
-    navigateToPage(firstMatch.id);
+    navigateToPage(firstMatch.id, true);
   }
 
   if (!selectedPage) {
@@ -484,7 +484,7 @@ export function DocsPageClient() {
                           <button
                             key={page.id}
                             type="button"
-                            onClick={() => navigateToPage(page.id)}
+                            onClick={() => navigateToPage(page.id, true)}
                             className={cn(
                               "block w-full rounded-[1rem] border px-4 py-3 text-left transition-colors",
                               isActive
