@@ -6,9 +6,9 @@ Renew lets businesses run recurring and usage-based billing in customers’ loca
 
 ## Quick Links
 
-- Website: [renew.sh](https://renew.sh)
-- Docs: [renew.sh/docs](https://renew.sh/docs)
-- Sandbox Playground: [renew.sh/playground](https://renew.sh/playground)
+- Website: [Renew App](https://www.renew.sh)
+- Docs: [Renew Docs](https://www.renew.sh/docs)
+- Sandbox Playground: [Renew Sandbox Playground](https://www.renew.sh/playground)
 - Demo Video: [Renew.sh MVP Demo](https://youtu.be/1cq97cRhWww)
 - SDK: [@renew.sh/sdk on npm](https://www.npmjs.com/package/@renew.sh/sdk)
 - Sandbox API: [sandbox.renew.sh](https://sandbox.renew.sh)
