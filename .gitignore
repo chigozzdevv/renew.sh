@@ -13,4 +13,5 @@ contracts/broadcast/
 .env.test.local
 .env.production.local
 *.tsbuildinfo
+next-env.d.ts
 yellow-card.md

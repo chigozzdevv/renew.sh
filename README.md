@@ -272,9 +272,3 @@ Renew is market-extensible. The current sandbox catalog includes local-currency 
 > BWP · CDF · GHS · KES · MWK · NGN · RWF · TZS · UGX · XAF · XOF · ZAR · ZMW
 
 These are implementation-time payment rail markets, not a hard product boundary. Settlement and billing are designed to remain chain-native and portable as additional markets and providers are added.
-
----
-
-## License
-
-MIT
